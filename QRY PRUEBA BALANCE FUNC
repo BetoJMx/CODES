@@ -1,0 +1,27 @@
+SELECT  ( 
+            SELECT  MAX(bal.balance_value)
+            FROM    TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                            p_balance_type_id         => pbt.balance_type_id,
+                            p_payroll_rel_action_id   => ppra.payroll_rel_action_id,
+                            p_payroll_term_id         => NULL,
+                            p_payroll_assignment_id   => NULL)) bal
+                    --+
+            WHERE   1 = 1
+                    AND pdu.balance_dimension_id = bal.balance_dimension_id
+        ) AS CANTIDAD
+FROM    pay_payroll_rel_actions         ppra,
+        pay_balance_types_vl            pbt,
+        pay_dimension_usages_vl         pdu,
+        pay_balance_types_tl            pbtt,
+        pay_run_balances                prb,
+        pay_defined_balances            pdb
+WHERE   pbt.legislation_code            = 'MX'
+        AND pbt.base_balance_name       = 'MX_ELIGIBLE_WORKED_DAYS_FOR_PROFIT_SHARING'
+        AND pbtt.balance_type_id        = pbt.balance_type_id
+        AND pdu.legislation_code        = 'MX'
+        AND pdu.database_item_suffix    = '_REL_NOCB_YTD'
+        AND pdu.balance_dimension_id    = pdb.balance_dimension_id
+        AND prb.DEFINED_BALANCE_ID      = pdb.DEFINED_BALANCE_ID
+        AND prb.payroll_relationship_id = prg.payroll_relationship_id
+        AND prb.payroll_rel_action_id   = ppra.payroll_rel_action_id
+        AND pdb.balance_type_id         = pbtt.balance_type_id
