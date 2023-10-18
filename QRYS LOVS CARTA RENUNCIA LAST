@@ -1,0 +1,125 @@
+--QRYS LOVS CARTA RENUNCIA
+select distinct UPPER (trim(ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)) AS name,
+            papf.person_id
+   from      per_person_names_f ppn,
+             per_all_people_f papf --per_person_secured_list_v papf
+		   , per_assignment_secured_list_v paaf
+ where ppn.name_type = 'MX'
+    AND paaf.assignment_type = 'E'
+    AND paaf.primary_flag = 'Y'
+	and papf.person_id = ppn.person_id
+	and ppn.person_id = paaf.person_id
+	And trunc(sysdate) BETWEEN ppn.EFFECTIVE_START_DATE and ppn.EFFECTIVE_END_DATE
+	And trunc(sysdate) BETWEEN papf.EFFECTIVE_START_DATE and papf.EFFECTIVE_END_DATE
+	and trunc(sysdate) BETWEEN paaf.EFFECTIVE_START_DATE and paaf.EFFECTIVE_END_DATE
+order by 1
+
+	SELECT 	UPPER (trim(ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)) AS name,
+			papf.person_id
+	FROM	per_person_names_f 	ppn,
+			per_all_people_f 	papf
+			INNER JOIN per_assignment_secured_list_v paaf
+			ON paaf.person_id = papf.person_id
+			AND paaf.assignment_type = 'E'
+			AND SYSDATE BETWEEN paaf.EFFECTIVE_START_DATE and paaf.EFFECTIVE_END_DATE
+	WHERE	ppn.name_type = 'MX'
+			AND papf.person_id = ppn.person_id
+			AND sysdate BETWEEN ppn.EFFECTIVE_START_DATE and ppn.EFFECTIVE_END_DATE
+			AND sysdate BETWEEN papf.EFFECTIVE_START_DATE and papf.EFFECTIVE_END_DATE
+	GROUP BY	UPPER (trim(ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)),
+				papf.person_id
+--------------------------
+SELECT 	papf.person_number AS name,
+		papf.person_id
+FROM	per_all_people_f 	papf
+		INNER JOIN per_assignment_secured_list_v paaf
+		ON paaf.person_id = papf.person_id
+		AND paaf.assignment_type = 'E'
+		AND SYSDATE BETWEEN paaf.EFFECTIVE_START_DATE and paaf.EFFECTIVE_END_DATE
+WHERE	1 = 1
+		AND sysdate BETWEEN papf.EFFECTIVE_START_DATE and papf.EFFECTIVE_END_DATE
+GROUP BY 	papf.person_number,
+			papf.person_id
+
+---------------------
+
+select distinct UPPER (trim(ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)) AS name,
+    ppn.person_id
+   from      per_person_names_f ppn,
+             per_all_people_f papf --per_person_secured_list_v papf
+		   , per_assignment_secured_list_v      paaf
+		   , hr_locations_all pl --per_location_secured_list_v pl
+    --  ,hr_locations_all           hla
+    , hr_all_positions_f hapf --per_position_secured_list_v           hapf
+    , per_jobs pj
+where ppn.name_type = 'MX'
+    And paaf.assignment_type = 'E'
+    And paaf.primary_flag = 'Y'
+    And papf.person_id = ppn.person_id
+    And ppn.person_id = paaf.person_id
+    And paaf.location_id = pl.location_id
+    --+
+    And hapf.position_id = paaf.position_id
+	And pj.job_id = paaf.job_id
+	--+
+    And trunc(sysdate) BETWEEN ppn.EFFECTIVE_START_DATE and ppn.EFFECTIVE_END_DATE
+    And trunc(sysdate) BETWEEN papf.EFFECTIVE_START_DATE and papf.EFFECTIVE_END_DATE
+    And trunc(sysdate) BETWEEN paaf.EFFECTIVE_START_DATE and paaf.EFFECTIVE_END_DATE
+    --+
+	And trunc(sysdate) between hapf.effective_start_date And hapf.effective_end_date
+    And trunc(sysdate) between pj.effective_start_date And pj.effective_end_date
+order by 1
+
+----------------
+
+select distinct papf.person_number AS name,
+            papf.person_id
+   from  per_all_people_f papf --per_person_secured_list_v papf
+		   , per_assignment_secured_list_v      paaf
+ where paaf.assignment_type = 'E'
+    AND paaf.primary_flag = 'Y'
+	and papf.person_id = paaf.person_id
+	And sysdate BETWEEN papf.EFFECTIVE_START_DATE and papf.EFFECTIVE_END_DATE
+	and sysdate BETWEEN paaf.EFFECTIVE_START_DATE and paaf.EFFECTIVE_END_DATE
+order by 1
+
+------------------------------------
+
+select distinct papf.person_number AS name,
+            papf.person_id
+   from  per_all_people_f papf --per_person_secured_list_v papf
+		   , per_assignment_secured_list_v      paaf
+ where paaf.assignment_type = 'E'
+    AND paaf.primary_flag = 'Y'
+	and papf.person_id = paaf.person_id
+	And sysdate BETWEEN papf.EFFECTIVE_START_DATE and papf.EFFECTIVE_END_DATE
+	and sysdate BETWEEN paaf.EFFECTIVE_START_DATE and paaf.EFFECTIVE_END_DATE
+order by 1
+
+----------------------------------
+
+select distinct UPPER (trim(ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)) AS name,
+    ppn.person_id
+   from      per_person_names_f ppn,
+             per_all_people_f papf --per_person_secured_list_v papf
+		   , per_assignment_secured_list_v      paaf
+		   , hr_locations_all pl --per_location_secured_list_v pl
+    --  ,hr_locations_all           hla
+    , hr_all_positions_f hapf --per_position_secured_list_v           hapf
+    , per_jobs pj
+where ppn.name_type = 'MX'
+    And paaf.assignment_type = 'E'
+    And paaf.primary_flag = 'Y'
+    And papf.person_id = ppn.person_id
+    And ppn.person_id = paaf.person_id
+    And paaf.location_id = pl.location_id
+    --+
+    And hapf.position_id = paaf.position_id
+	And pj.job_id = paaf.job_id
+	--+
+    And sysdate BETWEEN ppn.EFFECTIVE_START_DATE and ppn.EFFECTIVE_END_DATE
+    And sysdate BETWEEN papf.EFFECTIVE_START_DATE and papf.EFFECTIVE_END_DATE
+    And sysdate BETWEEN paaf.EFFECTIVE_START_DATE and paaf.EFFECTIVE_END_DATE
+    --+
+	And sysdate between hapf.effective_start_date And hapf.effective_end_date
+    And sysdate between pj.effective_start_date And pj.effective_end_date
