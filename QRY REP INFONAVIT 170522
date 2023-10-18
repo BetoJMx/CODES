@@ -1,0 +1,344 @@
+-- QRY REP INFONAVIT 170522
+WITH infonavit AS (
+	SELECT  /*+MATERIALIZE*/  
+              pay.payroll_id                                                            proceso
+            , piv.base_name                                                             elemento
+            , hoi.org_information1                                                      unidad
+            , pd.name                                                                   organizacion
+            , pap.person_number                                                         estafeta
+            , pap.person_id
+            , pet.element_type_id
+            , prr.payroll_rel_action_id
+            , ppn.full_name                                                             nombre
+		    , paa.assignment_name                                                       puesto
+            , TO_CHAR(pps.actual_termination_date,'dd-mm-yyyy')                         fecha_de_separacion
+		    , DECODE(UPPER(pet.base_element_name),'NP030',prrv.result_value*2,0)        percepcion
+            , prg.payroll_relationship_id
+            , pivtl.name
+            , ppa.payroll_action_id
+            , pet.base_element_name                                                     element_name
+            , prrv.RESULT_VALUE                                                         result_value
+            , pay.payroll_name                                                          tiponomina
+            , SYSDATE                                                                   fechahoy
+            , (SUBSTR (ptp.period_name, 1, 2) ||'/'|| SUBSTR (ptp.period_name, 4, 4))   numquincena
+            ,(
+                SELECT  SUM(prrv2.result_value) --||
+                FROM    pay_run_results             prr2,
+                        pay_run_result_values       prrv2,
+                        pay_element_types_f         pet2,
+                        pay_element_types_tl        pettl2,
+                        pay_ele_classifications     pec2,
+                        pay_input_values_f          piv2,
+                        pay_input_values_tl         pivtl2
+                WHERE   1 = 1
+                        AND prr2.payroll_rel_action_id  = ppra.payroll_rel_action_id
+                        AND prr2.status                 IN ('P', 'PA')
+                        AND prrv2.run_result_id         = prr2.run_result_id
+                        AND piv2.input_value_id         = prrv2.input_value_id
+                        --||AND prrv2.result_value          IS NOT NULL
+                        AND pet2.element_type_id        = prr2.element_type_id
+                        AND pettl2.element_type_id      = pet2.element_type_id
+                        AND pettl2.language             = 'US'
+                        AND pettl2.element_name         = 'ND567'
+                        AND pivtl2.input_value_id(+)    = piv2.input_value_id
+                        AND pivtl2.language             = 'US'
+                        AND pec2.classification_id      = pet2.classification_id
+                        AND pivtl2.name                 = 'Numero Credito'
+                        --+
+                        AND ppa.effective_date  BETWEEN piv2.effective_start_date 
+                                                AND piv2.effective_end_date
+                        AND ppa.effective_date  BETWEEN pet2.effective_start_date 
+                                                AND pet2.effective_end_date
+            ) numerocredito
+            ,(
+                SELECT  SUM(prrv2.result_value) --||
+                FROM    pay_run_results         prr2,
+                        pay_run_result_values   prrv2,
+                        pay_element_types_f     pet2,
+                        pay_element_types_tl    pettl2,
+                        pay_ele_classifications pec2,
+                        pay_input_values_f      piv2,
+                        pay_input_values_tl     pivtl2
+                WHERE   1 = 1
+                        AND prr2.payroll_rel_action_id  = ppra.payroll_rel_action_id
+                        AND prr2.status                 IN ('P', 'PA')
+                        AND prrv2.run_result_id         = prr2.run_result_id
+                        AND piv2.input_value_id         = prrv2.input_value_id
+                        --||AND prrv2.result_value          IS NOT NULL
+                        AND pet2.element_type_id        = prr2.element_type_id
+                        AND pettl2.element_type_id      = pet2.element_type_id
+                        AND pettl2.language             = 'US'
+                        AND pettl2.element_name         = 'ND567'
+                        AND pivtl2.input_value_id(+)    = piv2.input_value_id
+                        AND pivtl2.language             = 'US' 
+                        AND pec2.classification_id      = pet2.classification_id
+                        AND pivtl2.name                 = 'Valor de Descuento'
+                        --+
+                        AND ppa.effective_date  BETWEEN piv2.effective_start_date 
+                                                AND piv2.effective_end_date
+                        AND ppa.effective_date  BETWEEN pet2.effective_start_date 
+                                                AND pet2.effective_end_date
+            ) descuentocredito
+            ,TO_CHAR(
+                NVL( 
+                    (
+                        SELECT  MIN(ppei.pei_information_date1) 
+                        FROM    per_people_extra_info_f ppei 
+                        WHERE   ppei.person_id              = ppn.person_id
+                                AND ppei.information_type   = 'Cambio de Empleador Legal'
+                                AND ppei.PEI_INFORMATION1   = 'Fecha de Inicio de Base Salarial'
+                                AND TRUNC(SYSDATE)          BETWEEN ppei.effective_start_date 
+                                                            AND ppei.effective_end_date
+                    ),psdf.seniority_date 
+                ), 'dd-mm-yyyy'
+            ) AS fechaingreso
+            -- ,NVL(
+            --         (
+            --             SELECT  pd.name
+            --             FROM    per_departments                 pd
+            --                     ,hr_organization_information_f  hoif
+            --             WHERE   1 = 1
+            --                     AND hoif.organization_id            = pd.organization_id
+            --                     AND pd.status                       = 'A'
+            --                     AND hoif.organization_id            = :p_unidad_proceso 
+            --                     AND hoif.org_information_context    = 'PER_GL_COST_CENTER_INFO'
+            --                     AND trunc(SYSDATE)                  BETWEEN hoif.effective_start_date (+) 
+            --                                                         AND hoif.effective_end_date(+)
+            --                     AND trunc(SYSDATE)                  BETWEEN pd.effective_start_date 
+            --                                                         AND pd.effective_end_date
+            --         ),'TODAS LAS UNIDADES'
+            -- ) valorunidad
+            ,DECODE(:p_unidad_proceso,NULL,'TODAS LAS UNIDADES', pd.NAME) AS valorunidad
+            ,(
+                SELECT  pni.national_identifier_number
+                FROM    PER_NATIONAL_IDENTIFIERS pni
+                WHERE   pni.person_id = pap.person_id
+                        AND TRIM(UPPER(pni.national_identifier_type(+))) = 'CURP' 
+            ) curp
+            ,(
+                SELECT  NVL(SUBSTR (pni.national_identifier_number, 1, 4),
+                            '000') || '-'
+                            || NVL (substr (pni.national_identifier_number, 5, 6),
+                            '000') || '-'
+                            || NVL (substr (pni.national_identifier_number, 11, 3),
+                            '000')
+                FROM    PER_NATIONAL_IDENTIFIERS pni
+                WHERE   pni.person_id = pap.person_id
+                        AND TRIM(UPPER(pni.national_identifier_type(+))) = 'RFC' 
+            ) rfc
+            ,(
+                SELECT  NVL(SUBSTR (pni.national_identifier_number, 1, 2),
+                            '000') || '-'
+                            || NVL (SUBSTR (pni.national_identifier_number, 3, 2),
+                            '000') || '-'
+                            || NVL (SUBSTR (pni.national_identifier_number, 5, 2),
+                            '000') || '-'
+                            || NVL (SUBSTR (pni.national_identifier_number, 7, 4),
+                            '000') || '-'
+                            || NVL (SUBSTR (pni.national_identifier_number, 11, 1),
+                            '000') 
+                FROM    PER_NATIONAL_IDENTIFIERS pni
+                WHERE   pni.person_id = pap.person_id
+                        AND TRIM(UPPER(pni.national_identifier_type(+))) = 'IMSS' 
+            ) imss
+            ,(
+                SELECT  reg.registration_number AS reg_patronal
+                FROM    pay_pay_relationships_dn pdn,
+                        pay_dir_cards_f          pdc,
+                        pay_dir_rep_cards_f      pdrc,
+                        per_tax_reporting_units  ptru,
+                        xle_registrations        reg
+                WHERE   1 = 1 
+                        AND pdn.person_id               = pap.person_id
+                        AND pdn.payroll_relationship_id = prg.payroll_relationship_id
+                        AND pdc.payroll_relationship_id = pdn.payroll_relationship_id
+                        AND pdrc.dir_card_id            = pdc.dir_card_id
+                        AND ptru.organization_id        = pdrc.tax_unit_id
+                        --+ REG_PATRONAL
+                        AND reg.source_id               = ptru.establishment_id
+                        AND reg.identifying_flag        = 'Y'
+                        AND trunc(ppa.effective_date)   BETWEEN pdn.start_date 
+                                                        AND pdn.end_date
+                        AND trunc(ppa.effective_date)   BETWEEN ptru.effective_from 
+                                                        AND NVL(ptru.effective_to, SYSDATE + 1)
+                        AND trunc(ppa.effective_date)   BETWEEN pdc.effective_start_date 
+                                                        AND pdc.effective_end_date
+                        AND trunc(ppa.effective_date)   BETWEEN pdrc.effective_start_date 
+                                                        AND pdrc.effective_end_date
+                GROUP BY    reg.registration_number
+            ) registropatronal
+	FROM    --||hr_all_positions_f_tl           hap,
+            hr_organization_information_f   hoi,
+            --per_person_secured_list_v        pap,
+            PER_ALL_PEOPLE_F                pap,
+            --per_assignment_secured_list_v    paa,
+            PER_ALL_ASSIGNMENTS_M           paa,
+            per_periods_of_service          pps,
+            --per_department_secured_list_v    pdslv,
+            HR_ALL_ORGANIZATION_UNITS_F     pdslv,
+            per_departments                 pd,  
+            per_person_names_f              ppn,
+            per_jobs_f_tl                   pj,
+            --||per_national_identifiers        pni,
+            pay_rel_groups_dn               prg,
+            pay_time_periods                ptp,
+            pay_payroll_actions             ppa,
+            pay_payroll_rel_actions         ppra,
+            pay_run_results                 prr,
+            pay_run_result_values           prrv,
+            pay_element_types_f             pet,
+            pay_element_types_tl            pettl,
+            pay_input_values_f              piv,
+            pay_input_values_tl             pivtl,
+            --pay_payroll_secured_list_v       pay,
+            pay_all_payrolls_f              pay,
+            --+
+            per_seniority_dates_f           psdf, -- Seniority Date
+            per_seniority_dates_setup       psds
+
+	WHERE   1 = 1
+            AND pps.legal_entity_id         = paa.legal_entity_id
+            AND pps.person_id               = paa.person_id
+            AND pps.period_of_service_id    = paa.period_of_service_id
+            AND pap.person_id               = ppn.person_id
+            AND ppn.name_type               = 'MX'
+            AND paa.person_id               = ppn.person_id
+            AND paa.primary_assignment_flag = 'Y'
+            AND paa.assignment_type         = 'E'
+            AND paa.effective_latest_change = 'Y'
+            --+
+            AND hoi.organization_id(+)          = paa.organization_id
+            AND hoi.org_information_context(+)  = 'PER_GL_COST_CENTER_INFO'
+            AND pj.job_id                       = paa.job_id
+            AND pj.language                     = sys_context('USERENV','LANG')
+            --||AND pni.person_id(+)                = pap.person_id
+            --||AND trim(upper(pni.national_identifier_type(+))) = 'IMSS'
+            --||AND hap.position_id(+) = paa.position_id
+            --||AND hap.language = sys_context('USERENV','LANG')
+            --+
+            AND prg.assignment_id               = paa.assignment_id
+            AND prg.group_type                  = 'A'
+            AND ppra.payroll_relationship_id    = prg.payroll_relationship_id
+            AND ppra.action_status              = 'C'
+            AND ppra.retro_component_id         IS NULL
+            AND ppra.chunk_number               IS NOT NULL
+            AND ppa.payroll_action_id           = ppra.payroll_action_id
+            AND ppa.action_type                 IN ('R', 'B', 'Q')
+            AND prr.status                      IN ('P', 'PA')
+            AND prr.payroll_rel_action_id       = ppra.payroll_rel_action_id
+            AND pet.element_type_id             = prr.element_type_id
+            AND pettl.element_type_id           = pet.element_type_id
+            AND pettl.language                  = sys_context('USERENV','LANG')
+            AND piv.element_type_id             = pettl.element_type_id
+            AND piv.input_value_id              = prrv.input_value_id
+            AND pivtl.input_value_id            = piv.input_value_id
+            AND pivtl.language                  = sys_context('USERENV','LANG')
+            AND prrv.run_result_id              = prr.run_result_id
+            AND pay.payroll_id                  = ppa.payroll_id
+            --+
+            -- Seniority Date
+            AND psdf.person_id                  = paa.person_id
+            AND psdf.seniority_field            = 'ORA_ENT'
+            AND psds.seniority_date_code        = psdf.seniority_date_code
+            AND psds.active_flag                = 'Y'
+            --+
+            AND prrv.result_value               IS NOT NULL
+            AND pdslv.organization_id           = paa.organization_id
+            AND pd.organization_id              = pdslv.organization_id
+            AND pd.status                       = 'A'
+            AND pd.organization_id              = NVL(:p_unidad_proceso, pd.organization_id)
+            AND pay.payroll_id                  = NVL(:p_tipo_nomina,pay.payroll_id) 
+            AND ppa.payroll_id                  = ptp.payroll_id
+            AND ppa.earn_time_period_id         = ptp.time_period_id
+            AND UPPER(pivtl.name)               IN  (
+                                                        'PAY VALUE',
+                                                        'EARNINGS CALCULATED',
+                                                        'VALOR PAGO',
+                                                        'VALOR DE DESCUENTO',
+                                                        'NET PAY'
+                                                    )
+            AND UPPER(pet.base_element_name)    IN (
+                                                        'FD516 RESULTS',
+                                                        'ND524A RESULTS',
+                                                        'ND525 RESULTS',
+                                                        'ND526 RESULTS',
+                                                        'ND567 RESULTS',
+                                                        'ND567_2 RESULTS',
+                                                        'NP030 EARNINGS RESULTS',
+                                                        'FD517 RESULTS',
+                                                        'FD519 RESULTS', --NO EXISTE, ND519
+                                                        'FD520 RESULTS', --NOEXISTE, ND520
+                                                        'ND522 RESULTS', --NO EXISTE, FD522
+                                                        'ND523 RESULTS' --NO EXISTE, FD523	
+                                                    ) 
+            AND trunc(ppa.effective_date)       BETWEEN trunc(:p_start_date) 
+                                                AND trunc(:p_end_date) 
+            AND ppa.effective_date              BETWEEN prg.start_date 
+                                                AND prg.end_date
+            AND trunc(ppa.effective_date)       BETWEEN pap.effective_start_date 
+                                                AND pap.effective_end_date
+            AND trunc(ppa.effective_date)       BETWEEN ppn.effective_start_date 
+                                                AND ppn.effective_end_date
+            AND trunc(ppa.effective_date)       BETWEEN paa.effective_start_date 
+                                                AND paa.effective_end_date
+            AND trunc(ppa.effective_date)       BETWEEN pj.effective_start_date 
+                                                AND pj.effective_end_date
+            AND trunc(ppa.effective_date)       BETWEEN piv.effective_start_date 
+                                                AND piv.effective_end_date
+            AND trunc(ppa.effective_date)       BETWEEN pet.effective_start_date 
+                                                AND pet.effective_end_date
+            AND trunc(ppa.effective_date)       BETWEEN pay.effective_start_date
+                                                AND pay.effective_end_date
+            AND trunc(ppa.effective_date)       BETWEEN pdslv.effective_start_date
+                                                AND pdslv.effective_end_date
+            AND trunc(ppa.effective_date)       BETWEEN pd.effective_start_date
+                                                AND pd.effective_end_date
+            AND trunc(ppa.effective_date)       BETWEEN hoi.effective_start_date
+                                                AND hoi.effective_end_date
+            --||AND trunc(ppa.effective_date)       BETWEEN hap.effective_start_date AND hap.effective_end_date
+            --AND pap.person_id IN (300000019858290,300000019808256) --pap.person_id		
+Order By estafeta, numerocredito
+    )
+SELECT  info.unidad
+        ,info.organizacion
+        ,info.person_id
+        ,info.estafeta
+        ,info.nombre
+        ,info.puesto
+        ,info.proceso
+        ,info.elemento
+        ,info.numerocredito
+        ,info.DescuentoCredito
+        ,info.fechaingreso
+        ,info.percepcion
+        ,info.valorunidad
+        ,info.curp
+        ,info.rfc
+        ,info.imss
+        ,info.registropatronal
+        ,SUBSTR(info.element_name,0,INSTR(info.element_name,' ',1)-1) element_name
+        ,SUM(TO_NUMBER(NVL(info.result_value,'0')))result_value
+        ,info.tiponomina
+        ,info.fecha_de_separacion
+FROM    infonavit info
+WHERE   1=1
+GROUP BY    info.unidad
+            ,info.organizacion
+            ,info.person_id
+            ,info.estafeta
+            ,info.nombre
+            ,info.puesto
+            ,info.proceso
+            ,info.elemento
+            ,info.numerocredito
+            ,info.DescuentoCredito
+            ,info.fechaingreso
+            ,info.percepcion
+            ,info.valorunidad
+            ,info.curp
+            ,info.rfc
+            ,info.imss
+            ,info.registropatronal
+            ,SUBSTR(info.element_name,0,INSTR(info.element_name,' ',1)-1) 
+            ,info.tiponomina
+            ,info.fecha_de_separacion
