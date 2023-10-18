@@ -1,0 +1,210 @@
+--QRY ATI ORG CHNG 101022
+--+ QRY PERFORMANCE 101022
+WITH cat_elements AS (
+    SELECT  
+            meaning AS element_name
+    FROM    fnd_lookup_values
+    WHERE   1 = 1
+            AND TRIM(lookup_type) IN (  
+                                    'XXGRG_PERCEPCIONES_ATI',
+                                    'XXGRG_DEDUCCIONES_ATI',
+                                    'XXGRG_OTROSPAGOS_ATI'
+                                    )
+            AND language = SYS_CONTEXT('USERENV','LANG')
+            AND enabled_flag = 'Y'
+),
+special_assg_set AS (
+    SELECT  prgd.assignment_id object_id
+    FROM    pay_rel_groups_dn prgd,
+            pay_object_group_amends poga
+    WHERE   1 = 1
+            AND prgd.relationship_group_id = poga.object_id
+            AND poga.object_group_id = :p_assig_set_esp_id
+            AND prgd.group_type = 'A'
+            AND :p_assig_set_esp_id IS NOT NULL
+    UNION ALL
+    SELECT    1 object_id
+    FROM      dual
+    WHERE     1 = 1
+    AND       :p_assig_set_esp_id IS NULL
+)
+SELECT  haou_unidad.organization_id,
+        haou_unidad.name    organization_name,
+        COUNT(1)            numero_empleados
+FROM    pay_payroll_actions             ppa,
+        pay_payroll_rel_actions         ppra,
+        special_assg_set                sas,
+        pay_run_types_f                 prtf,
+        pay_all_payrolls_f              pay, --pay_payroll_secured_list_v
+        pay_consolidation_sets          pcs,
+        pay_rel_groups_dn               prg,
+        per_assignment_secured_list_v   paa,
+        per_person_secured_list_v       pap,
+        per_person_names_f              ppn,
+        per_periods_of_service          ppos,
+        per_jobs_f_tl                   pj,
+        hr_all_organization_units       haou_unidad,
+        hr_lookups                      hl_categoria,
+        pay_time_periods                ptp,
+        per_legal_employers             ple,
+        xle_entity_profiles             xlep,
+        xle_registrations               xler,
+        hz_locations                    hl_le
+WHERE   1 = 1
+        AND pap.person_number = NVL(:p_estafeta, pap.person_number)
+        AND ppa.payroll_action_id = ppra.payroll_action_id
+        AND (
+                (    :p_balance_adj_flag = '1'
+                AND ppa.action_type IN ('R', 'Q')
+                )
+            OR (    :p_balance_adj_flag = '2'
+                AND ppa.action_type IN ('R', 'Q', 'B')
+                )
+            OR (    :p_balance_adj_flag = '3'
+                AND ppa.action_type IN ('B')
+                )
+            )
+        --AND ppa.assignment_set_id = COALESCE(TO_NUMBER(:p_assignment_set_id), ppa.assignment_set_id)
+        --+ahernandez.rosales{31Dic2022}
+        AND ( :p_assignment_set_id is null 
+            Or ppa.assignment_set_id = :p_assignment_set_id
+        ) 
+        AND ppra.action_status = 'C'
+        AND ppra.run_type_id = prtf.run_type_id
+        AND ppa.payroll_id = pay.payroll_id
+        AND pay.payroll_id = COALESCE  ( TO_NUMBER(:p_payroll_id), pay.payroll_id)
+        AND ppa.consolidation_set_id = pcs.consolidation_set_id
+        AND pcs.consolidation_set_id = COALESCE  ( TO_NUMBER(:p_consolidation_set_id), pcs.consolidation_set_id)
+        AND ppra.payroll_relationship_id = prg.payroll_relationship_id
+        AND ppra.retro_component_id IS NULL
+        AND paa.assignment_id = DECODE(  :p_assig_set_esp_id
+                                    , NULL, paa.assignment_id
+                                    , sas.object_id
+                                    )
+        AND prg.assignment_id = paa.assignment_id
+        AND paa.assignment_type = 'E'
+        AND paa.effective_latest_change = 'Y'
+        AND paa.primary_flag = 'Y'
+        AND paa.primary_assignment_flag = 'Y'
+        AND paa.person_id = pap.person_id
+        AND pap.person_id = ppn.person_id
+        AND ppn.name_type = 'MX'
+        AND pap.person_id = ppos.person_id
+        AND paa.period_of_service_id = ppos.period_of_service_id
+        AND paa.job_id = pj.job_id
+        AND pj.language = SYS_CONTEXT ('USERENV', 'LANG')
+        AND paa.organization_id = haou_unidad.organization_id
+        AND paa.employee_category = hl_categoria.lookup_code
+        AND hl_categoria.lookup_type = 'EMPLOYEE_CATG'
+        AND ppa.effective_date BETWEEN prg.start_date AND prg.end_date
+        AND ppa.earn_time_period_id = ptp.time_period_id
+        AND ptp.period_name = COALESCE (:p_period_name, ptp.period_name)
+        AND paa.legal_entity_id = ple.organization_id
+        AND ple.legal_entity_id = xlep.legal_entity_id
+        AND xlep.legal_entity_id = xler.source_id
+        AND xler.source_table = 'XLE_ENTITY_PROFILES'
+        AND xler.location_id = hl_le.location_id
+        AND NOT EXISTS(
+                Select 1
+                From pay_object_groups  pog
+                    ,pay_object_group_types pogt
+                Where 1 = 1
+                    And pog.BASE_OBJECT_GROUP_NAME = 'NOMINA ALTAS'
+                    And pogt.object_group_type_id = pog.object_group_type_id
+                    And name_code = 'ELEGRP'
+                    And pog.object_group_id = ppa.element_set_id
+            )
+        AND EXISTS(
+                    SELECT  NULL
+                    FROM    pay_payroll_rel_actions         pprax,
+                            pay_run_types_f                 prtfx,
+                            pay_run_results                 prrx,
+                            pay_run_result_values           prrvx,
+                            pay_element_types_f             petx,
+                            pay_element_types_tl            pettlx,
+                            fusion.pay_ele_classifications  pecx,
+                            fusion.pay_input_values_f       pivx,
+                            pay_input_values_tl             pivtlx,
+                            cat_elements                    elemx
+                    WHERE   1 = 1
+                            AND pprax.run_type_id = prtfx.run_type_id
+                            AND pprax.payroll_rel_action_id = prrx.payroll_rel_action_id
+                            AND prrx.run_result_id = prrvx.run_result_id
+                            AND prrx.status IN ('P', 'PA')
+                            AND prrx.element_type_id = petx.element_type_id
+                            AND petx.element_type_id = pettlx.element_type_id
+                            AND petx.classification_id = pecx.classification_id
+                            AND petx.element_type_id = pivx.element_type_id
+                            AND prrvx.input_value_id = pivx.input_value_id
+                            AND pivx.input_value_id = pivtlx.input_value_id
+                            AND pivx.user_display_flag = 'Y'
+                            AND UPPER(pettlx.element_name) = UPPER(elemx.element_name)
+                            AND (    (     UPPER (pecx.base_classification_name) IN (  'STANDARD EARNINGS'
+                                                                                    , 'SUPPLEMENTAL EARNINGS'
+                                                                                    , 'TAXABLE BENEFITS'
+                                                                                    )
+                                        AND UPPER (TRIM (pivtlx.name)) IN (  'PAY VALUE'
+                                                                        , 'VALOR PAGO'
+                                                                        , 'EARNINGS CALCULATED'
+                                                                        , 'ISR SUBJECT'
+                                                                        , 'ISR EXEMPT'
+                                                                        )
+                                    )
+                                OR (   (    UPPER (pecx.base_classification_name) IN (  'TAX DEDUCTIONS'
+                                                                                        , 'SOCIAL INSURANCE DEDUCTIONS'
+                                                                                        , 'EMPLOYER TAXES'
+                                                                                    )
+                                        AND UPPER (TRIM (pivtlx.name)) IN (  'EMPLOYER SOCIAL SECURITY QUOTA'
+                                                                            , 'SDI'
+                                                                            , 'PAY VALUE'
+                                                                            , 'VALOR PAGO'
+                                                                            , 'ISR WITHHELD'
+                                                                            , 'ISR SUBSIDY FOR EMPLOYMENT PAID'
+                                                                            , 'ISR SUBJECT'
+                                                                            , 'ISR EXEMPT'
+                                                                            )
+                                        )
+                                    OR (    UPPER (pecx.base_classification_name) IN (  'ABSENCES'
+                                                                                        , 'VOLUNTARY DEDUCTIONS'
+                                                                                        , 'INVOLUNTARY DEDUCTIONS'
+                                                                                    )
+                                        AND UPPER (TRIM (pivtlx.name)) IN (  'PAY VALUE'
+                                                                            , 'VALOR PAGO'
+                                                                            , 'NET PAY'
+                                                                            , 'ISR SUBJECT'
+                                                                            , 'ISR EXEMPT'
+                                                                            )
+                                        )
+                                    )
+                                OR (    UPPER (pecx.base_classification_name) = 'INFORMATION'
+                                    AND UPPER (TRIM (pivtlx.name)) IN (  'PAY VALUE'
+                                                                        , 'VALOR PAGO'
+                                                                        , 'EARNINGS AMOUNT'
+                                                                        , 'DIAS'
+                                                                        , 'HORAS'
+                                                                        , 'ISR SUBJECT'
+                                                                        , 'ISR EXEMPT'
+                                                                        )
+                                    )
+                                OR (    UPPER (pecx.base_classification_name) = 'GLB_SEVERANCE_PAY'
+                                    AND UPPER (TRIM (pivtlx.name)) IN (  'EARNINGS CALCULATED'
+                                                                        , 'ISR SUBJECT'
+                                                                        , 'ISR EXEMPT'
+                                                                        )
+                                    )
+                                )
+                            AND TRUNC (SYSDATE) BETWEEN petx.effective_start_date AND petx.effective_end_date
+                            AND TRUNC (SYSDATE) BETWEEN pivx.effective_start_date AND pivx.effective_end_date
+                            AND pettlx.language = SYS_CONTEXT ('USERENV', 'LANG')
+                            AND pivtlx.language = SYS_CONTEXT ('USERENV', 'LANG')
+                            AND pprax.payroll_rel_action_id = ppra.payroll_rel_action_id
+            )
+        AND TRUNC (ppa.date_earned) BETWEEN TRUNC(pay.effective_start_date) AND TRUNC(pay.effective_end_date)
+        AND TRUNC (ppa.date_earned) BETWEEN TRUNC(paa.effective_start_date) AND TRUNC(paa.effective_end_date)
+        AND TRUNC (ppa.date_earned) BETWEEN TRUNC(pap.effective_start_date) AND TRUNC(pap.effective_end_date)
+        AND TRUNC (ppa.date_earned) BETWEEN TRUNC(ppn.effective_start_date) AND TRUNC(ppn.effective_end_date)
+        AND TRUNC (ppa.date_earned) BETWEEN TRUNC(pj.effective_start_date)  AND TRUNC(pj.effective_end_date)
+        AND TRUNC (ppa.date_earned) BETWEEN TRUNC(ple.effective_start_date) AND TRUNC(ple.effective_end_date)
+GROUP BY    haou_unidad.organization_id,
+            haou_unidad.name
+ORDER BY    organization_name
