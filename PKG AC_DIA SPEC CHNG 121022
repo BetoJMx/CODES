@@ -1,0 +1,46 @@
+--PKG AC_DIA SPEC CHNG 121022
+create or replace PACKAGE     xxtoks_pay_acumulados_dia_pkg AS  
+    l_user_token VARCHAR2(5000);  
+    --  
+    PROCEDURE limpiar(p_id_exec NUMBER);  
+    --  
+    PROCEDURE get_organizations(  p_fechainicio         IN VARCHAR2 
+                                , p_fechafin            IN VARCHAR2 
+                                , p_juegoconsolidacion  IN VARCHAR2 
+                                , p_nomina              IN VARCHAR2 
+                                , p_id_exec             IN NUMBER 
+                                , p_emp_legal           IN VARCHAR2 
+                                , p_user_token          IN VARCHAR2 DEFAULT NULL 
+                                , p_juego_asignacion    IN VARCHAR2
+								, p_flag				IN CHAR
+                               );
+    --  
+    PROCEDURE get_result_values(   
+            p_start_id      NUMBER  
+          , p_end_id        NUMBER  
+    );  
+    --  
+    PROCEDURE generar_procesos_paralelo(   
+            p_id_exec       NUMBER 
+    );  
+    --  
+    PROCEDURE ac_data (contenido CLOB, id_exec IN NUMBER);  
+    --  
+    PROCEDURE ac_clob ( p_id_exec IN NUMBER,  
+                        p_fechainicio IN VARCHAR2,  
+                        p_fechafin IN VARCHAR2 );  
+    --  
+    --PROCEDURE totales_ap_de (id_exec IN NUMBER);  
+    --  
+    PROCEDURE init_exe(  p_fechainicio          IN VARCHAR2  
+                       , p_fechafin             IN VARCHAR2  
+                       , p_juegoconsolidacion   IN VARCHAR2  
+                       , p_nomina               IN VARCHAR2  
+                       , p_emp_legal            IN VARCHAR2 
+                       , p_juego_asignacion     IN VARCHAR2 
+                       , p_user_token           IN VARCHAR2 DEFAULT NULL 
+                       , p_id_process           IN NUMBER
+                       , p_status               OUT NUMBER
+                      );  
+    --  
+END xxtoks_pay_acumulados_dia_pkg; 
