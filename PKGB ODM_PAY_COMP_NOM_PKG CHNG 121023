@@ -1,0 +1,758 @@
+--PKGB ODM_PAY_COMP_NOM_PKG CHNG 121023
+
+create or replace PACKAGE BODY ODM_PAY_COMP_NOM_PKG AS   
+/*
+    Paquete encargado de la operación sobre la generación del reporte de comparativo de nomina.
+
+VERSION |RESPONSABLE            |CAMBIO                                                         |FECHA
+--------------------------------------------------------------------------------------------------------
+1.0.0   |ALBERTO JUAREZ         |Creación 		        										|250923
+*/
+    --   
+    PROCEDURE ac_data (contenido IN CLOB, p_process_id IN NUMBER)   
+    AS   
+        ac_id       NUMBER;   
+		v_errormsg  VARCHAR2(512);   
+    BEGIN   
+        INSERT INTO ODM_PAY_COMP_NOM_CLOB_DATA (contenido, process_id)   
+             VALUES (contenido, p_process_id);   
+   
+        COMMIT;   
+   
+	EXCEPTION   
+	WHEN OTHERS THEN    
+			v_errormsg := SQLERRM;   
+			INSERT INTO XXODM_PAY_COMP_NOM_ERROR_LOG_T(  
+                process_id,
+                error,
+                fecha,
+                created_by,
+                creation_date,
+                last_updated_by,
+                last_update_date   
+            )VALUES(  
+                p_process_id,
+                'Ocurrio un error al insertar en ac_data:'||v_errormsg,
+                SYSDATE - 6/24,
+                '-1',
+                SYSDATE - 6/24,
+                '-1',
+                SYSDATE - 6/24
+            );
+    END ac_data;   
+    --   
+    PROCEDURE ac_clob ( 
+        p_process_id1           IN NUMBER,
+        p_process_id2           IN NUMBER,
+        p_process_id            IN NUMBER,
+        p_juegoconsolidacion_n  IN VARCHAR2 DEFAULT NULL,
+        p_nomina_n              IN VARCHAR2 DEFAULT NULL,
+        p_emp_legal_n           IN VARCHAR2 DEFAULT NULL
+    ) AS   
+        contenido       CLOB;   
+        lineas          CLOB;   
+        v_excel         VARCHAR2 (32000);   
+		v_errormsg      VARCHAR2(512);   
+        --variables elementos   
+        v_elementos     CLOB;   
+        v_header        CLOB := EMPTY_CLOB();   
+        v_header_e      CLOB := EMPTY_CLOB();
+        v_header1       CLOB := EMPTY_CLOB();
+        v_header1_e     CLOB := EMPTY_CLOB();
+		v_count         NUMBER := 1;   
+        l_emp_leg       VARCHAR2(250);
+        l_header_seq    NUMBER := 0;  
+        l_header_seq_v  VARCHAR2(10) := '';
+        l_concepto      VARCHAR2(250);
+        l_concepto_desc VARCHAR2(250);
+        --variables lineas
+        l_linea1            CLOB := EMPTY_CLOB();
+        l_periodo1_n        VARCHAR2(250) := '';
+        l_periodo2_n        VARCHAR2(250) := '';
+        l_periodo1_i        VARCHAR2(250) := '';
+        l_periodo1_f        VARCHAR2(250) := '';
+        l_periodo2_i        VARCHAR2(250) := '';
+        l_periodo2_f        VARCHAR2(250) := '';
+        l_periodo_etiqueta1 VARCHAR2(250) := '';
+        l_periodo_etiqueta2 VARCHAR2(250) := '';
+        l_periodo1_tipo     VARCHAR2(250) := '';
+        l_periodo2_tipo     VARCHAR2(250) := '';
+        l_periodo1_num      NUMBER;
+        l_periodo2_num      NUMBER;
+        --
+        l_perc_ant              NUMBER;
+        l_emp_ant               NUMBER;
+        l_perc_act              NUMBER;
+        l_emp_act               NUMBER;
+        l_dif_perc              NUMBER;
+        l_porc_perc             NUMBER;
+        l_dif_empl              NUMBER;
+        l_porc_empl             NUMBER;
+        l_imp_ant_conc          NUMBER;
+        l_imp_act_conc          NUMBER;
+        l_dif_imp_conc          NUMBER;
+        l_porc_imp_conc         NUMBER;
+        l_cant_empl_ant_conc    NUMBER;
+        l_cant_empl_act_conc    NUMBER;
+        l_dif_emp_conc          NUMBER;
+        l_porc_emp_conc         NUMBER;
+   
+        CURSOR matrix (v_id_exec NUMBER, p_tienda VARCHAR2) IS   
+  
+            WITH xxodm_totales AS(   
+                SELECT    empleados.unidad
+                        , empleados.tienda
+                        , COUNT(empleados.no_emp) total_emp
+                        , SUM(empleados.total_earnings) total_earnings
+                        , SUM(empleados.net_payment) net_payment
+                FROM      xxodm_pay_acumulados_report_data empleados
+                WHERE     1 = 1
+                AND       empleados.process_id = v_id_exec
+                AND       empleados.tienda_id = NVL(p_tienda,empleados.tienda_id)
+                AND       EXISTS(
+                                    SELECT    NULL
+                                    FROM      xxodm_pay_acumulados_element_source resultados
+                                    WHERE     1 = 1
+                                    AND       resultados.process_id = empleados.process_id
+                                    AND       resultados.payroll_rel_action_id = empleados.payroll_rel_action_id
+                                    AND       resultados.element_classification = 'PERCEPCIONES'
+                                )
+                GROUP BY empleados.unidad
+                        , empleados.tienda
+            )   
+            --
+            SELECT  empleados.unidad,
+                    empleados.tienda,
+                    NVL(empleados.total_earnings, 0) t_per,
+                    NVL(empleados.total_earnings, 0) t_emp,
+                    empleados.net_payment
+            FROM    xxodm_totales empleados  
+            WHERE   1 = 1   
+            GROUP BY    empleados.unidad,
+                        empleados.tienda,
+                        NVL(empleados.total_earnings, 0),
+                        empleados.net_payment
+            ORDER BY    empleados.unidad;
+
+        CURSOR matrix_elem (v_id_exec NUMBER, p_tienda VARCHAR2, p_nombre_elemento VARCHAR2) IS   
+  
+            SELECT  SUM(NVL(resultados.result_value, 0)) result_value,
+                    COUNT(empleados.no_emp) total_emp,
+                    resultados.element_name
+            FROM    xxodm_pay_acumulados_report_data empleados,
+                    xxodm_pay_acumulados_element_source resultados
+            WHERE   1 = 1
+                    AND empleados.process_id = resultados.process_id
+                    AND empleados.tienda_id = NVL(p_tienda,empleados.tienda_id)
+                    AND resultados.element_name = p_nombre_elemento
+                    --+
+                    AND empleados.payroll_rel_action_id = resultados.payroll_rel_action_id
+                    --+
+                    AND empleados.process_id = v_id_exec
+                    AND resultados.element_classification = 'PERCEPCIONES'
+            GROUP BY  resultados.element_name;
+    --   
+    BEGIN   
+        --construccion header elementos nuevo
+        v_header := 'CMTCIA,'||   
+                    'CMTTIN,'||   
+                    'CMTTIE,'||   
+                    'CMTNOM,'||   
+                    'CMTDTN,'||   
+                    'CMTPAN,'||   
+                    'CMTDPN,'||
+                    'CMTNTN,'||
+                    'CMTNEN,'||
+                    'CMTPAA,'||
+                    'CMTDPA,'||
+                    'CMTNTA,'||
+                    'CMTNEA,'||
+                    'CMTDIN,'||
+                    'CMTPOR,'||
+                    'CMTDIE,'||
+                    'CMTPOE,'||
+                    'CMTPOB,'||
+                    'CMTOBS';
+        
+        v_header1 := 'Compañía,'||   
+                    'Num. Tienda,'||   
+                    'Nombre Tienda,'||   
+                    'Tipo Nomina,'||   
+                    'Desc. Tipo Nomina,'||   
+                    'Periodo Anterior,'||   
+                    'Desc. Periodo Anterior,'||
+                    'Percep. Periodo Anterior,'||
+                    'Cant. Empleados Per. Ant.,'||
+                    'Periodo Actual,'||
+                    'Desc. Periodo Actual,'||
+                    'Percep. Periodo Actual,'||
+                    'Cant. Empleados Per. Act.,'||
+                    'Diferencia Percepcion,'||
+                    'Porcentaje Percepcion,'||
+                    'Diferencia Cant. Empl.,'||
+                    'Porcentaje Empleados,'||
+                    'Porcentaje Base,'||
+                    'Observaciones';  
+        
+        --FORMADO DE LINEAS
+
+        FOR x IN (
+            SELECT  tienda_id,
+                    tienda,
+                    unidad
+            FROM    xxodm_pay_acumulados_report_data
+            WHERE   1 = 1
+                    AND process_id IN (p_process_id1, p_process_id2)
+            GROUP BY    tienda_id,
+                        tienda,
+                        unidad
+        )
+        LOOP
+
+            SELECT  PERIODO1_N,
+                    PERIODO2_N,
+                    PERIODO1_I,
+                    PERIODO1_F,
+                    PERIODO2_I,
+                    PERIODO2_F,
+                    PERIODO_ETIQUETA1,
+                    PERIODO_ETIQUETA2,
+                    PERIODO1_TIPO,
+                    PERIODO2_TIPO,
+                    PERIODO1_NUM,
+                    PERIODO2_NUM
+            INTO    l_periodo1_n,
+                    l_periodo2_n,
+                    l_periodo1_i,
+                    l_periodo1_f,
+                    l_periodo2_i,
+                    l_periodo2_f,
+                    l_periodo_etiqueta1,
+                    l_periodo_etiqueta2,
+                    l_periodo1_tipo,
+                    l_periodo2_tipo,
+                    l_periodo1_num,
+                    l_periodo2_num
+            FROM    XXODM_PAY_COMP_NOM_PROCESS_T
+            WHERE   process_id = p_process_id;
+        
+            l_linea1 := l_linea1    || 
+                        '01'        || ',' || --compania
+                        x.unidad    || ',' || --no. tienda
+                        x.tienda    || ',' || --tienda
+                        '01'        || ','; --tipo_nomina
+
+            FOR y IN matrix(p_process_id1, x.tienda_id) LOOP
+                
+                l_linea1 := l_linea1            || 
+                            l_periodo1_tipo     || ',' || --desc tipo nomina periodo ant
+                            l_periodo1_num      || ',' || --num periodo ant
+                            l_periodo_etiqueta1 || ',' || --label periodo ant
+                            y.t_per             || ',' || --total percep periodo ant
+                            NVL(y.t_emp, 0)     || ','; --total empl periodo ant
+                
+                l_perc_ant := NVL(y.t_per, 0);
+                l_emp_ant := NVL(y.t_emp, 0);
+
+            END LOOP;
+
+            FOR y IN matrix(p_process_id2, x.tienda_id) LOOP
+                
+                l_linea1 := l_linea1            || 
+                            l_periodo2_num      || ',' || --num periodo act
+                            l_periodo_etiqueta2 || ',' || --label periodo act
+                            y.t_per             || ',' || --total percep periodo act
+                            NVL(y.t_emp, 0)     || ','; --total empl periodo act
+                
+                l_perc_act := NVL(y.t_per, 0);
+                l_emp_act := NVL(y.t_emp, 0);
+                            
+            END LOOP;
+
+            l_dif_perc := ROUND(l_perc_act - l_perc_ant, 2);
+            l_dif_empl := l_emp_act - l_emp_ant;
+            IF l_perc_ant = 0 THEN
+                l_porc_perc := 0;
+            ELSE
+                l_porc_perc := ROUND(l_dif_perc / l_perc_ant, 2);
+            END IF;
+            IF l_emp_ant = 0 THEN
+                l_porc_empl := 0;
+            ELSE
+                l_porc_empl := ROUND(l_dif_empl / l_emp_ant, 2);
+            END IF;
+
+            l_linea1 := l_linea1    ||
+                        l_dif_perc  || ',' || -- dif perc
+                        l_porc_perc || ',' || -- % perc
+                        l_dif_empl  || ',' || -- dif empl
+                        l_porc_empl || ',' || -- % empl
+                        '20'        || ',' || -- % base
+                        CASE 
+                            WHEN l_porc_perc > 20 THEN
+                                ABS(l_porc_perc) - 20 || ' por arriba del % base,'
+                            WHEN l_porc_perc < -20 THEN
+                                ABS(l_porc_perc) - 20 || ' por debajo del % base,'
+                            ELSE
+                                ','
+                        END; --observaciones
+
+            FOR z IN (
+                SELECT  resultados.element_name,
+                        resultados.element_key
+                FROM    xxodm_pay_acumulados_report_data empleados,
+                        xxodm_pay_acumulados_element_source resultados
+                WHERE   1 = 1
+                        AND empleados.process_id = resultados.process_id
+                        --+
+                        AND empleados.payroll_rel_action_id = resultados.payroll_rel_action_id
+                        --+
+                        AND empleados.process_id IN (p_process_id1, p_process_id2)
+                        AND resultados.element_classification = 'PERCEPCIONES'
+                GROUP BY    resultados.element_name,
+                            resultados.element_key
+                ORDER BY    resultados.element_name
+            )
+            LOOP
+                l_concepto := z.element_key;
+                l_concepto_desc := z.element_name;
+
+                l_linea1 := l_linea1 || l_concepto || ',' || l_concepto_desc || ',';
+                
+                l_imp_ant_conc := 0;
+                l_cant_empl_ant_conc := 0;
+
+                l_imp_act_conc := 0;
+                l_cant_empl_act_conc := 0;
+                
+                FOR a IN matrix_elem (p_process_id1, x.tienda_id, z.element_name)
+                LOOP
+
+                    l_imp_ant_conc := NVL(a.result_value, 0);
+                    l_cant_empl_ant_conc := NVL(a.total_emp, 0);
+
+                END LOOP;
+
+                FOR a IN matrix_elem (p_process_id2, x.tienda_id, z.element_name)
+                LOOP
+
+                    l_imp_act_conc := NVL(a.result_value, 0);
+                    l_cant_empl_act_conc := NVL(a.total_emp, 0);
+
+                END LOOP;
+
+                l_dif_imp_conc := ROUND(l_imp_act_conc - l_imp_ant_conc, 2);
+                l_dif_emp_conc := l_cant_empl_act_conc - l_cant_empl_ant_conc;
+                IF l_imp_ant_conc = 0 THEN
+                    l_porc_imp_conc := 0;
+                ELSE
+                    l_porc_imp_conc := ROUND(l_dif_imp_conc / l_imp_ant_conc, 2);
+                END IF;
+                IF l_cant_empl_ant_conc = 0 THEN
+                    l_porc_emp_conc := 0;
+                ELSE
+                    l_porc_emp_conc := ROUND(l_dif_emp_conc / l_cant_empl_ant_conc, 2);
+                END IF;
+
+                l_linea1 := l_linea1 ||
+                            l_imp_ant_conc || ',' ||
+                            l_imp_act_conc || ',' || 
+                            l_dif_imp_conc || ',' || 
+                            l_porc_imp_conc || ',' || 
+                            l_cant_empl_ant_conc || ',' || 
+                            l_cant_empl_act_conc || ',' || 
+                            l_dif_emp_conc || ',' || 
+                            l_porc_emp_conc || ',';
+            
+            END LOOP;
+            --
+            l_linea1 := l_linea1 || CHR(13);
+            --
+        END LOOP;  ------***
+
+        --ENCABEZADO DE ARCHIVO   
+        contenido := 'Reporte Comparativo de Nomina,' || p_process_id || CHR(13);
+        contenido := contenido || 'Nomina:,'|| p_nomina_n || CHR(13);
+        contenido := contenido || 'Juego de Consolidacion:,'|| NVL(p_juegoconsolidacion_n,'TODOS') || CHR(13);
+        contenido := contenido || 'Periodos:' ||',' || l_periodo1_num || ' - ' || l_periodo2_num || ' ' || l_periodo1_tipo || CHR(13);   
+        contenido := contenido || 'Fecha de Ejecucion:,' || TO_CHAR((SYSDATE - 6/24), 'DD/MM/YYYY HH24:MI:SS') || CHR(13) || CHR(13);   
+
+        FOR b IN (
+            SELECT  resultados.element_name,
+                    resultados.element_key
+            FROM    xxodm_pay_acumulados_report_data empleados,
+                    xxodm_pay_acumulados_element_source resultados
+            WHERE   1 = 1
+                    AND empleados.process_id = resultados.process_id
+                    --+
+                    AND empleados.payroll_rel_action_id = resultados.payroll_rel_action_id
+                    --+
+                    AND empleados.process_id IN (p_process_id1, p_process_id2)
+                    AND resultados.element_classification = 'PERCEPCIONES'
+            GROUP BY    resultados.element_name,
+                        resultados.element_key
+            ORDER BY    resultados.element_name
+        )
+        LOOP
+
+            l_header_seq := l_header_seq + 1;
+            
+            v_header := v_header || 
+                        ',CMTC' || l_header_seq || 
+                        ',CMTD' || l_header_seq || 
+                        ',CMTN' || l_header_seq || 
+                        ',CMTA' || l_header_seq ||
+                        ',CMTI' || l_header_seq ||
+                        ',CMTP' || l_header_seq ||
+                        ',CMTE' || l_header_seq ||
+                        ',CMTT' || l_header_seq ||
+                        ',CMTM' || l_header_seq ||
+                        ',CMTO' || l_header_seq ;
+            
+            v_header1 :=    v_header1 || 
+                            ',Concepto ' || l_header_seq || 
+                            ',Descripción Concepto ' || l_header_seq || 
+                            ',Importe Ant. Concepto ' || l_header_seq || 
+                            ',Importe Act. Concepto ' || l_header_seq ||
+                            ',Dif. Importe Concepto ' || l_header_seq ||
+                            ',Porc. Importe Concepto' || l_header_seq ||
+                            ',Cant. Empl. Per. Ant. Conc. ' || l_header_seq ||
+                            ',Cant. Empl. Per. Act. Conc. ' || l_header_seq ||
+                            ',Dif. Empl. Concepto ' || l_header_seq ||
+                            ',Porc. Empl. Concepto ' || l_header_seq;
+        END LOOP;
+
+        contenido := contenido || v_header || CHR(13) || v_header1 || CHR(13) || l_linea1;
+
+        ac_data (contenido, p_process_id);   
+        --   
+    EXCEPTION    
+	WHEN OTHERS THEN   
+			v_errormsg := SQLERRM;   
+			INSERT INTO XXODM_PAY_COMP_NOM_ERROR_LOG_T(  
+                process_id,
+                error,
+                fecha,
+                created_by,
+                creation_date,
+                last_updated_by,
+                last_update_date   
+            )VALUES(  
+                p_process_id,
+                'Ocurrio un error al crear en ac_clob:'||v_errormsg||' | '||DBMS_UTILITY.FORMAT_ERROR_BACKTRACE,
+                SYSDATE - 6/24,
+                '-1',
+                SYSDATE - 6/24,
+                '-1',
+                SYSDATE - 6/24
+            );   	   
+    END ac_clob;   
+    --   
+    PROCEDURE main(  
+        p_periodo1              IN VARCHAR2,    
+        p_periodo2              IN VARCHAR2,    
+        p_periodo1_n            IN VARCHAR2,    
+        p_periodo2_n            IN VARCHAR2,    
+        p_juegoconsolidacion    IN VARCHAR2,    
+        p_juegoconsolidacion_n  IN VARCHAR2,    
+        p_nomina                IN VARCHAR2,    
+        p_nomina_n              IN VARCHAR2,    
+        p_emp_legal             IN VARCHAR2,   
+        p_emp_legal_n           IN VARCHAR2,   
+        p_user_token            IN VARCHAR2,    
+		p_process_id            IN NUMBER,   
+		p_user_name             IN VARCHAR2
+    ) AS   
+        --   
+        v_id_exec       NUMBER;   
+        v_inicio        DATE;   
+        v_errormsg      VARCHAR2(512); 
+        l_user_name     VARCHAR2(50) := p_user_name;
+        l_user_token    VARCHAR2(4500) := p_user_token;
+        l_process_id_1  NUMBER;
+        l_process_id_2  NUMBER;
+        --+
+        l_periodo1_i    VARCHAR2(50);
+        l_periodo1_f    VARCHAR2(50);
+        l_periodo2_i    VARCHAR2(50);
+        l_periodo2_f    VARCHAR2(50);
+        BEGIN   
+            --   
+            v_inicio := sysdate - 6/24;   
+            --   
+			v_id_exec := p_process_id;   --+   
+            BEGIN   
+
+			    INSERT INTO XXODM_PAY_COMP_NOM_PROCESS_T( 
+                    PROCESS_ID,
+			        NOMINA,
+                    NOMINA_N,
+					JUEGO_CONSOLIDACION,
+                    JUEGO_CONSOLIDACION_N,
+					EMPLEADOR_LEGAL,
+                    EMPLEADOR_LEGAL_N,
+					PERIODO1_ID,
+					PERIODO2_ID,
+					PERIODO1_N,
+					PERIODO2_N,
+					CREATED_BY,
+                    LAST_UPDATED_BY
+                )VALUES(
+                    v_id_exec,
+					p_nomina,
+					p_nomina_n,
+					p_juegoconsolidacion,
+					p_juegoconsolidacion_n,
+					p_emp_legal,
+					p_emp_legal_n,
+					p_periodo1,
+					p_periodo2,
+					p_periodo1_n,
+					p_periodo2_n,
+					l_user_name,
+					l_user_name
+                );   
+               --+   
+            EXCEPTION   
+                WHEN OTHERS THEN   
+			    v_errormsg := SQLERRM;   
+			    INSERT INTO XXODM_PAY_COMP_NOM_ERROR_LOG_T(  
+                    process_id,
+			    	error,
+			    	fecha,
+			    	created_by,
+			    	creation_date,
+			    	last_updated_by,
+			    	last_update_date   
+                )VALUES(  
+                    v_id_exec,
+			    	'Ocurrio un error al insertar en insert process:'||v_errormsg,
+			    	SYSDATE - 6/24,
+			    	'-1',
+			    	SYSDATE - 6/24,
+			    	'-1',
+			    	SYSDATE - 6/24
+                );
+            END;   
+            --   
+            --Se ejecuta el proceso generico de datos para nomina   
+            BEGIN
+                
+                l_process_id_1 := xxgrg_process_acumulado_sec.NEXTVAL;
+                --+
+                ODM_PAY_COMP_NOM_PKG.get_period_info (
+                    p_periodo1,
+                    p_nomina,
+                    v_id_exec,
+                    1,
+                    l_periodo1_i,
+                    l_periodo1_f
+                );
+                --+
+                XXODM_PAY_DATA_AC_PKG.init_exe(  
+                    l_periodo1_i,
+                    l_periodo1_f,
+                    p_juegoconsolidacion,
+                    p_nomina,
+                    p_emp_legal,
+                    l_user_token,
+                    l_process_id_1
+                );   
+                --+
+                l_process_id_2 := xxgrg_process_acumulado_sec.NEXTVAL;
+                --+
+                ODM_PAY_COMP_NOM_PKG.get_period_info (
+                    p_periodo2,
+                    p_nomina,
+                    p_process_id,
+                    2,
+                    l_periodo2_i,
+                    l_periodo2_f
+                );
+                --+
+                XXODM_PAY_DATA_AC_PKG.init_exe(  
+                    l_periodo2_i,
+                    l_periodo2_f,
+                    p_juegoconsolidacion,
+                    p_nomina,
+                    p_emp_legal,
+                    l_user_token,
+                    l_process_id_2
+                ); 
+                
+                UPDATE  XXODM_PAY_COMP_NOM_PROCESS_T 
+                SET     rep_proc_id1 = l_process_id_1, 
+                        rep_proc_id2 = l_process_id_2
+                WHERE   process_id = p_process_id;
+                --   
+                ODM_PAY_COMP_NOM_PKG.ac_clob ( 
+                    l_process_id_1,
+                    l_process_id_2,
+                    v_id_exec,
+                    p_juegoconsolidacion_n,
+                    p_nomina_n,
+                    p_emp_legal_n
+                );
+                --
+            EXCEPTION WHEN OTHERS THEN
+                v_errormsg := SQLERRM;   
+			    INSERT INTO XXODM_PAY_COMP_NOM_ERROR_LOG_T(  
+                    process_id,
+					error,
+					fecha,
+					created_by,
+					creation_date,
+					last_updated_by,
+					last_update_date   
+                ) VALUES(  
+                    v_id_exec,
+					'Ocurrio un error en el proceso data_ac:'||v_errormsg,
+					SYSDATE - 6/24,
+					'-1',
+					SYSDATE - 6/24,
+					'-1',
+					SYSDATE - 6/24 
+                );				 
+            END;
+            --   
+            --ODM_PAY_COMP_NOM_PKG.limpiar(v_id_exec);   
+            --   
+			--+   
+			UPDATE XXODM_PAY_COMP_NOM_PROCESS_T   
+			SET ESTATUS = 'PROCESSED'   
+			   ,FECHA_FIN = SYSDATE - 6/24   
+			WHERE PROCESS_ID = v_id_exec;   
+			--+   
+            COMMIT; 
+            --+ 
+        EXCEPTION   
+            WHEN OTHERS THEN   
+			   
+			v_errormsg := SQLERRM;   
+			INSERT INTO XXODM_PAY_COMP_NOM_ERROR_LOG_T(  
+                    process_id,
+			    	error,
+			    	fecha,
+			    	created_by,
+			    	creation_date,
+			    	last_updated_by,
+			    	last_update_date   
+                )VALUES(  
+                    v_id_exec,
+			    	'Ocurrio un error al insertar en main:'||v_errormsg,
+			    	SYSDATE - 6/24,
+			    	'-1',
+			    	SYSDATE - 6/24,
+			    	'-1',
+			    	SYSDATE - 6/24
+                );		   
+				   
+   
+        END main;   
+        --
+        PROCEDURE get_period_info (
+            p_period_id     IN NUMBER,
+            p_payroll_id    IN NUMBER,
+            p_process_id    IN NUMBER,
+            p_period_seq    IN NUMBER,
+            x_period_i      OUT VARCHAR2,   
+            x_period_f      OUT VARCHAR2   
+        ) AS
+
+            l_ws_envelope   CLOB;
+            l_ws_resp_xml   XMLTYPE;
+            v_cdata         CLOB;
+            l_clob          CLOB;
+            --+
+            l_periodo_num   NUMBER;
+            l_periodo_tipo  VARCHAR2(50);
+            l_periodo_i     VARCHAR2(50);
+            l_periodo_f     VARCHAR2(50);
+            l_periodo_e     VARCHAR2(50);
+
+        BEGIN 
+
+            l_ws_envelope :=
+                '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                    <soap:Body>
+                        <pub:runReport>
+                            <pub:reportRequest>
+                            <pub:parameterNameValues>
+                                <pub:item>
+                                    <pub:name>p_payroll_id</pub:name>
+                                    <pub:values>
+                                        <pub:item>'|| p_payroll_id ||'</pub:item>
+                                    </pub:values>
+                                </pub:item>
+                                <pub:item>
+                                    <pub:name>p_time_period_id</pub:name>
+                                    <pub:values>
+                                        <pub:item>'|| p_period_id ||'</pub:item>
+                                    </pub:values>
+                                </pub:item>
+                            </pub:parameterNameValues>
+                                <pub:attributeFormat>xml</pub:attributeFormat>
+                                <pub:reportAbsolutePath>/Reportes Custom/OD/PAY/ODM Catalogos Parametros/ODM Rep Comparativo Nomina/ODM Periodo.xdo</pub:reportAbsolutePath>
+                                <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+                            </pub:reportRequest>
+                        </pub:runReport>
+                    </soap:Body>
+                </soap:Envelope>';
+            --+
+            GRG_COMMON_CONNECTIONS.get_otbi_report(
+                l_ws_envelope => l_ws_envelope,
+                l_user_token  => null,
+                x_ws_response => l_clob,
+                p_instance_name => 'DEV2' 
+            ); 
+            --+
+            l_ws_resp_xml := XMLTYPE.createXML (l_clob);
+            --+
+            SELECT  xml_data.period_num,
+                    xml_data.period_type,
+                    xml_data.start_date,
+                    xml_data.end_date,
+                    xml_data.period_label
+            INTO    l_periodo_num,
+                    l_periodo_tipo,
+                    l_periodo_i,
+                    l_periodo_f,
+                    l_periodo_e
+            FROM    XMLTABLE(
+                        '/DATA_DS/G_1'
+                        PASSING XMLTYPE.createXML(l_clob)
+                        COLUMNS
+                            PERIOD_NUM      VARCHAR2(250) PATH 'PERIOD_NUM',
+                            PERIOD_TYPE     VARCHAR2(250) PATH 'PERIOD_TYPE',
+                            START_DATE      VARCHAR2(250) PATH 'START_DATE',
+                            END_DATE        VARCHAR2(250) PATH 'END_DATE',
+                            PERIOD_LABEL    VARCHAR2(250) PATH 'PERIOD_LABEL'
+                    ) XML_DATA;
+            --+
+            IF p_period_seq = 1 THEN
+                UPDATE  XXODM_PAY_COMP_NOM_PROCESS_T
+                SET     periodo1_num = l_periodo_num,
+                        periodo1_tipo = l_periodo_tipo,
+                        periodo1_i = l_periodo_i,
+                        periodo1_f = l_periodo_f,
+                        periodo_etiqueta1 = l_periodo_e
+                WHERE   process_id = p_process_id;
+                COMMIT;
+            ELSIF p_period_seq = 2 THEN 
+                UPDATE  XXODM_PAY_COMP_NOM_PROCESS_T
+                SET     periodo2_num = l_periodo_num,
+                        periodo2_tipo = l_periodo_tipo,
+                        periodo2_i = l_periodo_i,
+                        periodo2_f = l_periodo_f,
+                        periodo_etiqueta2 = l_periodo_e
+                WHERE   process_id = p_process_id;
+                COMMIT;
+            END IF;
+            --+
+            x_period_i := l_periodo_i;
+            x_period_f := l_periodo_f;
+            --+
+        END get_period_info;
+        --
+END ODM_PAY_COMP_NOM_PKG;
+/
