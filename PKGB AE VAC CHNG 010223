@@ -1,0 +1,231 @@
+--PKGB AE VAC CHNG 010223
+create or replace package body XXGRG_AE_TABLAS_VAC_PKG as
+
+	procedure get_vacaciones (X OUT VARCHAR2)
+	IS 
+        l_ws_envelope       CLOB; 
+        l_ws_resp_xml2      XMLTYPE; 
+        l_clob              CLOB; 
+		-- 
+		v_error             VARCHAR2(500); 
+        v_ini               NUMBER := 0;
+        -- VARIABLES CORREO
+		v_body_html  		VARCHAR2(2000);
+		v_from       		VARCHAR2(500)   := 'no-reply@toks.com.mx';
+		v_to         		VARCHAR2(500)   := 'alanrogelio.contreras@4ce.com.mx,memo.ramos.minor.170694@gmail.com';                  --Correo del destinatario memo.ramos.minor.170694@gmail.com
+		v_copy_to    		VARCHAR2(500)   := 'alancontreras199720@gmail.com,memo.ramos.minor.170694@gmail.com';                  --copia de correo memo.ramos.minor.170694@gmail.com
+		v_subject    		VARCHAR2(500)   := 'Actualizacion Días de Vacaciones - Asistencia Electrónica '||to_date(sysdate -6/24,'DD-MM-YYYY') ;             --Asunto
+		acumulador 			VARCHAR2(2000);	
+		v_contador_correo	number := 0;
+        
+        CURSOR c_update IS
+            SELECT  TABLE_NAME,
+                    YEARS_SENIORITY,
+                    DAYS_OF_VACATION,
+                    DOV_EFFECTIVE_FROM,
+                    TABLE_EFFECTIVE_FROM,
+                    LAST_UPDATE_DATE
+            FROM    XXGRG_AE_TABLAS_VACACIONES_NEW
+            WHERE   1=1;
+                    
+    BEGIN 
+
+        l_ws_envelope :=    '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+                                <soap:Body> 
+                                    <pub:runReport> 
+                                        <pub:reportRequest> 
+                                            <pub:reportAbsolutePath>/Reportes Custom/PAY/GRG AE Tablas Vacaciones/Tabla_Vacaciones_RP.xdo</pub:reportAbsolutePath> 
+                                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+                                        </pub:reportRequest> 
+                                    </pub:runReport> 
+                                </soap:Body> 
+                            </soap:Envelope>';    
+							 
+        --------------------------------------------------- 
+        -------------------TOKEN--------------------------- 
+		GRG_COMMON_CONNECTIONS_ATI_PKG.get_otbi_report( 
+            l_ws_envelope    => l_ws_envelope, 
+            l_user_token     => null,  --p_user_token
+            x_ws_response    => l_clob,
+			p_instance_name  => 'DEV1'
+			); 
+        ------------------------------------------------- 
+        ------------------------------------------------- 
+        l_ws_resp_xml2 := xmltype.createxml (l_clob);  
+ 
+        BEGIN 
+
+            -- Eliminar Registros de la Tabla --+
+            EXECUTE IMMEDIATE ('DELETE 
+                                FROM XXGRG_AE_TABLAS_VACACIONES_NEW 
+                                WHERE 1=1 
+                                AND CREATION_DATE NOT BETWEEN SYSDATE - 7 AND SYSDATE'); --+
+            COMMIT;
+                     
+			FOR i IN (
+                        SELECT  xml_data.TABLE_NAME, 
+								xml_data.YEARS_SENIORITY, 
+								xml_data.DAYS_OF_VACATION, 
+								xml_data.DOV_EFFECTIVE_FROM,
+								xml_data.TABLE_EFFECTIVE_FROM
+						FROM    XMLTABLE (
+									'/DATA_DS/G_1'  
+									PASSING xmltype.createxml(l_clob) 
+									COLUMNS TABLE_NAME              VARCHAR2(250) PATH 'TABLE_NAME', 
+									        YEARS_SENIORITY         VARCHAR2(250) PATH 'YEARS_SENIORITY', 
+											DAYS_OF_VACATION	    VARCHAR2(250) PATH 'DAYS_OF_VACATION',
+                                            DOV_EFFECTIVE_FROM	    VARCHAR2(250) PATH 'DOV_EFFECTIVE_FROM',
+                                            TABLE_EFFECTIVE_FROM	VARCHAR2(250) PATH 'TABLE_EFFECTIVE_FROM'
+								  ) xml_data ) 
+            LOOP 
+                --
+                BEGIN
+        			SELECT  1
+        			INTO    v_ini
+        			FROM    XXGRG_AE_TABLAS_VACACIONES_BASE
+        			WHERE   i.TABLE_NAME = TABLE_NAME
+        					AND i.YEARS_SENIORITY = YEARS_SENIORITY
+        					AND i.DAYS_OF_VACATION = DAYS_OF_VACATION
+                            AND i.DOV_EFFECTIVE_FROM = DOV_EFFECTIVE_FROM
+                            AND i.TABLE_EFFECTIVE_FROM = TABLE_EFFECTIVE_FROM
+                            AND ROWNUM = 1;
+
+                EXCEPTION WHEN OTHERS THEN
+                    v_ini := 0;
+                END;
+							
+				IF v_ini = 0 THEN 
+                    v_contador_correo := v_contador_correo + 1;
+
+				    INSERT INTO XXGRG_AE_TABLAS_VACACIONES_NEW
+                    (	
+                        TABLE_NAME,
+						YEARS_SENIORITY,
+						DAYS_OF_VACATION,
+						DOV_EFFECTIVE_FROM,
+						TABLE_EFFECTIVE_FROM,
+						CREATED_BY,
+						CREATION_DATE,
+						LAST_UPDATED_BY,
+						LAST_UPDATE_DATE
+					) VALUES (	i.TABLE_NAME, 
+								TO_NUMBER(i.YEARS_SENIORITY), 
+								i.DAYS_OF_VACATION, 
+								i.DOV_EFFECTIVE_FROM, 
+								i.TABLE_EFFECTIVE_FROM, 
+								'-1',
+                                SYSDATE -6/24, 
+								'-1', 
+                                SYSDATE -6/24
+                    ); 	
+                    COMMIT;	
+
+                    acumulador := acumulador 	||'<b>'||'Nombre Tabla: '                   ||'</b>'||i.TABLE_NAME||', '
+    					 						||'<b>'||'Años de Antigüedad: '             ||'</b>'||i.YEARS_SENIORITY||', '
+    					 						||'<b>'||'Días de Vacaciones: '             ||'</b>'||i.DAYS_OF_VACATION||', '
+    					 						||'<b>'||'Fecha Ultimo Cambio Tabla: '      ||'</b>'||i.DOV_EFFECTIVE_FROM||', '
+                                                ||'<b>'||'Fecha Ultimo Cambio Valor: '      ||'</b>'||i.TABLE_EFFECTIVE_FROM
+    					 						||'<br/>'||chr(13);				 
+				END IF;
+            END LOOP;
+			
+            --ACTUALIZA REGISTROS
+			FOR c IN c_update LOOP
+				
+                    UPDATE  XXGRG_AE_TABLAS_VACACIONES_BASE
+                    SET     DAYS_OF_VACATION        = c.DAYS_OF_VACATION,
+                            LAST_UPDATE_DATE        = c.LAST_UPDATE_DATE,
+                            DOV_EFFECTIVE_FROM      = c.DOV_EFFECTIVE_FROM,
+                            TABLE_EFFECTIVE_FROM    = c.TABLE_EFFECTIVE_FROM
+                    WHERE   TABLE_NAME              = c.TABLE_NAME
+                            AND YEARS_SENIORITY     = c.YEARS_SENIORITY;
+					
+			END LOOP;
+            COMMIT;
+
+		    --ENVIO CORREO
+			BEGIN
+                --+
+				IF v_contador_correo > 0 THEN
+
+                    v_body_html :=  '<html>'||
+                                        '<head>'||
+                                            '<style type="text/css">'||
+                                                ' .container .main .texto-img{ display: flex; } ' ||
+                                                ' .container .main .texto-img .thumb {  width: 10%;  }' ||
+                                                ' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+                                                ' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+                                                ' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+                                            ' </style> ' ||
+                                        '</head>'||
+                                        '<body>'||
+                                            ' <div class="container"> ' ||
+                                                '<div class="main"> ' ||
+                                                    '<div class="msj-usuario"> '||
+                                                        '<p class="msj">'|| 'Los registros a continuación han sido actualizados:'
+														||'</p>'||'<br>'
+														||acumulador||chr(13)||
+                                                    '</div>'||
+                                                    '<div class="msj-usuario"> '||
+                                                    '</div>'||
+                                                    '<div class="texto-img">'||
+                                                        '<div class="txtImagen">'||
+                                                            '<b>Atentamente <br/>'||
+                                                            'Grupo Restaurantero Gigante</b> <br/><br/>'||
+                                                        '</div>'||
+                                                        '<div class="thumb">' ||
+                                                            '<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+                                                        '</div>'||
+                                                    '</div>'||
+                                                '</div>'||
+                                            '</div>'||
+                                        '</body>'||
+                                    '</html>';
+
+                    apex_mail.send(
+                    p_to        =>    v_to,
+                    p_cc	    =>    v_copy_to,
+                    p_bcc       =>    null,
+                    p_from      =>    v_from,
+                    p_subj      =>    v_subject,
+                    p_body      =>    null,
+                    p_body_html =>    v_body_html );
+
+				END IF;
+
+			EXCEPTION WHEN OTHERS THEN 
+        			v_error := SQLERRM||' '||SQLCODE;
+        			   
+        			INSERT INTO GRG_ASISTENCIA_ELECTR_ERROR(ERROR,
+        													FECHA,
+        													CREATED_BY,
+        													CREATION_DATE,
+        													LAST_UPDATED_BY,
+        											        LAST_UPDATE_DATE) VALUES (	'Ocurrio un error en el envio de correos: ' ||v_error,
+        																				SYSDATE - 6/24,
+        																				'-1',
+        																				SYSDATE - 6/24,
+        																				'-1',
+        																				SYSDATE - 6/24);
+			END;
+		--++
+		   
+				
+		EXCEPTION WHEN OTHERS THEN 
+			v_error := SQLERRM||' '||SQLCODE;
+			   
+			INSERT INTO GRG_ASISTENCIA_ELECTR_ERROR(ERROR,
+													FECHA,
+													CREATED_BY,
+													CREATION_DATE,
+													LAST_UPDATED_BY,
+											        LAST_UPDATE_DATE) VALUES (	'Ocurrio un error en el procedimiento get_vacaciones: ' ||v_error,
+																				SYSDATE - 6/24,
+																				'-1',
+																				SYSDATE - 6/24,
+																				'-1',
+																				SYSDATE - 6/24);
+			COMMIT;																			
+	    END;
+    END get_vacaciones;	
+END XXGRG_AE_TABLAS_VAC_PKG;
