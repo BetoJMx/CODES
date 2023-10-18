@@ -1,0 +1,61 @@
+--QRY PARAM CARTA REN
+SELECT  REPLACE(UPPER(p.full_name),',',''),
+        p.person_id
+FROM    pay_assigned_payrolls_dn    ap
+        ,pay_payroll_terms          pt
+        ,pay_pay_relationships_dn   pr
+        ,pay_all_payrolls_f         py
+        ,per_person_names_f         p
+        ,per_all_assignments_m      paam
+        ,hr_all_organization_units  haou
+        ,per_person_secured_list_v  ppsl
+WHERE   ap.payroll_term_id              = pt.payroll_term_id
+        AND pt.payroll_relationship_id  = pr.payroll_relationship_id
+        AND ap.payroll_id               = py.payroll_id
+        AND pr.person_id                = p.person_id
+        AND ap.lsed                     IS NULL
+        AND paam.person_id              = p.person_id
+        AND trunc(SYSDATE)              BETWEEN paam.effective_start_date 
+                                        AND paam.effective_end_date
+        AND trunc(SYSDATE)              BETWEEN p.effective_start_date 
+                                        AND p.effective_end_date
+        AND paam.assignment_type        = 'E'
+        AND paam.primary_flag           = 'Y'
+        AND haou.organization_id        = paam.business_unit_id
+        AND ppsl.person_id              = p.person_id
+        AND p.name_type                 = 'MX'
+        AND NOT EXISTS (
+            SELECT  1
+            FROM    fnd_lookup_values_vl flv
+            WHERE   1 = 1
+                    AND flv.lookup_type     = 'GRG_PAY_CARTA_REN_USER_RSTRGDS'
+                    --AND flv.lookup_code     = papf.person_number
+                    AND flv.lookup_code     = :xdo_user_name
+                    AND flv.enabled_flag    = 'Y'
+                    AND flv.tag             LIKE '%' || py.payroll_name || '%'
+        )
+GROUP BY REPLACE(UPPER(p.full_name),',',''),
+         p.person_id
+ORDER BY REPLACE(UPPER(p.full_name),',','')
+
+-----
+select distinct REPLACE(UPPER(ppn.full_name),',','') AS name,
+            ppn.person_id
+   from      per_person_names_f ppn,
+             per_person_secured_list_v papf
+		   , per_assignment_secured_list_v      paaf
+		   , per_location_secured_list_v pl
+		 --  ,hr_locations_all           hla
+ where ppn.name_type = 'MX'
+    AND paaf.assignment_type = 'E'
+    AND paaf.primary_flag = 'Y'
+	and papf.person_id = ppn.person_id
+	and ppn.person_id = paaf.person_id
+	and paaf.location_id = pl.location_id
+	--and paaf.ASSIGNMENT_STATUS_TYPE		= 'ACTIVE'
+   -- and pl.location_id = hla.location_id
+	--and papf.person_number not like '%C%'
+	And trunc(sysdate) BETWEEN ppn.EFFECTIVE_START_DATE and ppn.EFFECTIVE_END_DATE
+	And trunc(sysdate) BETWEEN papf.EFFECTIVE_START_DATE and papf.EFFECTIVE_END_DATE
+	and trunc(sysdate) BETWEEN paaf.EFFECTIVE_START_DATE and paaf.EFFECTIVE_END_DATE
+order by 1
