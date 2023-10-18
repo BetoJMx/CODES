@@ -1,0 +1,18 @@
+--QRY BKP REST DETALLE_MON_NOMINA_H2H
+select header_id,
+       DECODE(consolidation_set_name,'null','-',consolidation_set_name) consolidation_set_name,
+       lote_nombre,
+       to_number(num_registros) num_registros,
+       TRIM(TO_CHAR(MONTO,'999,999,999.99')) monto,
+       tipo,
+       status_desc,
+       --to_char( fecha_generacion, 'DD-MON-YYYY' ) fecha_operacion,
+	   fecha_generacion fecha_operacion,
+       --to_char( fecha_pago, 'DD-MON-YYYY' ) fecha_pago
+	   fecha_pago
+from   TOKS_MONITOR_NOM_H2H_V
+where  1=1
+and    org_id = :p_org_id
+and    to_char(fecha_h2h, 'YYYY-MM-DD') = :p_fecha
+and    status = :p_status
+order by header_id desc
