@@ -1,0 +1,288 @@
+--QRY ABSENCES INT
+select  A.person_number,
+
+        A.full_name,
+
+        A.legal_employer,
+
+        A.business_unit,
+
+        A.department,
+
+        A.absence_plan_name,
+
+        A.adjustment_type,
+
+        A.adjustment_reason,
+
+        A.value,
+
+        A.procd_date accrual_entry_date
+
+from
+
+(
+
+select apaed.per_accrual_entry_dtl_id,
+
+       apaed.per_accrual_entry_id,
+
+       apaed.enterprise_id,
+
+       apaed.value,
+
+       apaed.type,
+
+       apaed.created_by,
+
+       apaed.creation_date,
+
+       apaed.last_updated_by,
+
+       apaed.last_update_date,
+
+       apaed.last_update_login,
+
+       apaed.person_id,
+
+       apaed.pl_id,
+
+       apaed.procd_date,
+
+       apaed.per_event_id,
+
+       apaed.legal_employer_id,
+
+       apaed.assignment_id,
+
+       apaed.per_absence_entry_id,
+
+       apaed.per_plan_enrt_id,
+
+       apaed.work_term_asg_id,
+
+       DECODE(apaed.type,'ADJOTH',ADD_MONTHS(procd_date,6),NULL) proposed_expiration_date,
+
+       papf.person_number,
+
+       ppnf.full_name,
+
+       paam.organization_id,
+
+       dept.name  department,
+
+       paam.legal_entity_id,
+
+       legal_employer.classification_code         legal_emp_classification_code,
+
+       legal_employer.name                        legal_employer,
+
+       paam.business_unit_id,
+
+       business_unit.classification_code          bu_classification_code,
+
+       business_unit.name                         business_unit,
+
+       absence_plan.name        absence_plan_name,
+
+       flvt.meaning             adjustment_type,
+
+     adj_reason.meaning            adjustment_reason
+
+  FROM anc_per_acrl_entry_dtls apaed
+
+  JOIN fnd_lookup_values_tl flvt
+
+       ON (flvt.lookup_type = 'ANC_ACCRUAL_ENTRY_TYPE'
+
+       AND flvt.lookup_code = apaed.type
+
+       AND flvt.language = 'US')
+
+  JOIN per_all_people_f papf
+
+       ON (apaed.person_id = papf.person_id
+
+       AND TRUNC(sysdate) BETWEEN papf.effective_start_date and papf.effective_end_date)
+
+  JOIN per_person_names_f ppnf
+
+       ON (ppnf.name_type = 'GLOBAL'
+
+       AND ppnf.person_id = apaed.person_id
+
+       AND TRUNC(SYSDATE) BETWEEN ppnf.effective_start_date and ppnf.effective_end_date)
+
+  JOIN per_all_assignments_m paam
+
+       ON (paam.assignment_id = apaed.assignment_id
+
+       AND paam.person_id = apaed.person_id
+
+       AND paam.primary_assignment_flag = 'Y'
+
+       AND paam.assignment_type = 'E'
+
+       AND TRUNC(SYSDATE) between paam.effective_start_date and paam.effective_end_date)
+
+LEFT OUTER JOIN 
+
+(SELECTflvt1.lookup_code,
+
+flvt1.meaning
+
+FROMfnd_lookup_values_tl flvt1
+
+WHEREflvt1.lookup_type = 'ANC_ABS_PLAN_OTHER_REASONS'
+
+AND flvt1.language = 'US'
+
+) adj_reason
+
+ON (apaed.adjustment_reason = adj_reason.lookup_code)
+
+  LEFT OUTER JOIN
+
+      ( SELECT hauft.organization_id,
+
+               hauft.NAME
+
+          FROM HR_ORG_UNIT_CLASSIFICATIONS_F houcf, 
+
+               HR_ALL_ORGANIZATION_UNITS_F haouf, 
+
+               HR_ORGANIZATION_UNITS_F_TL hauft 
+
+         WHERE haouf.ORGANIZATION_ID = houcf.ORGANIZATION_ID 
+
+           AND haouf.ORGANIZATION_ID = hauft.ORGANIZATION_ID 
+
+           AND haouf.EFFECTIVE_START_DATE BETWEEN houcf.EFFECTIVE_START_DATE AND houcf.EFFECTIVE_END_DATE 
+
+           AND hauft.LANGUAGE = 'US'
+
+           AND hauft.EFFECTIVE_START_DATE = haouf.EFFECTIVE_START_DATE 
+
+           AND hauft.EFFECTIVE_END_DATE = haouf.EFFECTIVE_END_DATE 
+
+           AND houcf.CLASSIFICATION_CODE = 'DEPARTMENT' 
+
+           AND TRUNC(SYSDATE) BETWEEN hauft.effective_start_date AND hauft.effective_end_date
+
+       ) dept
+
+       ON (paam.organization_id = dept.organization_id)
+
+  LEFT OUTER JOIN
+
+       (SELECT hauft.organization_id,
+
+               hauft.NAME,
+
+               houcf.classification_code
+
+          FROM HR_ORG_UNIT_CLASSIFICATIONS_F houcf, 
+
+               HR_ALL_ORGANIZATION_UNITS_F haouf, 
+
+               HR_ORGANIZATION_UNITS_F_TL hauft 
+
+         WHERE haouf.ORGANIZATION_ID = houcf.ORGANIZATION_ID 
+
+           AND haouf.ORGANIZATION_ID = hauft.ORGANIZATION_ID 
+
+           AND haouf.EFFECTIVE_START_DATE BETWEEN houcf.EFFECTIVE_START_DATE AND houcf.EFFECTIVE_END_DATE 
+
+           AND hauft.LANGUAGE = 'US'
+
+           AND hauft.EFFECTIVE_START_DATE = haouf.EFFECTIVE_START_DATE 
+
+           AND hauft.EFFECTIVE_END_DATE = haouf.EFFECTIVE_END_DATE 
+
+           AND houcf.CLASSIFICATION_CODE = 'HCM_LEMP' 
+
+           AND TRUNC(SYSDATE) BETWEEN hauft.effective_start_date AND hauft.effective_end_date
+
+        ) legal_employer
+
+        ON (paam.legal_entity_id = legal_employer.organization_id)
+
+  LEFT OUTER JOIN
+
+       (SELECT hauft.organization_id business_unit_id,
+
+               hauft.NAME,
+
+               houcf.classification_code
+
+          FROM HR_ORG_UNIT_CLASSIFICATIONS_F houcf, 
+
+               HR_ALL_ORGANIZATION_UNITS_F haouf, 
+
+               HR_ORGANIZATION_UNITS_F_TL hauft 
+
+         WHERE haouf.ORGANIZATION_ID = houcf.ORGANIZATION_ID 
+
+           AND haouf.ORGANIZATION_ID = hauft.ORGANIZATION_ID 
+
+           AND haouf.EFFECTIVE_START_DATE BETWEEN houcf.EFFECTIVE_START_DATE AND houcf.EFFECTIVE_END_DATE 
+
+           AND hauft.LANGUAGE = 'US'
+
+           AND hauft.EFFECTIVE_START_DATE = haouf.EFFECTIVE_START_DATE 
+
+           AND hauft.EFFECTIVE_END_DATE = haouf.EFFECTIVE_END_DATE 
+
+           AND houcf.CLASSIFICATION_CODE = 'FUN_BUSINESS_UNIT' 
+
+           AND TRUNC(SYSDATE) BETWEEN hauft.effective_start_date AND hauft.effective_end_date
+
+        ) business_unit       
+
+        ON (paam.business_unit_id = business_unit.business_unit_id)
+
+         LEFT OUTER JOIN 
+
+        (SELECT aapf.absence_plan_id, 
+
+                aapft.NAME
+
+           FROM anc_absence_plans_f_tl aapft,
+
+                anc_absence_plans_f    aapf
+
+          WHERE aapft.absence_plan_id = aapf.absence_plan_id
+
+            AND aapf.plan_status = 'A'   -- added to pick only Active Absence Plans
+
+            AND trunc(SYSDATE) BETWEEN aapf.effective_start_date AND aapf.effective_end_date
+
+            AND trunc(SYSDATE) BETWEEN aapft.effective_start_date AND aapft.effective_end_date
+
+            AND aapft.language = 'US'
+
+        ) absence_plan
+
+        ON  apaed.pl_id  = absence_plan.absence_plan_id
+
+        where pl_id = absence_plan.absence_plan_id
+
+and apaed.value <> 0    
+
+order by apaed.person_id,apaed.procd_date asc 
+
+) A
+
+where person_number = nvl(:pPersonNumber,person_number)
+
+and   legal_employer = nvl(:pLegalEmployer,legal_employer)
+
+and   business_unit = nvl(:pBusinessUnit,business_unit)
+
+and   procd_date >=  nvl(:pCalculationDate,procd_date)
+
+and   department = nvl(:pDepartment,department)
+
+and   full_name = nvl(:pPersonName,full_name)
+
+and   absence_plan_name = nvl(:pAbsencePlanName,absence_plan_name)
