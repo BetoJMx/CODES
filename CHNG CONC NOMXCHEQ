@@ -1,0 +1,369 @@
+-- CHNG CONC NOMXCHEQ
+SELECT  cheques_nom.organization_name                   AS empleador_legal 
+        ,cheques_nom.payment_method_name                AS metodo_pago
+        ,cheques_nom.checkrun_name                      AS lote
+        ,cheques_nom.folio                              AS no_cheque
+        ,cheques_nom.payment_amount                     AS monto
+        ,TO_CHAR(cheques_nom.check_date,'DD/MM/YYYY')   AS fecha_expedicion
+        ,EXTRACT(YEAR FROM cheques_nom.check_date)      AS anio_expedicion
+        ,cheques_nom.payment_status                     AS estatus
+        ,cheques_nom.location_name                      AS unidad
+        ,cheques_nom.tipo_cheque                        AS tipo
+        ,TO_CHAR(cheques_nom.cleared_date,'DD/MM/YYYY') AS fecha_conciliación
+FROM    (
+            SELECT  ple.name                            AS organization_name       
+                    --,DECODE(UPPER(pt.base_payment_type_name),'CHECK','CHEQUE','EFT','ELECTRÓNICO','CASH','EFECTIVO')  AS payment_method_name
+                    ,CASE 
+                        WHEN flow.instance_name = 'CHEQ_FAROSEM_02_2021' AND ppra.serial_number = '13314' THEN
+                                13320
+                        WHEN flow.instance_name = 'CHEQ_FAROSEM_02_2021' AND ppra.serial_number = '13316' THEN          
+                                13321
+                        ELSE
+                                TO_NUMBER(ppra.serial_number)
+                    END folio
+                    ,'CHEQUE'                           AS payment_method_name
+                    ,flow.instance_name                 AS checkrun_name
+                    ,ppp.value                          AS payment_amount
+                    ,pact.effective_date check_date
+                    ,(
+                        SELECT  meaning
+                        FROM    hcm_lookups lk1
+                        WHERE   lk1.lookup_type = 'PAY_STATUS'
+                                AND lk1.lookup_code = HR_PRE_PAY.PAYMENT_STATUS(
+                                        DECODE(ppra.payroll_rel_action_id,NULL,ppra.pre_payment_id,ppra.payroll_rel_action_id)
+                                        ,DECODE(ppra.payroll_rel_action_id,NULL,
+                                                                                    (
+                                                                                        SELECT  lookup_code
+                                                                                        FROM    hcm_lookups lk1,
+                                                                                                pay_payroll_rel_actions pra,
+                                                                                                pay_payroll_actions pa
+                                                                                        WHERE   pa.payroll_action_id = pra.payroll_action_id
+                                                                                                AND pa.action_type = lk1.lookup_code
+                                                                                                AND lk1.lookup_type = 'ACTION_TYPE'
+                                                                                                AND pra.payroll_rel_action_id = ppra.payroll_rel_action_id
+                                                                                    )
+                                                                                    ,(
+                                                                                        SELECT  lookup_code
+                                                                                        FROM    hcm_lookups lk1,
+                                                                                                pay_payroll_rel_actions pra,
+                                                                                                pay_payroll_actions pa
+                                                                                        WHERE   pa.payroll_action_id = pra.payroll_action_id
+                                                                                                AND pa.action_type = lk1.lookup_code
+                                                                                                AND lk1.lookup_type = 'ACTION_TYPE'
+                                                                                                AND pra.payroll_rel_action_id = ppra.payroll_rel_action_id
+                                                                                    )
+                                        )
+                                    ) 
+                    ) AS payment_status
+                    ,pldfvl.location_name   
+                    ,'FINIQUITO'                         AS tipo_cheque
+                    ,(
+                        SELECT  MAX(pct.CLEARED_DATE)
+                        FROM    PAY_CE_TRANSACTIONS pct
+                        WHERE   ppra.payroll_rel_action_id = pct.payroll_rel_action_id
+                    ) AS cleared_date
+            FROM   
+                    pay_flow_instances          flow
+                    ,pay_requests               req
+                    ,pay_payroll_actions        pact
+                    --+
+                    ,pay_payroll_rel_actions    ppra
+                    --+
+                    ,pay_org_pay_methods_f      popm 
+                    ,pay_bank_accounts          pba
+                    ,pay_payment_types          pt  
+                    --+
+                    ,ce_bank_accounts           cba 
+                    ,pay_pre_payments           ppp
+                    ,per_all_people_f           papf
+                    ,per_all_assignments_m      paam
+                    ,per_location_details_f_vl  pldfvl
+                    ,per_legal_employers        ple
+                    ,per_periods_of_service     pps
+                    ,pay_rel_groups_dn          prg
+            WHERE   1 = 1
+                    --
+                    AND ppra.payroll_relationship_id = prg.payroll_relationship_id
+                    AND pact.effective_date BETWEEN prg.start_date AND prg.end_date
+                    AND prg.assignment_id = paam.assignment_id
+                    AND pact.effective_date BETWEEN :p_fecha_inicio AND :p_fecha_final
+                    --AND ppra.serial_number = NVL(:folio,ppra.serial_number)
+                    --
+                    --AND UPPER(pt.base_payment_type_name) = NVL(:p_metodo_pago, pt.base_payment_type_name )
+                    AND UPPER(pt.base_payment_type_name) = 'CHECK'
+                    ---
+                    AND flow.flow_instance_id = req.flow_instance_id
+                    AND req.pay_request_id = pact.pay_request_id
+                    AND pact.action_type NOT IN ('BIP','XRD')
+                    --+
+                    AND pact.payroll_action_id = ppra.payroll_action_id
+                    AND ppp.PAYER_ORG_PAYMENT_METHOD_ID = popm.ORG_PAYMENT_METHOD_ID
+                    --+
+                    AND popm.bank_account_id = pba.bank_account_id
+                    AND popm.payment_type_id = pt.payment_type_id 
+                    AND pt.category = 'CH'
+                    --+
+                    AND popm.bank_account_id  = cba.bank_account_id 
+                    AND pact.action_type = 'H'
+                    AND pact.action_status = 'C'
+                    AND ppra.pre_payment_id = ppp.pre_payment_id
+                    AND popm.bank_account_id = ppp.payer_bank_account_id
+                    --+
+                    AND papf.person_id = paam.person_id 
+                    AND paam.primary_assignment_flag = 'Y'
+                    AND paam.assignment_type = 'E'
+                    AND paam.effective_latest_change = 'Y'
+                    AND paam.legal_entity_id = NVL(:leg_emp, paam.legal_entity_id)
+                    AND paam.legal_entity_id = ple.organization_id
+                    AND paam.location_id = pldfvl.location_id       
+                    --AND paam.location_id = NVL(:unidad,paam.location_id)
+                    AND pldfvl.active_status  = 'A'
+                    AND pps.legal_entity_id = paam.legal_entity_id
+                    AND pps.person_id = paam.person_id
+                    AND pps.period_of_service_id = paam.period_of_service_id
+                    AND pps.date_start =(
+                                            SELECT  MAX (pps2.date_start)
+                                            FROM    per_periods_of_service pps2
+                                            WHERE   pps2.person_id          = paam.person_id
+                                                    AND pact.effective_date BETWEEN pps2.date_start 
+                                                                            AND pact.effective_date
+                                        )  
+                    AND EXISTS( 
+                                SELECT  1
+                                FROM    per_all_people_f papf
+                                        ,per_all_assignments_m paam
+                                        --+
+                                        ,pay_rel_groups_dn prgd        
+                                        ,pay_payroll_rel_actions ppra2   
+                                        ,pay_payroll_actions ppa        
+                                        ,pay_all_payrolls_f pay
+                                        ,pay_time_periods ptp
+                                        --+
+                                        ,pay_run_results  prr
+                                        ,pay_run_result_values  prrv
+                                        ,pay_element_types_vl   petv
+                                        ,pay_input_values_vl    pivv
+                                WHERE   1 = 1
+                                        AND prgd.payroll_relationship_id = ppra.payroll_relationship_id --300000022557437
+                                        AND papf.person_id = paam.person_id
+                                        AND paam.effective_latest_change = 'Y'
+                                        AND paam.primary_flag = 'Y'
+                                        AND paam.primary_assignment_flag = 'Y'
+                                        AND paam.assignment_type = 'E'
+                                        ---+
+                                        AND paam.assignment_id = prgd.assignment_id
+                                        AND prgd.group_type = 'A'
+                                        AND prgd.payroll_relationship_id = ppra2.payroll_relationship_id 
+                                        AND ppra2.action_status = 'C'
+                                        AND ppra2.chunk_number IS NOT NULL
+                                        AND ppra2.source_action_id IS NOT NULL
+                                        AND ppra2.retro_component_id IS NULL -- NO tenga movimientos retroactivos
+                                        AND ppra2.payroll_action_id = ppa.payroll_action_id
+                                        AND ppa.action_status = 'C'
+                                        AND ppa.action_type IN ('R','Q')
+                                        AND ppa.payroll_id = pay.payroll_id
+                                        AND ppa.earn_time_period_id = ptp.time_period_id
+                                        AND ppa.payroll_id = ptp.payroll_id
+                                        --+
+                                        AND ppra2.payroll_rel_action_id = prr.payroll_rel_action_id 
+                                        AND prr.status = 'P'
+                                        AND prr.run_result_id = prrv.run_result_id
+                                        AND petv.base_element_name LIKE 'SETUP%FINIQUITO%'
+                                        AND prr.element_type_id = petv.element_type_id
+                                        AND prrv.input_value_id = pivv.input_value_id
+                                        --+
+                                        AND ppa.effective_date BETWEEN papf.effective_start_date AND papf.effective_end_date 
+                                        AND ppa.effective_date BETWEEN paam.effective_start_date AND paam.effective_end_date
+                                        AND ppa.effective_date BETWEEN pay.effective_start_date AND pay.effective_end_date
+                                        AND ppa.effective_date BETWEEN ptp.start_date AND ptp.end_date
+                                        AND ppa.effective_date BETWEEN petv.effective_start_date AND petv.effective_end_date
+                                        AND ppa.effective_date BETWEEN pivv.effective_start_date AND pivv.effective_end_date 
+                                )
+                    --+
+                    AND pact.effective_date BETWEEN pldfvl.effective_start_date AND pldfvl.effective_end_date
+                    AND pact.effective_date BETWEEN popm.effective_start_date AND popm.effective_end_date 
+                    AND pact.effective_date BETWEEN papf.effective_start_date AND papf.effective_end_date 
+                    AND pact.effective_date BETWEEN paam.effective_start_date AND paam.effective_end_date
+                    AND pact.effective_date BETWEEN ple.effective_start_date AND ple.effective_end_date
+                    AND pact.effective_date BETWEEN pba.bank_start_date AND pba.bank_end_date 
+                    AND pact.effective_date BETWEEN cba.start_date AND NVL(cba.end_date,pact.effective_date)
+            UNION ALL
+            SELECT  ple.name                            AS organization_name       
+                    --,DECODE(UPPER(pt.base_payment_type_name),'CHECK','CHEQUE','EFT','ELECTRÓNICO','CASH','EFECTIVO')  AS payment_method_name
+                    ,CASE 
+                        WHEN flow.instance_name = 'CHEQ_FAROSEM_02_2021' AND ppra.serial_number = '13314' THEN
+                                13320
+                        WHEN flow.instance_name = 'CHEQ_FAROSEM_02_2021' AND ppra.serial_number = '13316' THEN          
+                                13321
+                        ELSE
+                                TO_NUMBER(ppra.serial_number)
+                    END folio
+                    ,'CHEQUE'                           AS payment_method_name
+                    ,flow.instance_name                 AS checkrun_name
+                    ,ppp.value                          AS payment_amount
+                    , pact.effective_date check_date        
+                    ,(
+                        SELECT  meaning
+                        FROM    hcm_lookups lk1
+                        WHERE   lk1.lookup_type = 'PAY_STATUS'
+                                AND lk1.lookup_code = HR_PRE_PAY.PAYMENT_STATUS(
+                                            DECODE(ppra.payroll_rel_action_id,NULL,ppra.pre_payment_id,ppra.payroll_rel_action_id)
+                                            ,DECODE(ppra.payroll_rel_action_id,NULL,
+                                                                                    (
+                                                                                        SELECT  lookup_code
+                                                                                        FROM    hcm_lookups lk1,
+                                                                                                pay_payroll_rel_actions pra,
+                                                                                                pay_payroll_actions pa
+                                                                                        WHERE   pa.payroll_action_id = pra.payroll_action_id
+                                                                                                AND pa.action_type = lk1.lookup_code
+                                                                                                AND lk1.lookup_type = 'ACTION_TYPE'
+                                                                                                AND pra.payroll_rel_action_id = ppra.payroll_rel_action_id
+                                                                                    )
+                                                                                    ,(
+                                                                                        SELECT  lookup_code
+                                                                                        FROM    hcm_lookups lk1,
+                                                                                                pay_payroll_rel_actions pra,
+                                                                                                pay_payroll_actions pa
+                                                                                        WHERE   pa.payroll_action_id = pra.payroll_action_id
+                                                                                                AND pa.action_type = lk1.lookup_code
+                                                                                                AND lk1.lookup_type = 'ACTION_TYPE'
+                                                                                                AND pra.payroll_rel_action_id = ppra.payroll_rel_action_id
+                                                                                    )
+                                            )
+                                    ) 
+                    ) AS payment_status
+                    ,pldfvl.location_name   
+                    ,DECODE(ppp.third_party_payee_id,NULL,'NOMINA','PENSION') AS tipo_cheque
+                    ,(
+                        SELECT  MAX(pct.CLEARED_DATE)
+                        FROM    PAY_CE_TRANSACTIONS pct
+                        WHERE   ppra.payroll_rel_action_id = pct.payroll_rel_action_id
+                    ) AS cleared_date
+            FROM   
+                    pay_flow_instances          flow
+                    ,pay_requests               req
+                    ,pay_payroll_actions        pact
+                    --+
+                    ,pay_payroll_rel_actions    ppra
+                    --+
+                    ,pay_org_pay_methods_f      popm 
+                    ,pay_bank_accounts          pba
+                    ,pay_payment_types          pt  
+                    --+
+                    ,ce_bank_accounts           cba 
+                    ,pay_pre_payments           ppp
+                    ,per_all_people_f           papf
+                    ,per_all_assignments_m      paam
+                    ,per_location_details_f_vl  pldfvl
+                    ,per_legal_employers        ple
+                    ,per_periods_of_service     pps
+                    ,pay_rel_groups_dn          prg
+            WHERE   1 = 1
+                    --
+                    AND ppra.payroll_relationship_id = prg.payroll_relationship_id
+                    AND pact.effective_date BETWEEN prg.start_date AND prg.end_date
+                    AND prg.assignment_id = paam.assignment_id
+                    AND pact.effective_date BETWEEN :p_fecha_inicio AND :p_fecha_final
+                    --AND ppra.serial_number = NVL(:folio,ppra.serial_number)
+                    --
+                    --AND UPPER(pt.base_payment_type_name) = NVL(:p_metodo_pago, pt.base_payment_type_name )
+                    AND UPPER(pt.base_payment_type_name) = 'CHECK'
+                    ---
+                    AND flow.flow_instance_id = req.flow_instance_id
+                    AND req.pay_request_id = pact.pay_request_id
+                    AND pact.action_type NOT IN ('BIP','XRD')
+                    --+
+                    AND pact.payroll_action_id = ppra.payroll_action_id
+                    AND ppp.PAYER_ORG_PAYMENT_METHOD_ID = popm.ORG_PAYMENT_METHOD_ID
+                    --+
+                    AND popm.bank_account_id = pba.bank_account_id
+                    AND popm.payment_type_id = pt.payment_type_id 
+                    AND pt.category = 'CH'
+                    --+
+                    AND popm.bank_account_id  = cba.bank_account_id 
+                    AND pact.action_type = 'H'
+                    AND pact.action_status = 'C'
+                    AND ppra.pre_payment_id = ppp.pre_payment_id
+                    AND popm.bank_account_id = ppp.payer_bank_account_id
+                    --+
+                    AND papf.person_id = paam.person_id 
+                    AND paam.primary_assignment_flag = 'Y'
+                    AND paam.assignment_type = 'E'
+                    AND paam.effective_latest_change = 'Y'
+                    AND paam.legal_entity_id = NVL(:leg_emp, paam.legal_entity_id)
+                    AND paam.legal_entity_id = ple.organization_id
+                    AND paam.location_id = pldfvl.location_id        
+                    --AND paam.location_id = NVL(:unidad,paam.location_id)
+                    AND pldfvl.active_status  = 'A'
+                    AND pps.legal_entity_id = paam.legal_entity_id
+                    AND pps.person_id = paam.person_id
+                    AND pps.period_of_service_id = paam.period_of_service_id
+                    AND pps.date_start =(
+                                            SELECT  MAX (pps2.date_start)
+                                            FROM    per_periods_of_service pps2
+                                            WHERE   pps2.person_id          = paam.person_id
+                                                    AND pact.effective_date BETWEEN pps2.date_start 
+                                                                            AND pact.effective_date
+                                        )	
+                    AND NOT EXISTS( 
+                                    SELECT  1
+                                    FROM    per_all_people_f papf
+                                            ,per_all_assignments_m paam
+                                            --+
+                                            ,pay_rel_groups_dn prgd        
+                                            ,pay_payroll_rel_actions ppra2   
+                                            ,pay_payroll_actions ppa        
+                                            ,pay_all_payrolls_f pay
+                                            ,pay_time_periods ptp
+                                            --+
+                                            ,pay_run_results  prr
+                                            ,pay_run_result_values  prrv
+                                            ,pay_element_types_vl   petv
+                                            ,pay_input_values_vl    pivv
+                                    WHERE   1 = 1
+                                            AND prgd.payroll_relationship_id = ppra.payroll_relationship_id --300000022557437
+                                            AND papf.person_id = paam.person_id
+                                            AND paam.effective_latest_change = 'Y'
+                                            AND paam.primary_flag = 'Y'
+                                            AND paam.primary_assignment_flag = 'Y'
+                                            AND paam.assignment_type = 'E'
+                                            ---+
+                                            AND paam.assignment_id = prgd.assignment_id
+                                            AND prgd.group_type = 'A'
+                                            AND prgd.payroll_relationship_id = ppra2.payroll_relationship_id 
+                                            AND ppra2.action_status = 'C'
+                                            AND ppra2.chunk_number IS NOT NULL
+                                            AND ppra2.source_action_id IS NOT NULL
+                                            AND ppra2.retro_component_id IS NULL -- NO tenga movimientos retroactivos
+                                            AND ppra2.payroll_action_id = ppa.payroll_action_id
+                                            AND ppa.action_status = 'C'
+                                            AND ppa.action_type IN ('R','Q')
+                                            AND ppa.payroll_id = pay.payroll_id
+                                            AND ppa.earn_time_period_id = ptp.time_period_id
+                                            AND ppa.payroll_id = ptp.payroll_id
+                                            --+
+                                            AND ppra2.payroll_rel_action_id = prr.payroll_rel_action_id 
+                                            AND prr.status = 'P'
+                                            AND prr.run_result_id = prrv.run_result_id
+                                            AND petv.base_element_name LIKE 'SETUP%FINIQUITO%'
+                                            AND prr.element_type_id = petv.element_type_id
+                                            AND prrv.input_value_id = pivv.input_value_id
+                                            --+
+                                            AND ppa.effective_date BETWEEN papf.effective_start_date AND papf.effective_end_date 
+                                            AND ppa.effective_date BETWEEN paam.effective_start_date AND paam.effective_end_date
+                                            AND ppa.effective_date BETWEEN pay.effective_start_date AND pay.effective_end_date
+                                            AND ppa.effective_date BETWEEN ptp.start_date AND ptp.end_date
+                                            AND ppa.effective_date BETWEEN petv.effective_start_date AND petv.effective_end_date
+                                            AND ppa.effective_date BETWEEN pivv.effective_start_date AND pivv.effective_end_date 
+                                    )
+                    --+
+                    AND pact.effective_date BETWEEN pldfvl.effective_start_date AND pldfvl.effective_end_date
+                    AND pact.effective_date BETWEEN popm.effective_start_date AND popm.effective_end_date 
+                    AND pact.effective_date BETWEEN papf.effective_start_date AND papf.effective_end_date 
+                    AND pact.effective_date BETWEEN paam.effective_start_date AND paam.effective_end_date
+                    AND pact.effective_date BETWEEN ple.effective_start_date AND ple.effective_end_date
+                    AND pact.effective_date BETWEEN pba.bank_start_date AND pba.bank_end_date 
+                    AND pact.effective_date BETWEEN cba.start_date AND NVL(cba.end_date,pact.effective_date)
+        )cheques_nom
+WHERE   1 = 1
+--ORDER BY    cheques_nom.organization_name
