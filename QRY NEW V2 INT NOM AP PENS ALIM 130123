@@ -1,0 +1,75 @@
+--QRY NEW V2 INT NOM AP PENS ALIM 130123
+SELECT
+    papf.PERSON_NUMBER as NO_COLABORADOR,
+    pettl.ELEMENT_NAME,
+    pettl.ELEMENT_TYPE_ID,
+    NVL(prrv.RESULT_VALUE,0) AS id_pensionado,
+    ( 
+        SELECT 	SUM(prrv1.result_value)
+        FROM 	pay_run_results prr1
+                ,pay_run_result_values prrv1
+                ,pay_element_types_f pet2
+                ,pay_element_types_tl pettl2
+                ,pay_input_values_f piv1
+        WHERE 	prr1.payroll_rel_action_id = ppra.payroll_rel_action_id
+                AND prr1.status IN ('P', 'PA')
+                AND prrv1.run_result_id = prr1.run_result_id
+                AND prrv1.result_value IS NOT NULL
+                AND pet2.element_type_id = prr1.element_type_id
+                AND piv1.input_value_id = prrv1.input_value_id
+                AND pettl2.element_type_id = piv1.element_type_id
+                AND pettl2.element_type_id = pet2.element_type_id
+                AND pettl2.language = 'US'--SYS_CONTEXT ('USERENV', 'LANG')
+                AND piv1.uom = 'M'
+                --+
+                AND EXISTS( 
+                            SELECT 1 
+                            FROM pay_input_values_tl pivtl2
+                            WHERE pivtl2.input_value_id = piv1.input_value_id
+                            AND pivtl2.language = 'US' 
+                            AND UPPER(TRIM( pivtl2.name )) IN ('PAY VALUE')
+                        )
+                AND pettl2.element_type_id = pettl.element_type_id
+    ) MONTO_PAGO,
+    ppa.payroll_id,
+    ppa.consolidation_set_id
+FROM
+    PER_ALL_PEOPLE_F            papf,
+    PAY_PAY_RELATIONSHIPS_DN    pprd,
+    PAY_PAYROLL_REL_ACTIONS     ppra,
+    PAY_PAYROLL_ACTIONS         ppa,
+    PAY_RUN_RESULTS             prr,
+    PAY_RUN_RESULT_VALUES       prrv,
+    PAY_ELEMENT_TYPES_F         pet,
+    PAY_ELEMENT_TYPES_TL        pettl,
+    PAY_INPUT_VALUES_F          piv,
+    PAY_INPUT_VALUES_TL         pivtl,
+    PAY_TIME_PERIODS            ptp,
+    PER_PERSON_NAMES_F          ppn
+WHERE
+    papf.PERSON_NUMBER                  = NVL(:P_USER_NAME, papf.PERSON_NUMBER)
+    AND papf.PERSON_ID                  = pprd.PERSON_ID
+    AND papf.person_id                  = ppn.person_id
+    AND pprd.PAYROLL_RELATIONSHIP_ID    = ppra.PAYROLL_RELATIONSHIP_ID
+    AND ppa.payroll_action_id           = ppra.payroll_action_id
+    AND ppa.action_type                 IN ('R', 'B', 'Q')
+    AND ppra.payroll_rel_action_id      = prr.payroll_rel_action_id
+    AND prr.status                      IN ('P', 'PA')
+    AND pet.element_type_id             = prr.element_type_id
+    AND pettl.element_type_id           = pet.element_type_id
+    AND pettl.language                  = SYS_CONTEXT ('USERENV', 'LANG')
+    AND piv.element_type_id             = pettl.element_type_id
+    AND ppa.payroll_id                  = NVL(:P_PAYROLL_ID,ppa.payroll_id)
+    AND ppa.consolidation_set_id        = NVL(:P_CONSOLIDATION_SET_ID,ppa.consolidation_set_id)
+    AND ptp.time_period_id              = ppa.earn_time_period_id
+    AND ptp.status                      = 'O'
+    AND ptp.period_name 			    = :P_TIME_PERIOD_ID
+    AND pet.element_type_id             IN (:P_ELEMENT_TYPE_ID1,:P_ELEMENT_TYPE_ID2) 
+    AND piv.input_value_id              = prrv.input_value_id
+    AND prrv.run_result_id              = prr.run_result_id
+    AND prrv.result_value               IS NOT NULL
+    AND pivtl.input_value_id            = piv.input_value_id
+    AND pivtl.language                  = SYS_CONTEXT ('USERENV', 'LANG')
+    AND UPPER(TRIM(pivtl.NAME))         = 'THIRD-PARTY PAYEE'
+    AND ppa.effective_date              BETWEEN pet.EFFECTIVE_START_DATE 
+                                        AND pet.EFFECTIVE_END_DATE
