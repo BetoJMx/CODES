@@ -1,0 +1,115 @@
+--ABS ELEM ENTRY
+
+SELECT  * 
+FROM    PAY_WORKER_ABSENCE_VL
+WHERE   ABSENCE_ELEMENT_COMPONENT_NAME IN ('ND502','ND502_HV2','ND501','ND501_HV2','ND504','ND504_HV2','ND506','ND506_HV2','ND503','ND503_HV2','ND505','ND505_HV2','ND507','ND507_HV2')
+        
+        --+check processed
+        AND (SELECT unique(peevl.PROCESSED_FLAG)
+            FROM Pay_element_entries_vl peevl
+            WHERE 1 = 1
+            AND peevl.element_entry_id = peef.element_entry_id) = 'N'
+------------------------
+
+SELECT  ple.name                    Employer,
+        ple.organization_id         EmployerId,
+        per.person_number           PersonNumber,
+        per.person_id               PersonId,
+        abs.name                    AbsenceType,
+        abs.absence_type_id         AbsenceTypeId,
+        --AbsenceReason,
+        apae.absence_status_cd      AbsenceStatus,
+        apae.approval_status_cd     ApprovalStatus,
+        apae.per_absence_entry_id   PerAbsenceEntryId,
+        apae.start_date_duration    StartDateDuration,
+        apae.end_date_duration      EndDateDuration,
+        apae.planned_end_date       PlannedEndDate,
+        to_char(apae.submitted_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')         SubmittedDate,
+        to_char(apae.notification_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')      NotificationDate,
+        to_char(apae.condition_start_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')   ConditionStartDate,
+        to_char(apae.confirmed_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')         ConfirmedDate,
+        apae.comments               Comments,
+        to_char(apae.start_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')             StartDate,
+        apae.start_time             StartTime,
+        to_char(apae.end_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')               EndDate,
+        apae.end_time               EndTime,
+        duration                    Duration,
+        --+ELEMENT
+        pwav.absence_element_component_name Element,
+        apae.processing_status
+FROM    ANC_PER_ABS_ENTRIES apae,
+        PER_PERIODS_OF_SERVICE pps,
+        PER_ALL_PEOPLE_F per,
+        ANC_ABSENCE_TYPES_VL abs,
+        PER_LEGAL_EMPLOYERS ple,
+        PAY_WORKER_ABSENCE_VL pwav
+WHERE   apae.period_of_service_id = pps.period_of_Service_id
+        AND apae.absence_type_id = abs.absence_type_id
+	    AND apae.LEGAL_ENTITY_ID = ple.organization_id
+        AND pps.person_id = per.person_id
+        AND pwav.absence_id = apae.per_absence_entry_id
+        AND UPPER(abs.name) IN (
+            'ACCIDENTETRABAJO',
+            'ACCIDENTETRABAJOHRS',
+            'ACCIDENTETRAYECTO',
+            'ACCIDENTETRAYECTOHRS',
+            'ENFERMEDADGENERAL',
+            'ENFERMEDADGENERALHRS',
+            'FALTA',
+            'FALTAHRS',
+            'MATERNIDAD',
+            'MATERNIDADHRS',
+            'PERMISOSINSUELDO',
+            'PERMISOSINSUELDOHRS',
+            'SUSPENCIÓN',
+            'SUSPENCIÓNHRS'
+        )
+        --and trunc(sysdate) between abs.effective_start_date and abs.effective_end_Date
+        AND trunc(sysdate) between per.effective_start_date and per.effective_end_Date
+        AND per.person_number = '166286'
+ORDER BY per.person_number, apae.start_date asc
+
+------
+
+--TABLAS
+--ANC_PER_ABS_ENTRIES
+--
+
+
+------------------
+
+SELECT 	papf.person_number 					AS estafeta,
+		--pwav.payroll_relationship_id,
+		TO_CHAR(
+			pwav.effective_start_date, 
+			'DD-MM-YYYY'
+			) 								AS fecha_de,
+		TO_CHAR(
+			pwav.effective_end_date, 
+			'DD-MM-YYYY'
+			)								AS a,
+		pwav.ABSENCE_ELEMENT_COMPONENT_NAME	AS clave,
+		round(trunc(TIME))					  			AS nodedias,
+		UPPER(aapft.NAME)					AS descripcion
+
+FROM 	PAY_PAY_RELATIONSHIPS_DN 	pprd,
+		PER_ALL_PEOPLE_F 			papf,
+		PAY_WORKER_ABSENCE_VL 		pwav,
+		ANC_PER_ABS_PLAN_ENTRIES 	apape,
+		ANC_ABSENCE_PLANS_F_TL 		aapft
+WHERE 	1 = 1
+AND 	pprd.person_id = papf.person_id
+AND 	pprd.payroll_relationship_id = pwav.payroll_relationship_id
+AND 	apape.per_absence_entry_id = pwav.absence_id
+AND 	apape.absence_plan_id = aapft.absence_plan_id
+AND 	aapft.language = 'US'
+--AND 	UPPER(aapft.NAME) NOT IN ('VACACIÓN', 'VACACIONES')
+--AND     pwav.effective_start_date >= TO_DATE('2020-01-01', 'YYYY-MM-DD')
+AND     papf.person_number = :p_estafeta
+/*GROUP BY papf.person_number,
+		pwav.effective_start_date,
+		pwav.effective_end_date,
+		pwav.ABSENCE_ELEMENT_COMPONENT_NAME,
+		round(trunc(TIME)),
+		UPPER(aapft.NAME)*/
+ORDER BY	pwav.effective_start_date
