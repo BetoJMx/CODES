@@ -1,0 +1,35 @@
+-- PTU V3 QRY LIMITES REP PROC 030523
+SELECT  gpvi.EE_LEGAL_EMPLOYER,
+        gpvi.EE_LEGAL_EMPLOYER_ID,
+        gpvi.EE_MAX_AV_SALARY AS MAX_AV_SALARY_N,
+        gpvi.EE_MIN_DAYS_WRKD,
+        gpvi.EE_TOTAL_AMOUNT,
+        gpvi.EE_MAX_DAYS_WRKD,
+        gpvi.DAYS_FACTOR,
+        gpvi.SALARY_FACTOR,
+        gpvi.EE_AV_SALARY_CALC AS EE_MAX_AV_SALARY
+        , (
+            SELECT  SUM(DIAS_BASE) 
+            FROM    GRG_PTU_V3_HEADER 
+            WHERE   LEGAL_EMPLOYER_ID = :legal_emp_id 
+                    AND DIAS_BASE >= (
+                            SELECT  EE_MIN_DAYS_WRKD
+                            FROM    GRG_PTU_V3_INFO 
+                            WHERE   EE_LEGAL_EMPLOYER_ID = :legal_emp_id
+                        )
+                    AND COMPENSACION_BASE > 0
+        ) AS SUM_DÍAS
+        , ( 
+            SELECT  SUM(CAPPED_AVERAGE_SALARY) 
+            FROM    GRG_PTU_V3_HEADER 
+            WHERE   LEGAL_EMPLOYER_ID = :legal_emp_id 
+                    AND DIAS_BASE >= (
+                            SELECT  EE_MIN_DAYS_WRKD
+                            FROM    GRG_PTU_V3_INFO 
+                            WHERE   EE_LEGAL_EMPLOYER_ID = :legal_emp_id
+                        )
+                    AND COMPENSACION_BASE > 0
+        ) AS SUM_SUELDO
+        ,(gpvi.EE_TOTAL_AMOUNT/2) AS HALF_AMOUNT
+FROM    GRG_PTU_V3_INFO gpvi
+WHERE   gpvi.EE_LEGAL_EMPLOYER_ID = :legal_emp_id
