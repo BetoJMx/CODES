@@ -1,0 +1,228 @@
+--QRY REP BAJAS FECHAS CAPMOV 071022
+WITH Reporte_Bajas AS (
+    SELECT  papf.person_number                                       		ESTAFETA,
+            CONVERT (
+                REPLACE (
+                    REPLACE (
+                        REPLACE (
+                            REPLACE (TRIM (UPPER (ppnf.full_name)), '?', 'N'),
+                            'Ñ',
+                            'N'),
+                        ',',
+                        ''),
+                    'ñ',
+                    'n'),
+                'us7ascii',
+                'UTF8')
+                                                                            AS NOMBRE,
+            --+
+            CONVERT (UPPER (pnir.national_identifier_number), 'us7ascii', 'UTF8')
+                                                                            AS RFC,
+            CONVERT (UPPER (pnii.national_identifier_number), 'us7ascii', 'UTF8')
+                                                                            AS IMSS,
+            CONVERT (UPPER (pnic.national_identifier_number), 'us7ascii', 'UTF8')
+                                                                            AS CURP,
+            --+
+            CONVERT (UPPER (pj.name), 'us7ascii', 'UTF8')            		PUESTO,
+            --+
+            TO_CHAR (ppos.actual_termination_date, 'DD/MM/YYYY')     		FECHA_BAJA,
+            TO_CHAR (ppos.notified_termination_date, 'DD/MM/YYYY')			FECHA_NOTIFICACION,
+            --+
+            --CONVERT (UPPER (paypf.PAYROLL_NAME), 'us7ascii', 'UTF8')		NOMINA,
+            (
+                SELECT  nomina
+                FROM    (
+                            SELECT papf1.payroll_name as nomina
+                            FROM  per_all_assignments_f    paam
+                                , pay_all_payrolls_f       papf1
+                                , pay_assigned_payrolls_dn papd
+                                , pay_payroll_terms        ppt
+                                , pay_rel_groups_dn        prgd
+                                , pay_dir_cards_f          pdcf
+                                , pay_dir_rep_cards_f      pdrc
+                                , per_tax_reporting_units  ptru
+                            WHERE 1 = 1
+                                And ppt.payroll_term_id            = papd.payroll_term_id
+                                And papf1.payroll_id                = papd.payroll_id
+                                And paam.assignment_id             = prgd.assignment_id
+                                And ppt.hr_term_id                 = prgd.term_id
+                                And paam.primary_flag              = 'Y'
+                                And paam.assignment_status_type_id = 1
+                                And paam.assignment_type           = 'E'
+                                And prgd.group_type                = 'A'
+                                And papf.person_id                  = paam.person_id
+                                And prgd.payroll_relationship_id   = pdcf.payroll_relationship_id
+                                And pdcf.dir_card_id               = pdrc.dir_card_id
+                                And ptru.organization_id           = pdrc.tax_unit_id
+                                And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between pdrc.effective_start_date and pdrc.effective_end_date
+                                And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between pdcf.effective_start_date and pdcf.effective_end_date
+                                And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between papd.fsed and COALESCE  (papd.lsed,sysdate)
+                                And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between papf1.effective_start_date and papf.effective_end_date
+                                And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between paam.effective_start_date and paam.effective_end_date
+                        )
+                WHERE   rownum = 1
+            ) AS nomina,
+            CONVERT (UPPER (pat.action_name), 'us7ascii', 'UTF8')     		MOTIVO_BAJA,
+            par.action_reason 												CAUSA_BAJA,
+            hla.location_name                      						    UNIDAD,
+            hle.name                                						ORGANIZACION,
+            xler.registration_number										REGISTRO_PATRONAL,
+            trim(hap.name || '.' || hoi.org_information1)					PLAZA,
+            hap.name 														POSITION
+    FROM    per_all_assignments_f           paf,
+            per_periods_of_service     	    ppos,
+            per_jobs_f_tl              	    pj,
+            --+
+            per_all_people_f           	    papf,
+            per_person_names_f         	    ppnf,
+            per_national_identifiers   	    pnii,
+            per_national_identifiers   	    pnic,
+            per_national_identifiers   	    pnir,
+            --+
+            hr_organization_information 	hoi,
+            --+
+            hr_locations_all                hla,
+            --+
+            per_action_reasons_vl      	    par,
+            per_legal_employers        	    ple,
+            xle_entity_profiles        	    xlep,
+            xle_registrations          	    xler,
+            --+
+            per_action_occurrences     	    pao,
+            per_actions_b             	 	pab,
+            per_actions_tl             	    pat,
+            --+
+            hr_legal_entities			  	hle,
+            hr_all_positions				hap
+        
+    WHERE   1 = 1
+            --+ fechas
+            AND trunc(ppos.actual_termination_date)
+                BETWEEN nvl(:P_FEC_MOV1, trunc(ppos.actual_termination_date))
+                AND nvl(:P_FEC_MOV_2, trunc(ppos.actual_termination_date))
+            AND trunc(ppos.last_update_date)
+                BETWEEN nvl(:P_FEC_CAP1, trunc(paf.last_update_date))
+                AND nvl(:P_FEC_CAP_2, trunc(paf.last_update_date))
+            --+ 
+            And paf.person_id                   = papf.person_id
+            And paf.assignment_status_type      = 'ACTIVE'
+            And paf.assignment_type             = 'E'
+            And paf.primary_flag                = 'Y'
+            --And paf.effective_latest_change = 'Y'
+            --+
+            And ppos.legal_entity_id         = paf.legal_entity_id
+            And ppos.person_id               = paf.person_id
+            And ppos.period_of_service_id    = paf.period_of_service_id
+            And ppos.period_type             = 'E'
+            --+
+            And pj.job_id = paf.job_id
+            --+
+            AND hap.position_id                     = paf.position_id
+            --AND hap.JOB_ID							= paf.JOB_ID
+            --+
+            AND hle.organization_id  	         	= paf.legal_entity_id
+            AND hle.CLASSIFICATION_CODE 			= 'HCM_LEMP'
+            AND xler.source_id						= hle.legal_entity_id
+            --
+            AND papf.person_number 					= nvl(:p_estafeta, papf.person_number)
+            --AND papf.person_id  					= NVL(:p_person_id, papf.person_id )
+            --+
+            AND ppnf.person_id						= papf.person_id
+            AND ppnf.name_type						= 'MX'
+            --+
+            AND pnir.person_id(+) 					= papf.person_id
+            AND pnir.national_identifier_type(+) 	= 'RFC'
+            AND pnii.person_id(+) 					= papf.person_id
+            AND pnii.national_identifier_type(+) 	= 'IMSS'
+            AND pnic.person_id(+) 					= papf.person_id
+            AND pnic.national_identifier_type(+) 	= 'CURP'
+            --+
+            AND pj.JOB_ID 							= paf.JOB_ID
+            AND pj.language 						= SYS_CONTEXT ('USERENV', 'LANG')
+            --+
+            AND hoi.organization_id(+) 				= paf.organization_id
+            AND hoi.org_information_context(+) 		= 'PER_GL_COST_CENTER_INFO'
+            --+
+            AND paf.location_id                     = hla.location_id
+            AND hla.active_status                   = 'A'
+            --+
+            AND par.action_reason_id 				= pao.action_reason_id
+            --AND ppos.actual_termination_date        IS NOT NULL
+            --+
+            AND paf.legal_entity_id 				= ple.organization_id
+            AND ple.legal_entity_id 				= xlep.legal_entity_id
+            AND xlep.legal_entity_id 				= xler.source_id
+            AND xler.source_table 					= 'XLE_ENTITY_PROFILES'
+            --+
+            AND pao.action_occurrence_id 			= ppos.action_occurrence_id
+            AND pab.action_id 						= pao.action_id
+            AND pab.action_id 						= pat.action_id
+            AND pat.language 						= sys_context ('USERENV', 'LANG')
+            --+
+            AND trunc(ppos.actual_termination_date) BETWEEN paf.effective_start_date 
+                                                    AND paf.effective_end_date
+            AND TRUNC(ppos.actual_termination_date) BETWEEN pj.effective_start_date
+                                                    AND pj.effective_end_date
+            AND TRUNC(ppos.actual_termination_date) BETWEEN papf.effective_start_date
+                                                    AND papf.effective_end_date
+            AND TRUNC(ppos.actual_termination_date) BETWEEN ppnf.effective_start_date
+                                                    AND ppnf.effective_end_date
+            AND TRUNC(ppos.actual_termination_date) BETWEEN par.start_date(+) 
+                                                    AND par.end_date(+)
+	--ORDER BY ppos.actual_termination_date ASC
+    )
+
+SELECT 'Reporte de Bajas' AS BODY
+FROM DUAL
+
+UNION ALL
+SELECT  ' ' AS BODY
+FROM DUAL
+
+UNION ALL
+SELECT
+(
+    'UNIDAD' 				|| '|' ||              
+    'ORGANIZACION' 		    || '|' ||                
+    'ESTAFETA' 			    || '|' ||                
+    'NOMBRE' 				|| '|' ||                   
+    'NOMINA' 				|| '|' ||                 
+    'PUESTO' 				|| '|' || 
+    'PLAZA' 				|| '|' ||                 
+    'FECHA_BAJA' 			|| '|' || 
+    'FECHA_NOTIFICACION' 	|| '|' ||             
+    'MOTIVO_BAJA' 		    || '|' ||            
+    'CAUSA_BAJA' 			|| '|' ||       
+    'RFC' 				    || '|' ||                
+    'IMSS'				    || '|' ||           
+    'CURP' 				    || '|' ||        
+    'REGISTRO_PATRONAL' 
+)AS BODY
+FROM DUAL
+
+UNION ALL
+SELECT ' ' AS BODY
+FROM DUAL
+
+UNION ALL
+SELECT 
+(
+    UNIDAD 				|| '|' ||              
+    ORGANIZACION 		|| '|' ||                
+    ESTAFETA 			|| '|' ||                
+    NOMBRE 				|| '|' ||                   
+    NOMINA 				|| '|' ||                 
+    PUESTO 				|| '|' || 
+    PLAZA 				|| '|' ||                 
+    FECHA_BAJA 			|| '|' || 
+    FECHA_NOTIFICACION 	|| '|' ||             
+    MOTIVO_BAJA 		|| '|' ||            
+    CAUSA_BAJA 			|| '|' ||       
+    RFC 				|| '|' ||                
+    IMSS 				|| '|' ||           
+    CURP 				|| '|' ||        
+    REGISTRO_PATRONAL 
+) AS BODY
+FROM Reporte_Bajas
+
+
