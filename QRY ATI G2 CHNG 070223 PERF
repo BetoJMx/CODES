@@ -1,0 +1,707 @@
+--QRY ATI G2 CHNG 070223 PERF
+WITH cat_elements AS (
+    SELECT    meaning AS element_name
+            , regexp_substr (description, '[^' || '~' || ']+', 1, 1) element_name_reporte
+            , regexp_substr (description, '[^' || '~' || ']+', 1, 2) element_description_reporte
+            , tag tipopercepcion
+    FROM      fnd_lookup_values
+    WHERE     1 = 1
+    AND       TRIM(lookup_type) = 'XXGRG_PERCEPCIONES_ATI'
+    AND       language = SYS_CONTEXT('USERENV','LANG')
+    AND       enabled_flag = 'Y'
+), per_bal_1 AS (
+    SELECT  2 origen
+            , '019' tipopercepcion
+            , CASE
+                WHEN pbt.base_balance_name IN ('FP004 Hours Worked') THEN
+                    'FP004'
+                WHEN pbt.base_balance_name IN ('FP005 Hours Worked') THEN
+                    'FP005'
+                WHEN pbt.base_balance_name IN ('FP006 Hours Worked') THEN
+                    'FP006'
+                WHEN pbt.base_balance_name IN ('FP007 Hours Worked') THEN
+                    'FP007'
+                ELSE
+                    NULL
+                END element_name
+            , CASE
+                WHEN pbt.base_balance_name IN ('FP004 Hours Worked') THEN
+                    'DESCANSO LABORADO'
+                WHEN pbt.base_balance_name IN ('FP005 Hours Worked') THEN
+                    'TIEMPO EXTRA DOBLE'
+                WHEN pbt.base_balance_name IN ('FP006 Hours Worked') THEN
+                    'TIEMPO EXTRA TRIPLE'
+                WHEN pbt.base_balance_name IN ('FP007 Hours Worked') THEN
+                    'FESTIVO LABORADO'
+                ELSE
+                    NULL
+                END description
+            , 'CANTIDAD' input_name
+            , SUM (bal.balance_value) result_value
+            , pra.payroll_rel_action_id       payroll_rel_action_id
+            , pprd.payroll_relationship_id
+    FROM    per_legislative_data_groups_vl ldg,
+            pay_pay_relationships_dn      pprd,
+            pay_payroll_rel_actions       pra,
+            pay_payroll_actions           ppa,
+            pay_action_classes            pac,
+            pay_balance_types_vl          pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl       pdu
+    WHERE     1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND COALESCE (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND COALESCE (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name IN (   'FP004 Hours Worked'
+                                        , 'FP005 Hours Worked'
+                                        , 'FP006 Hours Worked'
+                                        , 'FP007 Hours Worked'
+                                        )
+            AND pdu.database_item_suffix = '_ASG_RUN'
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND COALESCE (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND COALESCE (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND :p_tipo_nomina = 'FINIQUITO'
+    GROUP BY pbt.base_balance_name
+            , pra.payroll_rel_action_id
+            , pprd.payroll_relationship_id
+    HAVING SUM (bal.balance_value) <> 0
+), per_bal_2 AS (
+    SELECT  1 origen
+            , elem.tipopercepcion
+            , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_name_reporte))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        ) element_name
+            , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_description_reporte))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        ) description
+            , UPPER(TRIM(pivtl.name)) input_name
+            , CASE 
+                WHEN UPPER (TRIM (pec.base_classification_name)) = 'SOCIAL INSURANCE DEDUCTIONS' AND UPPER(TRIM(pivtl.name)) = 'SDI' AND prtf.shortname <> 'REGNOR' THEN
+                    0
+                ELSE        
+                    ABS(SUM(prrv.result_value))
+                END AS result_value
+            , ppra.payroll_rel_action_id
+            , ppra.payroll_relationship_id
+    FROM      pay_payroll_rel_actions         ppra
+            , pay_run_types_f                 prtf
+            , pay_run_results                 prr
+            , pay_run_result_values           prrv
+            , pay_element_types_f             pet
+            , pay_element_types_tl            pettl
+            , fusion.pay_ele_classifications  pec
+            , fusion.pay_input_values_f       piv
+            , pay_input_values_tl             pivtl
+            , cat_elements                    elem
+    WHERE     1 = 1
+    AND       ppra.run_type_id = prtf.run_type_id
+    AND       ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+    AND       prr.run_result_id = prrv.run_result_id
+    AND       prr.status IN ('P', 'PA')
+    AND       prr.element_type_id = pet.element_type_id
+    AND       pet.element_type_id = pettl.element_type_id
+    AND       pet.classification_id = pec.classification_id
+    AND       pet.element_type_id = piv.element_type_id
+    AND       prrv.input_value_id = piv.input_value_id
+    AND       piv.input_value_id = pivtl.input_value_id
+    AND       piv.user_display_flag = 'Y'
+    AND       UPPER(pettl.element_name) = UPPER(elem.element_name)
+    AND       (    (     UPPER (pec.base_classification_name) IN (  'STANDARD EARNINGS'
+                                                                    , 'SUPPLEMENTAL EARNINGS'
+                                                                    , 'TAXABLE BENEFITS'
+                                                                    )
+                        AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                        , 'VALOR PAGO'
+                                                        , 'EARNINGS CALCULATED'
+                                                        , 'ISR SUBJECT'
+                                                        , 'ISR EXEMPT'
+                                                        )
+                    )
+                    OR (   (    UPPER (pec.base_classification_name) IN (  'TAX DEDUCTIONS'
+                                                                        , 'SOCIAL INSURANCE DEDUCTIONS'
+                                                                        , 'EMPLOYER TAXES'
+                                                                        )
+                            AND UPPER (TRIM (pivtl.name)) IN (  'EMPLOYER SOCIAL SECURITY QUOTA'
+                                                            , 'SDI'
+                                                            , 'PAY VALUE'
+                                                            , 'VALOR PAGO'
+                                                            , 'ISR WITHHELD'
+                                                            , 'ISR SUBSIDY FOR EMPLOYMENT PAID'
+                                                            , 'ISR SUBJECT'
+                                                            , 'ISR EXEMPT'
+                                                            )
+                        )
+                        OR (    UPPER (pec.base_classification_name) IN (  'ABSENCES'
+                                                                        , 'VOLUNTARY DEDUCTIONS'
+                                                                        , 'INVOLUNTARY DEDUCTIONS'
+                                                                        )
+                            AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                            , 'VALOR PAGO'
+                                                            , 'NET PAY'
+                                                            , 'ISR SUBJECT'
+                                                            , 'ISR EXEMPT'
+                                                            )
+                        )
+                    )
+                    OR (    UPPER (pec.base_classification_name) = 'INFORMATION'
+                        AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                        , 'VALOR PAGO'
+                                                        , 'EARNINGS AMOUNT'
+                                                        , 'DIAS'
+                                                        , 'HORAS'
+                                                        , 'ISR SUBJECT'
+                                                        , 'ISR EXEMPT'
+                                                        )
+                    )
+                    OR (    UPPER (pec.base_classification_name) = 'GLB_SEVERANCE_PAY'
+                        AND UPPER (TRIM (pivtl.name)) IN (  'EARNINGS CALCULATED'
+                                                        , 'ISR SUBJECT'
+                                                        , 'ISR EXEMPT'
+                                                        )
+                    )
+                )
+    AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+    AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+    AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+    AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+    GROUP BY  elem.tipopercepcion
+            , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_name_reporte))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        )
+            , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_description_reporte))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        )
+            , UPPER (TRIM (pec.base_classification_name))
+            , UPPER(TRIM(pivtl.name))
+            , prtf.shortname
+            , UPPER(TRIM(pivtl.name))
+            , ppra.payroll_rel_action_id
+            , ppra.payroll_relationship_id
+    UNION ALL
+    --
+    --
+    --INICIO EXTRACCIÓN DE CANTIDADES
+    --
+    --Balances
+    SELECT    origen
+            , tipopercepcion
+            , element_name
+            , description
+            , input_name
+            , SUM(result_value) result_value
+            , payroll_rel_action_id
+            , payroll_relationship_id
+    FROM      (
+                SELECT  /*+ORDERED FIRST_ROWS*/
+                        2 origen
+                        , '019' tipopercepcion
+                        , CASE
+                            WHEN pbt.base_balance_name IN ('DESCANSO LAB 1ERA SEMANA', 'DESCANSO LAB 2DA SEMANA', 'DESCANSO LAB 3ERA SEMANA') THEN
+                                'NP005_2'
+                            WHEN pbt.base_balance_name IN ('NP006 Hours Worked') THEN
+                                'NP006'
+                            WHEN pbt.base_balance_name IN ('TIEMPO EXTRA TRIPLE') THEN
+                                'NP007_2'
+                            WHEN pbt.base_balance_name IN ('FESTIVO LABORADO 1ERA SEMANA', 'FESTIVO LABORADO 2DA SEMANA', 'FESTIVO LABORADO 3ERA SEMANA') THEN
+                                'NP008_2'
+                            ELSE
+                                NULL
+                            END element_name
+                        , CASE
+                            WHEN pbt.base_balance_name IN ('DESCANSO LAB 1ERA SEMANA', 'DESCANSO LAB 2DA SEMANA', 'DESCANSO LAB 3ERA SEMANA') THEN
+                                'DESCANSO LABORADO'
+                            WHEN pbt.base_balance_name IN ('NP006 Hours Worked') THEN
+                                'TIEMPO EXTRA'
+                            WHEN pbt.base_balance_name IN ('TIEMPO EXTRA TRIPLE') THEN
+                                'TIEMPO EXTRA TRIPLE'
+                            WHEN pbt.base_balance_name IN ('FESTIVO LABORADO 1ERA SEMANA', 'FESTIVO LABORADO 2DA SEMANA', 'FESTIVO LABORADO 3ERA SEMANA') THEN
+                                'FESTIVO LABORADO'
+                            ELSE
+                                NULL
+                            END description
+                        , 'CANTIDAD' input_name
+                        , SUM (bal.balance_value) result_value
+                        , pra.payroll_rel_action_id       payroll_rel_action_id
+                        , pprd.payroll_relationship_id
+                FROM per_legislative_data_groups_vl ldg,
+                        pay_pay_relationships_dn      pprd,
+                        pay_payroll_rel_actions       pra,
+                        pay_payroll_actions           ppa,
+                        pay_action_classes            pac,
+                        pay_balance_types_vl          pbt,
+                        TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                                p_balance_type_id         => pbt.balance_type_id,
+                                p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                                p_payroll_term_id         => NULL,
+                                p_payroll_assignment_id   => NULL)) bal,
+                        pay_dimension_usages_vl       pdu
+                WHERE     1 = 1
+                        AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+                        AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+                        AND pra.retro_component_id IS NULL
+                        AND EXISTS
+                                (SELECT 1
+                                FROM pay_run_results prr
+                                WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+                        AND ppa.payroll_action_id = pra.payroll_action_id
+                        AND pac.action_type = ppa.action_type
+                        AND pac.classification_name = 'SEQUENCED'
+                        AND COALESCE (pbt.legislation_code, ldg.legislation_code) =
+                            ldg.legislation_code
+                        AND COALESCE (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                            ldg.legislative_data_group_id
+                        AND pbt.base_balance_name IN (   'DESCANSO LAB 1ERA SEMANA', 'DESCANSO LAB 2DA SEMANA', 'DESCANSO LAB 3ERA SEMANA'
+                                                    , 'NP006 Hours Worked'
+                                                    , 'TIEMPO EXTRA TRIPLE'
+                                                    , 'FESTIVO LABORADO 1ERA SEMANA', 'FESTIVO LABORADO 2DA SEMANA', 'FESTIVO LABORADO 3ERA SEMANA'
+                                                    )
+                        AND pdu.database_item_suffix = '_ASG_RUN'
+                        AND pdu.balance_dimension_id = bal.balance_dimension_id
+                        AND COALESCE (pdu.legislation_code, ldg.legislation_code) =
+                            ldg.legislation_code
+                        AND COALESCE (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                            ldg.legislative_data_group_id
+                        AND :p_tipo_nomina <> 'FINIQUITO'
+                GROUP BY pbt.base_balance_name
+                        , pra.payroll_rel_action_id
+                        , pprd.payroll_relationship_id
+                HAVING SUM (bal.balance_value) <> 0
+                )
+    WHERE     1 = 1
+    GROUP BY  origen
+            , tipopercepcion
+            , element_name
+            , description
+            , input_name
+            , payroll_rel_action_id
+            , payroll_relationship_id
+    UNION ALL
+    SELECT    origen
+            , tipopercepcion
+            , element_name
+            , description
+            , input_name
+            , SUM(result_value) result_value
+            , payroll_rel_action_id
+            , payroll_relationship_id
+    FROM    per_bal_1
+    WHERE     1 = 1
+    GROUP BY  origen
+            , tipopercepcion
+            , element_name
+            , description
+            , input_name
+            , payroll_rel_action_id
+            , payroll_relationship_id
+    UNION ALL
+    SELECT    2 origen
+            , elem.tipopercepcion
+            , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_name_reporte))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        ) element_name
+            , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_description_reporte))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        ) description
+            , 'CANTIDAD' input_name
+            , CASE 
+                WHEN UPPER (TRIM (pec.base_classification_name)) = 'SOCIAL INSURANCE DEDUCTIONS' AND UPPER(TRIM(pivtl.name)) = 'SDI' AND prtf.shortname <> 'REGNOR' THEN
+                    0
+                ELSE        
+                    SUM(ABS(prrv.result_value))
+                END AS result_value
+            , ppra.payroll_rel_action_id
+            , ppra.payroll_relationship_id
+    FROM      pay_payroll_rel_actions         ppra
+            , pay_run_types_f                 prtf
+            , pay_run_results                 prr
+            , pay_run_result_values           prrv
+            , pay_element_types_f             pet
+            , pay_element_types_tl            pettl
+            , pay_ele_classifications         pec
+            , pay_input_values_f              piv
+            , pay_input_values_tl             pivtl
+            , cat_elements                    elem
+    WHERE     1 = 1
+    AND       ppra.run_type_id = prtf.run_type_id
+    AND       ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+    AND       prr.run_result_id = prrv.run_result_id
+    AND       prr.status IN ('P', 'PA')
+    AND       prr.element_type_id = pet.element_type_id
+    AND       pet.element_type_id = pettl.element_type_id
+    AND       pet.classification_id = pec.classification_id
+    AND       pet.element_type_id = piv.element_type_id
+    AND       prrv.input_value_id = piv.input_value_id
+    AND       piv.input_value_id = pivtl.input_value_id
+    AND       piv.user_display_flag = 'Y'
+    AND       UPPER(pettl.element_name) = UPPER(elem.element_name_reporte)
+    AND       (   (    UPPER(elem.element_name_reporte) IN(  'NP001'
+                                                            , 'NP003'
+                                                            , 'NP020'
+                                                            , 'FP014'
+                                                            , 'FP015V2'
+                                                            , 'FP025'
+                                                            , 'FP002V2'
+                                                            )
+                    AND UPPER (TRIM (pivtl.name)) = 'DAYS WORKED'
+                    )
+                OR (    UPPER(elem.element_name_reporte) IN(  'NP001_H'
+                                                            , 'NP001HC'
+                                                            , 'NP033_H'
+                                                            , 'FP024_H'
+                                                            , 'FP024HC'
+                                                            , 'FP029_H'
+                                                            )
+                    AND UPPER (TRIM (pivtl.name)) = 'HORAS'
+                    )
+                OR (    UPPER(elem.element_name_reporte) IN(  'NP033'
+                                                            , 'FP022'
+                                                            , 'FP023'
+                                                            , 'FP024'
+                                                            )
+                    AND UPPER (TRIM (pivtl.name)) = 'DIAS'
+                    )
+                OR (    UPPER(elem.element_name_reporte) IN(  'NP018'
+                                                            , 'FP013'
+                                                            , 'FP021'
+                                                            )
+                    AND UPPER (TRIM (pivtl.name)) = 'DAYS'
+                    )
+                OR (    UPPER(elem.element_name_reporte) IN(  'NP018_H'
+                                                            , 'FP013_H'
+                                                            )
+                    AND UPPER (TRIM (pivtl.name)) = 'HOURS'
+                    )
+                )
+    AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+    AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+    AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+    AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+    GROUP BY  elem.tipopercepcion
+            , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_name_reporte))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        )
+            , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_description_reporte))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        )
+            , UPPER (TRIM (pec.base_classification_name))
+            , UPPER(TRIM(pivtl.name))
+            , prtf.shortname
+            , UPPER(TRIM(pivtl.name))
+            , ppra.payroll_rel_action_id
+            , ppra.payroll_relationship_id
+    HAVING    SUM(ABS(prrv.result_value)) <> 0                                
+), per_bal_3 AS (
+    SELECT  x.tipopercepcion
+            , x.element_name
+            , x.description
+            , CASE
+                WHEN x.element_name IN ('FP054', 'FP056') AND x.origen = 1 THEN
+                    (
+                        SELECT    COALESCE(SUM(prrv.result_value), 0)
+                        FROM      pay_payroll_rel_actions   pprax
+                                , pay_run_types_f           prtf
+                                , pay_run_result_values     prrv
+                                , pay_run_results           prr
+                                , pay_element_types_f       pet
+                                , pay_element_types_tl      pettl
+                                , pay_ele_classifications   pec
+                                , pay_input_values_f        piv
+                                , pay_input_values_tl       pivtl
+                        WHERE     1 = 1
+                        AND       pprax.run_type_id = prtf.run_type_id
+                        AND       pprax.payroll_rel_action_id = prr.payroll_rel_action_id
+                        AND       prrv.run_result_id = prr.run_result_id
+                        AND       prr.status IN ('P', 'PA')
+                        AND       prr.element_type_id = pet.element_type_id
+                        AND       pet.element_type_id = pettl.element_type_id
+                        AND       pet.classification_id = pec.classification_id
+                        AND       pet.element_type_id = piv.element_type_id
+                        AND       prrv.input_value_id = piv.input_value_id
+                        AND       piv.input_value_id = pivtl.input_value_id
+                        AND       pet.base_element_name = 'RETIRO_VOL_PAGADO EXENTO'
+                        AND       UPPER (TRIM (piv.base_name)) = 'VALOR PAGO'
+                        AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+                        AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+                        AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                        AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                        AND       pprax.payroll_rel_action_id = x.payroll_rel_action_id
+                    )
+                ELSE                                
+                    CASE
+                    WHEN x.input_name = 'ISR EXEMPT' AND x.origen = 1 THEN
+                        SUM(x.result_value)
+                    ELSE
+                        0
+                    END
+                END importeexento
+            , CASE
+                WHEN x.element_name IN ('FP054', 'FP056') AND x.origen = 1 THEN
+                    (
+                        SELECT    COALESCE(SUM(prrv.result_value), 0)
+                        FROM      pay_payroll_rel_actions   pprax
+                                , pay_run_types_f           prtf
+                                , pay_run_result_values     prrv
+                                , pay_run_results           prr
+                                , pay_element_types_f       pet
+                                , pay_element_types_tl      pettl
+                                , pay_ele_classifications   pec
+                                , pay_input_values_f        piv
+                                , pay_input_values_tl       pivtl
+                        WHERE     1 = 1
+                        AND       pprax.run_type_id = prtf.run_type_id
+                        AND       pprax.payroll_rel_action_id = prr.payroll_rel_action_id
+                        AND       prrv.run_result_id = prr.run_result_id
+                        AND       prr.status IN ('P', 'PA')
+                        AND       prr.element_type_id = pet.element_type_id
+                        AND       pet.element_type_id = pettl.element_type_id
+                        AND       pet.classification_id = pec.classification_id
+                        AND       pet.element_type_id = piv.element_type_id
+                        AND       prrv.input_value_id = piv.input_value_id
+                        AND       piv.input_value_id = pivtl.input_value_id
+                        AND       pet.base_element_name = 'RETIRO_VOL_PAGADO GRAVABLE'
+                        AND       UPPER (TRIM (piv.base_name)) = 'VALOR PAGO'
+                        AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+                        AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+                        AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                        AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                        AND       pprax.payroll_rel_action_id = x.payroll_rel_action_id
+                    )
+                ELSE                                
+                    CASE
+                    WHEN x.input_name = 'ISR SUBJECT' AND x.origen = 1 THEN
+                        SUM(x.result_value)
+                    ELSE
+                        0
+                    END
+                END importegravado
+            , CASE
+                WHEN x.input_name <> 'ISR EXEMPT' AND x.input_name <> 'ISR SUBJECT' AND x.origen = 1 THEN
+                    SUM(x.result_value)
+                ELSE
+                    0
+                END importe
+            --+  
+            , CASE 
+                    WHEN  x.origen = 2 THEN
+                        SUM(x.result_value)
+                    ELSE  
+                        0
+                END cantidad
+            --+  							
+            , x.payroll_rel_action_id
+            , x.payroll_relationship_id
+    FROM    per_bal_2 x
+    GROUP BY  tipopercepcion
+            , element_name
+            , description
+            , payroll_rel_action_id
+            , input_name
+            , origen
+            , payroll_relationship_id
+), per_bal_4 AS (
+    SELECT    
+            montos.tipopercepcion
+            , montos.element_name
+            , montos.description
+            , CASE
+                WHEN montos.element_name IN('FP021', 'FP022', 'FP023', 'FP026','FP027','FP027V2') THEN
+                    COALESCE((
+                        SELECT  COALESCE(SUM(bal.balance_value), 0) monto
+                        FROM per_legislative_data_groups_vl ldg,
+                                pay_pay_relationships_dn      pprd,
+                                pay_payroll_rel_actions       pra,
+                                pay_payroll_actions           ppa,
+                                pay_action_classes            pac,
+                                pay_balance_types_vl          pbt,
+                                TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                                        p_balance_type_id         => pbt.balance_type_id,
+                                        p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                                        p_payroll_term_id         => NULL,
+                                        p_payroll_assignment_id   => NULL)) bal,
+                                pay_dimension_usages_vl       pdu
+                                , pay_time_periods                ptpx
+                        WHERE     1 = 1
+                                AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+                                AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+                                AND pra.retro_component_id IS NULL
+                                AND EXISTS
+                                        (SELECT 1
+                                        FROM pay_run_results prr
+                                        WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+                                AND ppa.payroll_action_id = pra.payroll_action_id
+                                AND pac.action_type = ppa.action_type
+                                --
+                                AND ppa.earn_time_period_id = ptpx.time_period_id
+                                --
+                                AND pac.classification_name = 'SEQUENCED'
+                                AND COALESCE (pbt.legislation_code, ldg.legislation_code) =
+                                    ldg.legislation_code
+                                AND COALESCE (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                                    ldg.legislative_data_group_id
+                                AND pbt.base_balance_name = DECODE(  montos.element_name
+                                                                , 'FP021', 'FP021 ISR Exempt'
+                                                                , 'FP022', 'FP022 ISR Exempt'
+                                                                , 'FP023', 'FP023 ISR Exempt'
+                                                                , 'FP026', 'FP026 ISR Exempt'
+																, 'FP027', 'FP027 ISR Exempt'
+																, 'FP027V2', 'FP027V2 ISR Exempt'
+                                                                , '-'
+                                                                )
+                                AND pdu.database_item_suffix = '_ASG_RUN'
+                                AND pdu.balance_dimension_id = bal.balance_dimension_id
+                                AND COALESCE (pdu.legislation_code, ldg.legislation_code) =
+                                    ldg.legislation_code
+                                AND COALESCE (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                                    ldg.legislative_data_group_id
+                                and pra.payroll_relationship_id = montos.payroll_relationship_id
+                                and ptpx.period_name = COALESCE(:p_period_name, ptpx.period_name)
+                                and :p_tipo_nomina = 'FINIQUITO'
+                        HAVING    SUM(bal.balance_value) <> 0
+                    ), 0)
+                ELSE
+                    SUM(montos.importeexento)
+                END importeexento
+            , CASE
+                WHEN montos.element_name IN('FP021', 'FP022', 'FP023', 'FP026','FP027','FP027V2') THEN
+                    COALESCE((
+                        SELECT  COALESCE(SUM(bal.balance_value), 0) monto
+                        FROM per_legislative_data_groups_vl ldg,
+                                pay_pay_relationships_dn      pprd,
+                                pay_payroll_rel_actions       pra,
+                                pay_payroll_actions           ppa,
+                                pay_action_classes            pac,
+                                pay_balance_types_vl          pbt,
+                                TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                                        p_balance_type_id         => pbt.balance_type_id,
+                                        p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                                        p_payroll_term_id         => NULL,
+                                        p_payroll_assignment_id   => NULL)) bal,
+                                pay_dimension_usages_vl       pdu
+                                , pay_time_periods                ptpx
+                        WHERE     1 = 1
+                                AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+                                AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+                                AND pra.retro_component_id IS NULL
+                                AND EXISTS
+                                        (SELECT 1
+                                        FROM pay_run_results prr
+                                        WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+                                AND ppa.payroll_action_id = pra.payroll_action_id
+                                AND pac.action_type = ppa.action_type
+                                --
+                                AND ppa.earn_time_period_id = ptpx.time_period_id
+                                --
+                                AND pac.classification_name = 'SEQUENCED'
+                                AND COALESCE (pbt.legislation_code, ldg.legislation_code) =
+                                    ldg.legislation_code
+                                AND COALESCE (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                                    ldg.legislative_data_group_id
+                                AND pbt.base_balance_name = DECODE(  montos.element_name
+                                                                , 'FP021', 'FP021 ISR Subject'
+                                                                , 'FP022', 'FP022 ISR Subject'
+                                                                , 'FP023', 'FP023 ISR Subject'
+                                                                , 'FP026', 'FP026 ISR Subject'
+																, 'FP027', 'FP027 ISR Subject'
+																, 'FP027V2', 'FP027V2 ISR Subject'
+                                                                , '-'
+                                                                )
+                                AND pdu.database_item_suffix = '_ASG_RUN'
+                                AND pdu.balance_dimension_id = bal.balance_dimension_id
+                                AND COALESCE (pdu.legislation_code, ldg.legislation_code) =
+                                    ldg.legislation_code
+                                AND COALESCE (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                                    ldg.legislative_data_group_id
+                                and pra.payroll_relationship_id = montos.payroll_relationship_id
+                                and ptpx.period_name = COALESCE(:p_period_name, ptpx.period_name)
+                                and :p_tipo_nomina = 'FINIQUITO'
+                        HAVING    SUM(bal.balance_value) <> 0
+                    ), 0)
+                ELSE
+                    SUM(montos.importegravado)
+                END importegravado
+            , SUM(montos.importe) importe
+            , SUM(montos.cantidad) cantidad
+            , montos.payroll_rel_action_id
+    FROM    per_bal_3 montos
+    WHERE     1 = 1
+    GROUP BY  montos.tipopercepcion
+            , montos.element_name
+            , montos.description
+            , montos.payroll_rel_action_id
+            , montos.payroll_relationship_id
+    HAVING    SUM(montos.importe) <> 0
+)
+
+
+SELECT  tipopercepcion
+        , element_name clave
+        , description descripcion
+        , CASE
+            WHEN element_name IN ('FP054', 'FP056') THEN
+                importeexento
+            ELSE        
+              CASE
+                WHEN importeexento = 0 AND importegravado = 0 THEN
+                    importe
+                WHEN ((importeexento + importegravado) > importe) OR ((importeexento + importegravado) < importe) THEN
+                    ROUND((importe - importegravado), 2)
+                ELSE
+                    importeexento
+              END
+          END importeexento
+        , importegravado
+        , importe
+		, cantidad
+        , payroll_rel_action_id
+FROM    per_bal_4
+ORDER BY  element_name
