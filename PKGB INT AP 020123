@@ -1,0 +1,2997 @@
+--PKGB INT AP 020123
+create or replace PACKAGE BODY     xxtoks_interfaz_nomina_ap_cheques_pkg
+AS
+    PROCEDURE output (p_message IN VARCHAR2)
+    IS
+    BEGIN
+        dbms_output.put_line(p_message);
+    EXCEPTION
+    WHEN OTHERS THEN
+		dbms_output.put_line('Error al generar mensaje. '||SQLERRM);
+    END output;
+
+	/* RETIRO VOLUNTARIO */ 
+    PROCEDURE get_data_retiro_voluntario 
+                      ( 
+                       P_USER_TOKEN           IN VARCHAR2,    
+                       p_consolidation_set_id IN VARCHAR2, 
+                       p_time_period_id       IN VARCHAR2, 
+                       p_unidad_pago          IN VARCHAR2, 
+                       p_source               IN VARCHAR2, 
+                       p_org_id               IN VARCHAR2, 
+                       p_vendor_id            IN VARCHAR2, 
+                       p_element_type_id1     IN VARCHAR2, 
+                       p_tipoNegocio          IN VARCHAR2,    
+                       p_unidad               IN VARCHAR2, 
+                       p_cuenta               IN VARCHAR2, 
+                       p_Intercompania        IN VARCHAR2, 
+                       p_Proyecto             IN VARCHAR2,    
+                       p_payroll_id           IN VARCHAR2, 
+                       p_inv_id_temp          IN VARCHAR2, 
+                       p_user_name            IN VARCHAR2     
+                       )   
+    AS 
+        l_user_name                VARCHAR2 (100); --Aqu?an las credenciales 
+        l_password                 VARCHAR2 (100); 
+        l_ws_url                   VARCHAR2 (500); --Aqu?a el WSDL de Oracle para consumir informaci?e informacion del wsdl 
+        l_ws_action                VARCHAR2 (500):= 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar 
+        l_ws_response_clob         CLOB; 
+        l_ws_envelope              CLOB; 
+        l_ws_resp_xml              XMLTYPE; 
+        l_ws_resp_xml2             XMLTYPE; 
+        v_cdata                    CLOB; 
+        l_clob                     CLOB; 
+        v_val                      PLS_INTEGER; 
+        v_inv_int_temp             VARCHAR2(100); 
+        mensaje                    VARCHAR2(300); 
+        error                      VARCHAR2(300); 
+		ls_concatenated_segments   VARCHAR2(2000); 
+		l_vendor_name              VARCHAR2(2000); 
+		ln_cont_det                NUMBER; 
+		l_clob_text                CLOB; 
+		l_invoice_amount           NUMBER; 
+		v_process                  NUMBER; 
+    BEGIN 
+		 
+		v_inv_int_temp := p_inv_id_temp; 
+        DBMS_OUTPUT.put_line ('Inicio de la Interfaz de n?a AP cheques...'); 
+        --Este es el XML que se manda al servicio: 
+		begin  
+			DBMS_OUTPUT.put_line ('Entra soap'); 
+			l_ws_envelope := 
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+			   <soap:Body> 
+				  <pub:runReport> 
+					 <pub:reportRequest> 
+						   <pub:parameterNameValues> 
+							  <pub:item> 
+							<pub:name>p_consolidation_set_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_consolidation_set_id ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							  <pub:item> 
+							<pub:name>p_time_period_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_time_period_id ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							 <pub:item> 
+							<pub:name>p_unidad_pago</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_unidad_pago ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							 <pub:item> 
+							<pub:name>p_source</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_source ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							 <pub:item> 
+							<pub:name>p_org_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_org_id ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							  <pub:item> 
+							<pub:name>p_vendor_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_vendor_id ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							<pub:item> 
+							<pub:name>p_element_type_id1</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_element_type_id1 ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							<pub:item> 
+							<pub:name>p_tipoNegocio</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_tipoNegocio ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							<pub:item> 
+							<pub:name>p_unidad</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_unidad ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>  
+ 
+							<pub:item> 
+							<pub:name>p_cuenta</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_cuenta ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+							 
+							<pub:item> 
+							<pub:name>p_Intercompania</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_Intercompania ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+ 
+							 <pub:item> 
+							<pub:name>p_Proyecto</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_Proyecto ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+ 
+							 <pub:item> 
+							<pub:name>p_payroll_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_payroll_id ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							 <pub:item> 
+							<pub:name>p_user_name</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_user_name ||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+						   </pub:parameterNameValues> 
+						<pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS Nomina AP Retiro Voluntario/Retiro Voluntario AP - RT.xdo</pub:reportAbsolutePath> 
+						<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+					 </pub:reportRequest> 
+				  </pub:runReport> 
+			   </soap:Body> 
+			</soap:Envelope>';
+
+        DBMS_OUTPUT.put_line (' Llenando tabla...');
+ 		GRG_COMMON_CONNECTIONS.get_otbi_report(
+												 l_ws_envelope => l_ws_envelope
+												,l_user_token => P_USER_TOKEN
+												,x_ws_response => l_clob
+												,p_instance_name => 'DEV2'
+											);
+		
+        l_ws_resp_xml2 := XMLTYPE.createXML (l_clob); 
+ 
+        SELECT DISTINCT xml_data.vendor_name 
+		INTO l_vendor_name 
+		FROM XMLTABLE ( 
+			   '/DATA_DS/G_1' 
+			   PASSING xmltype.createxml (l_clob) 
+			   COLUMNS VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME' 
+						) xml_data; 
+						 
+		l_clob_text:= '============================== Pago derivados de Nomina para Retiro Voluntario =============================.'||CHR(10) 
+					||'Fecha Proceso: ' || TO_CHAR(SYSDATE - 6/24,' dd-mm-yyyy hh24:mi:ss')||CHR(10) 
+					||'Proveedor: '||l_vendor_name||CHR(10)  
+					||'Proceso:   '||p_source||CHR(10) 
+					||'| L?a '||'| Unidad                         |         Importe'||CHR(10) 
+					||'=========================================================================================================='||CHR(10); 
+ 
+		ln_cont_det      := 0; 
+		--v_process        := INTERFAZ_NOMINA_SEQ.nextval; 
+		l_invoice_amount := 0; 
+			 
+		FOR i 
+            IN (SELECT  xml_data.TIME_PERIOD_ID, 
+                        xml_data.INVOICE_ID, 
+                        xml_data.INVOICE_NUM, 
+                        xml_data.INVOICE_DATE, 
+                        xml_data.GL_DATE, 
+                        xml_data.INVOICE_TYPE_LOOKUP_CODE, 
+						xml_data.VENDOR_NAME, 
+                        xml_data.VENDOR_ID, 
+                        xml_data.VENDOR_SITE_ID, 
+                        xml_data.INVOICE_AMOUNT, 
+                        xml_data.INVOICE_CURRENCY_CODE, 
+                        xml_data.TERMS_NAME, 
+                        xml_data.SOURCE, 
+                        xml_data.PAYMENT_METHOD_LOOKUP_CODE, 
+                        xml_data.PAY_GROUP_LOOKUP_CODE, 
+                        xml_data.EXCLUSIVE_PAYMENT_FLAG, 
+                        xml_data.ORG_ID, ----- 
+                        xml_data.DESCRIPTION, ------- 
+                        xml_data.GROUP_ID, ------ 
+                        xml_data.ACCTS_PAY_CODE_COMB_ID, 
+                        xml_data.LINE_NUMBER, 
+                        xml_data.INVOICE_LINE_ID, 
+                        xml_data.LINE_TYPE_LOOKUP_CODE, 
+                        xml_data.PA_ADITTION_FLAG, 
+                        xml_data.ACCOUNT_DATE,    ------ 
+                        xml_data.LDESCRIPTION, 
+                        xml_data.DIST_CODE_COMBINATION_ID, 
+                        xml_data.METODO_PAGO, 
+                        xml_data.PAYMENT_PRIORITY, 
+                        xml_data.TIPONEGOCIO, 
+                        xml_data.UNIDAD, 
+                        xml_data.CUENTA, 
+                        xml_data.INTERCOMPAÑIA, 
+                        xml_data.PROYECTO, 
+                        xml_data.COMPAÑIA 
+                  FROM XMLTABLE ( 
+                           '/DATA_DS/G_1' 
+                           PASSING xmltype.createxml (l_clob) 
+                           COLUMNS TIME_PERIOD_ID NUMBER PATH 'TIME_PERIOD_ID', 
+                                    INVOICE_ID NUMBER PATH 'INVOICE_ID', 
+                                    INVOICE_NUM VARCHAR2(100) PATH 'INVOICE_NUM', 
+                                    INVOICE_DATE VARCHAR2(100) PATH 'INVOICE_DATE', 
+                                    GL_DATE VARCHAR2(100) PATH 'GL_DATE', 
+                                    INVOICE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'INVOICE_TYPE_LOOKUP_CODE', 
+                                    VENDOR_ID NUMBER PATH 'VENDOR_ID', 
+									VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME', 
+                                    VENDOR_SITE_ID NUMBER PATH 'VENDOR_SITE_ID', 
+                                    INVOICE_AMOUNT NUMBER PATH 'INVOICE_AMOUNT', 
+                                    INVOICE_CURRENCY_CODE VARCHAR2(100) PATH 'INVOICE_CURRENCY_CODE', 
+                                    TERMS_NAME VARCHAR2(100) PATH 'TERMS_NAME', 
+                                    SOURCE VARCHAR2(100) PATH 'SOURCE', 
+                                    PAYMENT_METHOD_LOOKUP_CODE VARCHAR2(100) PATH 'PAYMENT_METHOD_LOOKUP_CODE', 
+                                    PAY_GROUP_LOOKUP_CODE VARCHAR2(100) PATH 'PAY_GROUP_LOOKUP_CODE', 
+                                    EXCLUSIVE_PAYMENT_FLAG VARCHAR2(100) PATH 'EXCLUSIVE_PAYMENT_FLAG', 
+                                    ORG_ID NUMBER PATH 'ORG_ID', ----- 
+                                    DESCRIPTION VARCHAR2(100) PATH 'DESCRIPTION', ------- 
+                                    GROUP_ID VARCHAR2(100) PATH 'GROUP_ID', ------ 
+                                    ACCTS_PAY_CODE_COMB_ID NUMBER PATH 'ACCTS_PAY_CODE_COMB_ID', 
+                                    LINE_NUMBER NUMBER PATH 'LINE_NUMBER', 
+                                    INVOICE_LINE_ID NUMBER PATH 'INVOICE_LINE_ID', 
+                                    LINE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'LINE_TYPE_LOOKUP_CODE', 
+                                    PA_ADITTION_FLAG VARCHAR2(100) PATH 'PA_ADITTION_FLAG', 
+                                    ACCOUNT_DATE VARCHAR2(100) PATH 'ACCOUNT_DATE',    ------ 
+                                    LDESCRIPTION VARCHAR2(100) PATH 'LDESCRIPTION', 
+                                    DIST_CODE_COMBINATION_ID NUMBER PATH 'DIST_CODE_COMBINATION_ID', 
+                                    METODO_PAGO VARCHAR2(100) PATH 'METODO_PAGO', 
+                                    PAYMENT_PRIORITY NUMBER PATH 'PAYMENT_PRIORITY', 
+                                    TIPONEGOCIO VARCHAR2(250) PATH 'TIPONEGOCIO', 
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD', 
+                                    CUENTA VARCHAR2(250) PATH 'CUENTA', 
+                                    INTERCOMPAÑIA VARCHAR2(250) PATH 'INTERCOMPAÑIA', 
+                                    PROYECTO VARCHAR2(250) PATH 'PROYECTO', 
+                                    COMPAÑIA VARCHAR2(250) PATH 'COMPAÑIA' 
+                                    ) 
+                       xml_data) -- Aqu?e crea el XML de respuesta por nodos, es como formatear. 
+
+        LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX. 
+             
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES ( 
+                                TIME_PERIOD_ID, 
+                                PERSON_NUMBER, 
+                                INVOICE_ID, 
+                                INVOICE_NUM, 
+                                INVOICE_DATE, 
+                                GL_DATE, 
+                                INVOICE_TYPE_LOOKUP_CODE, 
+                                VENDOR_ID, 
+                                VENDOR_SITE_ID, 
+                                INVOICE_AMOUNT, 
+                                INVOICE_CURRENCY_CODE, 
+                                TERMS_NAME, 
+                                SOURCE, 
+                                PAYMENT_METHOD_LOOKUP_CODE, 
+                                PAY_GROUP_LOOKUP_CODE, 
+                                EXCLUSIVE_PAYMENT_FLAG, 
+                                ORG_ID, ----- 
+                                DESCRIPTION, ------- 
+                                GROUP_ID, ------ 
+                                ACCTS_PAY_CODE_COMB_ID, 
+                                LINE_NUMBER, 
+                                INVOICE_LINE_ID, 
+                                LINE_TYPE_LOOKUP_CODE, 
+                                PA_ADITTION_FLAG, 
+                                ACCOUNT_DATE,    ------ 
+                                LDESCRIPTION, 
+                                DIST_CODE_COMBINATION_ID, 
+                                METODO_PAGO, 
+                                PAYROLL_RELATIONSHIP_ID, 
+                                PAYROLL_ACTION_ID, 
+                                PAYMENT_PRIORITY, 
+                                creation_date, 
+                                DEPARTAMENTO, 
+                                INTERFAZ, 
+                                ID, 
+                                TIPONEGOCIO, 
+                                UNIDAD, 
+                                CUENTA, 
+                                INTERCOMPAÑIA, 
+                                PROYECTO, 
+                                COMPAÑIA 
+                                  ) 
+                         VALUES ( 
+                                i.TIME_PERIOD_ID, 
+                                0, 
+                                i.INVOICE_ID, 
+                                i.INVOICE_NUM, 
+                                to_date(substr(i.INVOICE_DATE,1,10),'yyyy-mm-dd'), 
+                                TO_DATE(substr(i.GL_DATE,1,10),'yyyy-mm-dd'), 
+                                i.INVOICE_TYPE_LOOKUP_CODE, 
+                                i.VENDOR_ID, 
+                                i.VENDOR_SITE_ID, 
+                                i.INVOICE_AMOUNT, 
+                                i.INVOICE_CURRENCY_CODE, 
+                                i.TERMS_NAME, 
+                                i.SOURCE, 
+                                i.PAYMENT_METHOD_LOOKUP_CODE, 
+                                i.PAY_GROUP_LOOKUP_CODE, 
+                                i.EXCLUSIVE_PAYMENT_FLAG, 
+                                i.ORG_ID, ----- 
+                                i.DESCRIPTION, ------- 
+                                i.GROUP_ID, ------ 
+                                i.ACCTS_PAY_CODE_COMB_ID, 
+                                i.LINE_NUMBER, 
+                                i.INVOICE_LINE_ID, 
+                                i.LINE_TYPE_LOOKUP_CODE, 
+                                i.PA_ADITTION_FLAG, 
+                                TO_DATE(substr(i.ACCOUNT_DATE,1,10),'yyyy-mm-dd'),    ------ 
+                                i.LDESCRIPTION, 
+                                i.DIST_CODE_COMBINATION_ID, 
+                                i.METODO_PAGO, 
+                                0, 
+                                0, 
+                                i.PAYMENT_PRIORITY, 
+                                sysdate - 5/24, 
+                                NULL, 
+                                'INTERFAZ_NOMINA_AP_RETIRO_VOLUNTARIO', 
+                                p_inv_id_temp, 
+                                i.TIPONEGOCIO, 
+                                i.UNIDAD, 
+                                i.CUENTA, 
+                                i.INTERCOMPAÑIA, 
+                                i.PROYECTO, 
+                                i.COMPAÑIA
+                                 ); 
+					 
+			ln_cont_det:= ln_cont_det + 1; 
+			l_invoice_amount:= l_invoice_amount + i.INVOICE_AMOUNT; 
+			l_clob_text:= l_clob_text||'Linea:'||rpad(ln_cont_det,10)||'| Unidad : '||lpad(rpad(i.LDESCRIPTION,40),40)||'          '||TO_CHAR(i.INVOICE_AMOUNT, '999,999,999,999.99')||CHR(10); 
+			 
+        END LOOP; 
+        EXCEPTION 
+        WHEN OTHERS THEN 
+            DBMS_OUTPUT.put_line ('insertar tabla1' || SQLERRM); 
+		END; 
+        
+        BEGIN
+    		SELECT  1
+    		INTO    v_val 
+    		FROM    XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES 
+    		WHERE   ID = p_inv_id_temp
+    		        AND interfaz = 'INTERFAZ_NOMINA_AP_RETIRO_VOLUNTARIO'
+                    AND ROWNUM = 1;
+
+        EXCEPTION WHEN OTHERS THEN 
+            v_val := 0;
+        END;
+ 
+		IF v_val > 0 THEN	 
+			l_clob_text:= l_clob_text||'=========================================================================================================='||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de registros es: '||v_val||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de importe insertados en lineas es: '||TO_CHAR(l_invoice_amount, '999,999,999,999.99')||CHR(10); 
+ 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_TXT (DATA_TXT,PROCESS_ID,CREATION_DATE,INTERFACE_NAME) VALUES (l_clob_text,v_inv_int_temp,SYSDATE,'INTERFAZ_NOMINA_AP_RETIRO_VOLUNTARIO'); 
+			COMMIT; 
+ 
+			--x_process_id :=  v_inv_int_temp; 
+		ELSE  
+			mensaje := 'No se encontraron datos'; 
+			apex_json.open_object; 
+			apex_json.write('mensaje', mensaje); 
+			apex_json.close_object; 
+		END IF; 
+        COMMIT; 
+		                
+    EXCEPTION 
+	WHEN OTHERS THEN 
+		DBMS_OUTPUT.put_line ('Se ha producido un error general en la Interfaz de nomina AP: '|| SQLERRM); 
+		mensaje := 'Se ha producido un error general en la Interfaz de nomina AP:'; 
+		error := SQLERRM; 
+		apex_json.open_object; 
+		apex_json.write('mensaje', mensaje); 
+		apex_json.write('error', error); 
+		apex_json.close_object; 
+    END get_data_retiro_voluntario; 
+ 
+/*AYUDA MUTUA */ 
+ 
+    PROCEDURE get_data_ayuda_mutua 
+                      ( 
+                       P_USER_TOKEN IN VARCHAR2,    
+                       p_consolidation_set_id IN VARCHAR2, 
+                       p_time_period_id IN VARCHAR2, 
+                       p_unidad_pago IN VARCHAR2, 
+                       p_source IN VARCHAR2, 
+                       p_org_id IN VARCHAR2, 
+                       p_vendor_id IN VARCHAR2, 
+                       p_element_type_id1 IN VARCHAR2, 
+                       p_element_type_id2 IN VARCHAR2, 
+                       p_tipoNegocio IN VARCHAR2,    
+                       p_unidad IN VARCHAR2, 
+                       p_cuenta IN VARCHAR2,
+                       --p_cuenta_descripcion IN VARCHAR2,
+                       p_Intercompania IN VARCHAR2, 
+                       p_Proyecto IN VARCHAR2,    
+                       p_payroll_id IN VARCHAR2, 
+                       p_inv_id_temp IN VARCHAR2, 
+                       p_user_name IN VARCHAR2, 
+					   p_process_id IN  NUMBER, 
+                       x_process_id OUT NUMBER					    
+                       )   
+    AS 
+        l_user_name                VARCHAR2 (100);--Aqu?an las credenciales 
+        l_password                 VARCHAR2 (100); 
+        l_ws_url                   VARCHAR2 (500); --Aqu?a el WSDL de Oracle para consumir informaci?e informacion del wsdl 
+        l_ws_action                VARCHAR2 (500):= 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar 
+        l_ws_response_clob         CLOB; 
+        l_ws_envelope              CLOB; 
+        l_ws_resp_xml              XMLTYPE; 
+        l_ws_resp_xml2             XMLTYPE; 
+        v_cdata                    CLOB; 
+        l_clob                     CLOB; 
+        v_val                      PLS_INTEGER; 
+        v_inv_int_temp             VARCHAR2(100); 
+        mensaje                    VARCHAR2(300); 
+        error                      VARCHAR2(300); 
+		ls_concatenated_segments   VARCHAR2(2000); 
+		l_vendor_name              VARCHAR2(2000); 
+		ln_cont_det                NUMBER; 
+		l_clob_text                CLOB; 
+		l_invoice_amount           NUMBER; 
+		v_process                  NUMBER;
+        l_cuenta_desc              VARCHAR2(2000);  
+    BEGIN 
+		v_inv_int_temp := p_inv_id_temp; 
+        DBMS_OUTPUT.put_line ('Inicio de la Interfaz de n?a AP cheques...'); 
+        --Este es el XML que se manda al servicio: 
+        l_ws_envelope := 
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+				   <soap:Body> 
+					  <pub:runReport> 
+						 <pub:reportRequest> 
+							   <pub:parameterNameValues> 
+							    
+								  <pub:item> 
+								<pub:name>p_consolidation_set_id</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_consolidation_set_id||'</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+								  
+								  <pub:item> 
+								<pub:name>p_time_period_id</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_time_period_id|| '</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+								  
+								 <pub:item> 
+								<pub:name>p_unidad_pago</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_unidad_pago|| '</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+ 
+								 <pub:item> 
+								<pub:name>p_source</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_source|| '</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+ 
+								 <pub:item> 
+								<pub:name>p_org_id</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_org_id|| '</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+ 
+								  <pub:item> 
+								<pub:name>p_vendor_id</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_vendor_id|| '</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+ 
+								<pub:item> 
+								<pub:name>p_element_type_id1</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_element_type_id1||'</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+ 
+								   <pub:item> 
+								<pub:name>p_element_type_id2</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_element_type_id2||'</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+ 
+							   <pub:item> 
+								<pub:name>p_tipoNegocio</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_tipoNegocio||'</pub:item> 
+								 </pub:values> 
+								 </pub:item>  
+ 
+								<pub:item> 
+								<pub:name>p_unidad</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_unidad||'</pub:item> 
+								 </pub:values> 
+								 </pub:item>   
+								 
+								<pub:item> 
+								<pub:name>p_cuenta</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_cuenta||'</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+
+                                <pub:item> 
+								<pub:name>p_Intercompania</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_Intercompania||'</pub:item> 
+								 </pub:values> 
+								 </pub:item>   
+ 
+								 <pub:item> 
+								<pub:name>p_Proyecto</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_Proyecto||'</pub:item> 
+								 </pub:values> 
+								 </pub:item>   
+ 
+								 <pub:item> 
+								<pub:name>p_payroll_id</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_payroll_id||'</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+ 
+								<pub:item> 
+								<pub:name>p_user_name</pub:name> 
+								<pub:values> 
+								 <pub:item>'|| p_user_name||'</pub:item> 
+								 </pub:values> 
+								 </pub:item> 
+ 
+							   </pub:parameterNameValues> 
+							<pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS Interfase Nomina AP Plan de Ayuda Mutua/Plan Ayuda Mutua AP - RT.xdo</pub:reportAbsolutePath> 
+							<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+						 </pub:reportRequest> 
+					  </pub:runReport> 
+				   </soap:Body> 
+				</soap:Envelope>';                   
+
+        DBMS_OUTPUT.put_line (' Limpiando tabla...');
+												
+		GRG_COMMON_CONNECTIONS.get_otbi_report(
+												 l_ws_envelope => l_ws_envelope
+												,l_user_token => P_USER_TOKEN
+												,x_ws_response => l_clob
+												,p_instance_name => 'DEV2'
+											);													
+ 
+		l_ws_resp_xml2 := XMLTYPE.createXML (l_clob); 
+                 
+        DBMS_OUTPUT.put_line (' Llenando tabla...'); 
+		 
+		SELECT DISTINCT xml_data.vendor_name 
+		INTO l_vendor_name 
+		FROM XMLTABLE ( 
+			   '/DATA_DS/G_1' 
+			   PASSING xmltype.createxml (l_clob) 
+			   COLUMNS VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME' 
+						) xml_data;
+
+        SELECT DESCRIPCION 
+		INTO l_cuenta_desc 
+		FROM XXTOKS_CUENTA_SGG_LOV
+        WHERE VALOR = p_cuenta;                
+					    
+		l_clob_text:= '============================== Pago derivados de Nomina para Ayuda Mutua ================================.'||CHR(10) 
+					||'Fecha Proceso: ' || TO_CHAR(SYSDATE - 6/24,' dd-mm-yyyy hh24:mi:ss')||CHR(10) 
+					||'Proveedor: '||l_vendor_name||CHR(10)  
+					||'Proceso:   '||REGEXP_REPLACE( translate(p_source,'ÁÉÍÓÚÑáéíóúñ','AEIOUNaeioun'), '[^0-9A-Za-z[:space:]]', '')||CHR(10)
+                    ||'Cuenta ID: '||p_cuenta||CHR(10)  
+                    ||'Cuenta Descripcion: '|| l_cuenta_desc ||CHR(10)
+					||'| L?a '||'| Unidad                         |         Importe'||CHR(10) 
+					||'=========================================================================================================.'||CHR(10); 
+ 
+		ln_cont_det      := 0; 
+		--v_process        := INTERFAZ_NOMINA_SEQ.nextval; 
+		l_invoice_amount := 0; 
+ 
+        FOR i 
+            IN (SELECT  xml_data.TIME_PERIOD_ID, 
+                        xml_data.INVOICE_ID, 
+                        xml_data.INVOICE_NUM, 
+                        xml_data.INVOICE_DATE, 
+                        xml_data.GL_DATE, 
+                        xml_data.INVOICE_TYPE_LOOKUP_CODE, 
+                        xml_data.VENDOR_ID, 
+						xml_data.VENDOR_NAME, 
+                        xml_data.VENDOR_SITE_ID, 
+                        xml_data.INVOICE_AMOUNT, 
+                        xml_data.INVOICE_CURRENCY_CODE, 
+                        xml_data.TERMS_NAME, 
+                        xml_data.SOURCE, 
+                        xml_data.PAYMENT_METHOD_LOOKUP_CODE, 
+                        xml_data.PAY_GROUP_LOOKUP_CODE, 
+                        xml_data.EXCLUSIVE_PAYMENT_FLAG, 
+                        xml_data.ORG_ID, ----- 
+                        xml_data.DESCRIPTION, ------- 
+                        xml_data.GROUP_ID, ------ 
+                        xml_data.ACCTS_PAY_CODE_COMB_ID, 
+                        xml_data.LINE_NUMBER, 
+                        xml_data.INVOICE_LINE_ID, 
+                        xml_data.LINE_TYPE_LOOKUP_CODE, 
+                        xml_data.PA_ADITTION_FLAG, 
+                        xml_data.ACCOUNT_DATE,    ------ 
+                        xml_data.LDESCRIPTION, 
+                        xml_data.DIST_CODE_COMBINATION_ID, 
+                        xml_data.METODO_PAGO, 
+                        xml_data.PAYMENT_PRIORITY, 
+                        xml_data.TIPONEGOCIO, 
+                        xml_data.UNIDAD, 
+                        xml_data.CUENTA,
+                        xml_data.INTERCOMPAÑIA, 
+                        xml_data.PROYECTO, 
+                        xml_data.COMPAÑIA 
+                  FROM XMLTABLE ( 
+                           '/DATA_DS/G_1' 
+                           PASSING xmltype.createxml (l_clob) 
+                           COLUMNS TIME_PERIOD_ID NUMBER PATH 'TIME_PERIOD_ID', 
+                                    INVOICE_ID NUMBER PATH 'INVOICE_ID', 
+                                    INVOICE_NUM VARCHAR2(100) PATH 'INVOICE_NUM', 
+                                    INVOICE_DATE VARCHAR2(100) PATH 'INVOICE_DATE', 
+                                    GL_DATE VARCHAR2(100) PATH 'GL_DATE', 
+                                    INVOICE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'INVOICE_TYPE_LOOKUP_CODE', 
+                                    VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME', 
+									VENDOR_ID NUMBER PATH 'VENDOR_ID', 
+                                    VENDOR_SITE_ID NUMBER PATH 'VENDOR_SITE_ID', 
+                                    INVOICE_AMOUNT NUMBER PATH 'INVOICE_AMOUNT', 
+                                    INVOICE_CURRENCY_CODE VARCHAR2(100) PATH 'INVOICE_CURRENCY_CODE', 
+                                    TERMS_NAME VARCHAR2(100) PATH 'TERMS_NAME', 
+                                    SOURCE VARCHAR2(100) PATH 'SOURCE', 
+                                    PAYMENT_METHOD_LOOKUP_CODE VARCHAR2(100) PATH 'PAYMENT_METHOD_LOOKUP_CODE', 
+                                    PAY_GROUP_LOOKUP_CODE VARCHAR2(100) PATH 'PAY_GROUP_LOOKUP_CODE', 
+                                    EXCLUSIVE_PAYMENT_FLAG VARCHAR2(100) PATH 'EXCLUSIVE_PAYMENT_FLAG', 
+                                    ORG_ID NUMBER PATH 'ORG_ID', ----- 
+                                    DESCRIPTION VARCHAR2(100) PATH 'DESCRIPTION', ------- 
+                                    GROUP_ID VARCHAR2(100) PATH 'GROUP_ID', ------ 
+                                    ACCTS_PAY_CODE_COMB_ID NUMBER PATH 'ACCTS_PAY_CODE_COMB_ID', 
+                                    LINE_NUMBER NUMBER PATH 'LINE_NUMBER', 
+                                    INVOICE_LINE_ID NUMBER PATH 'INVOICE_LINE_ID', 
+                                    LINE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'LINE_TYPE_LOOKUP_CODE', 
+                                    PA_ADITTION_FLAG VARCHAR2(100) PATH 'PA_ADITTION_FLAG', 
+                                    ACCOUNT_DATE VARCHAR2(100) PATH 'ACCOUNT_DATE',    ------ 
+                                    LDESCRIPTION VARCHAR2(100) PATH 'LDESCRIPTION', 
+                                    DIST_CODE_COMBINATION_ID NUMBER PATH 'DIST_CODE_COMBINATION_ID', 
+                                    METODO_PAGO VARCHAR2(100) PATH 'METODO_PAGO', 
+                                    PAYMENT_PRIORITY NUMBER PATH 'PAYMENT_PRIORITY', 
+                                    TIPONEGOCIO VARCHAR2(250) PATH 'TIPONEGOCIO', 
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD', 
+                                    CUENTA VARCHAR2(250) PATH 'CUENTA', 
+                                    INTERCOMPAÑIA VARCHAR2(250) PATH 'INTERCOMPAÑIA', 
+                                    PROYECTO VARCHAR2(250) PATH 'PROYECTO', 
+                                    COMPAÑIA VARCHAR2(250) PATH 'COMPAÑIA' 
+                                    ) 
+                       xml_data) -- Aqu?e crea el XML de respuesta por nodos, es como formatear. 
+
+        LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX. 
+				 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES ( 
+                                TIME_PERIOD_ID, 
+                                INVOICE_ID, 
+                                INVOICE_NUM, 
+                                INVOICE_DATE, 
+                                GL_DATE, 
+                                INVOICE_TYPE_LOOKUP_CODE, 
+                                VENDOR_ID, 
+                                VENDOR_SITE_ID, 
+                                INVOICE_AMOUNT, 
+                                INVOICE_CURRENCY_CODE, 
+                                TERMS_NAME, 
+                                SOURCE, 
+                                PAYMENT_METHOD_LOOKUP_CODE, 
+                                PAY_GROUP_LOOKUP_CODE, 
+                                EXCLUSIVE_PAYMENT_FLAG, 
+                                ORG_ID, ----- 
+                                DESCRIPTION, ------- 
+                                GROUP_ID, ------ 
+                                ACCTS_PAY_CODE_COMB_ID, 
+                                LINE_NUMBER, 
+                                INVOICE_LINE_ID, 
+                                LINE_TYPE_LOOKUP_CODE, 
+                                PA_ADITTION_FLAG, 
+                                ACCOUNT_DATE,    ------ 
+                                LDESCRIPTION, 
+                                DIST_CODE_COMBINATION_ID, 
+                                METODO_PAGO, 
+                                PAYMENT_PRIORITY, 
+                                creation_date, 
+                                INTERFAZ, 
+                                ID, 
+                                TIPONEGOCIO, 
+                                UNIDAD, 
+                                CUENTA,
+                                --CUENTA_DESCRIPCION, 
+                                INTERCOMPAÑIA, 
+                                PROYECTO, 
+                                COMPAÑIA) 
+                         VALUES ( 
+                                i.TIME_PERIOD_ID, 
+                                i.INVOICE_ID, 
+                                i.INVOICE_NUM, 
+                                to_date(substr(i.INVOICE_DATE,1,10),'yyyy-mm-dd'), 
+                                TO_DATE(substr(i.GL_DATE,1,10),'yyyy-mm-dd'), 
+                                i.INVOICE_TYPE_LOOKUP_CODE, 
+                                i.VENDOR_ID, 
+                                i.VENDOR_SITE_ID, 
+                                i.INVOICE_AMOUNT, 
+                                i.INVOICE_CURRENCY_CODE, 
+                                i.TERMS_NAME, 
+                                i.SOURCE, 
+                                i.PAYMENT_METHOD_LOOKUP_CODE, 
+                                i.PAY_GROUP_LOOKUP_CODE, 
+                                i.EXCLUSIVE_PAYMENT_FLAG, 
+                                i.ORG_ID, ----- 
+                                i.DESCRIPTION, ------- 
+                                i.GROUP_ID, ------ 
+                                i.ACCTS_PAY_CODE_COMB_ID, 
+                                i.LINE_NUMBER, 
+                                i.INVOICE_LINE_ID, 
+                                i.LINE_TYPE_LOOKUP_CODE, 
+                                i.PA_ADITTION_FLAG, 
+                                TO_DATE(substr(i.ACCOUNT_DATE,1,10),'yyyy-mm-dd'),    ------ 
+                                i.LDESCRIPTION, 
+                                i.DIST_CODE_COMBINATION_ID, 
+                                i.METODO_PAGO, 
+                                i.PAYMENT_PRIORITY, 
+                                sysdate - 5/24, 
+                                'INTERFAZ_NOMINA_AP_AYUDA_MUTUA', 
+                                v_inv_int_temp, 
+                                i.TIPONEGOCIO, 
+                                i.UNIDAD, 
+                                i.CUENTA, 
+                                i.INTERCOMPAÑIA, 
+                                i.PROYECTO, 
+                                i.COMPAÑIA); 
+			 
+			ln_cont_det:= ln_cont_det + 1; 
+			l_invoice_amount:= l_invoice_amount + i.INVOICE_AMOUNT; 
+			l_clob_text:= l_clob_text||'Linea:'||rpad(ln_cont_det,10)||'| Unidad : '||lpad(rpad(i.LDESCRIPTION,40),40)||'          '||TO_CHAR(i.INVOICE_AMOUNT, '999,999,999,999.99')||CHR(10); 
+			 
+			 
+--            END IF; 
+        END LOOP; 
+        
+        BEGIN
+    		SELECT  1
+    		INTO    v_val 
+    		FROM    XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES 
+    		WHERE   ID = p_inv_id_temp
+    		        AND interfaz = 'INTERFAZ_NOMINA_AP_AYUDA_MUTUA'
+                    AND ROWNUM = 1;
+        
+        EXCEPTION WHEN OTHERS THEN
+            v_val := 0;
+        END;
+ 
+		IF v_val > 0 THEN 
+			l_clob_text:= l_clob_text||'=========================================================================================================='||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de registros es: '||v_val||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de importe insertados en lineas es: '||TO_CHAR(l_invoice_amount, '999,999,999,999.99')||CHR(10); 
+ 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_TXT (DATA_TXT,PROCESS_ID,CREATION_DATE,INTERFACE_NAME) VALUES (l_clob_text,v_inv_int_temp,SYSDATE,'INTERFAZ_NOMINA_AP_AYUDA_MUTUA'); 
+			COMMIT; 
+ 
+			x_process_id :=  v_inv_int_temp; 
+		ELSE  
+			mensaje := 'No se encontraron datos'; 
+			apex_json.open_object; 
+			apex_json.write('mensaje', mensaje); 
+			apex_json.close_object; 
+		END IF; 
+        COMMIT; 
+                 
+    EXCEPTION 
+    WHEN OTHERS THEN 
+		DBMS_OUTPUT.put_line ('Se ha producido un error general en la Interfaz de n?a AP: '|| SQLERRM); 
+		mensaje := 'Se ha producido un error general en la Interfaz de n?a AP:'; 
+		error := SQLERRM; 
+		apex_json.open_object; 
+		apex_json.write('mensaje', mensaje); 
+		apex_json.write('error', error); 
+		apex_json.close_object; 
+    END get_data_ayuda_mutua; 
+ 
+-------------------------------------------------------------------------------------------------------------------------------- 
+PROCEDURE get_data_interfase_nomina_sindicatos 
+                   (  
+                       P_USER_TOKEN              IN   VARCHAR2 
+                      ,pni_consolidation_set_id  IN    NUMBER 
+                      ,pni_time_period_id        IN    VARCHAR2 
+                      ,pni_time_period_id2       IN    VARCHAR2     
+                      ,pni_unidad_pago           IN    NUMBER 
+                      ,psi_source                IN    VARCHAR2    
+                      ,pni_org_id                IN    NUMBER 
+                      ,pni_vendor_id             IN    NUMBER 
+                      ,pni_element_type_id1      IN    NUMBER 
+                      ,psi_region                IN    VARCHAR2 
+                      ,psi_tipoNegocio           IN    VARCHAR2        
+					  ,psi_unidad                IN    VARCHAR2 
+					  ,psi_cuenta                IN    VARCHAR2 
+                      ,psi_Intercompania         IN    VARCHAR2 
+					  ,psi_Proyecto              IN    VARCHAR2 
+                      ,pni_payroll_id            IN    NUMBER 
+                      ,p_inv_id_temp             IN    VARCHAR2 
+                      ,p_user_name               IN    VARCHAR2 
+                    )  
+    AS 
+        l_user_name                VARCHAR2 (100) ;--Aqu?an las credenciales 
+        l_password                 VARCHAR2 (100) ; 
+        l_ws_url                   VARCHAR2 (500) ; --Aqu?a el WSDL de Oracle para consumir informaci?e informacion del wsdl 
+        l_ws_action                VARCHAR2 (500):= 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar 
+        l_ws_response_clob         CLOB; 
+        l_ws_envelope              CLOB; 
+        l_ws_resp_xml              XMLTYPE; 
+        l_ws_resp_xml2             XMLTYPE; 
+        v_cdata                    CLOB; 
+        l_clob                     CLOB; 
+        v_val                      PLS_INTEGER; 
+		v_inv_int_temp             VARCHAR2(100); 
+		mensaje                    VARCHAR2(300); 
+        error                      VARCHAR2(300); 
+		ls_concatenated_segments   VARCHAR2(2000); 
+		l_vendor_name              VARCHAR2(2000); 
+		l_region                   VARCHAR2(2000);
+		ln_cont_det                NUMBER; 
+		l_clob_text                CLOB; 
+		l_invoice_amount           NUMBER; 
+		v_process                  NUMBER; 
+		l_periodo                  VARCHAR2(2000);
+    BEGIN 
+	    v_inv_int_temp := p_inv_id_temp; 
+        DBMS_OUTPUT.put_line ('Inicio de la Interfaz de n?a AP Sindicatos...'); 
+         --Este es el XML que se manda al servicio: 
+        l_ws_envelope := 
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+				   <soap:Body> 
+				  <pub:runReport> 
+					 <pub:reportRequest> 
+						<pub:parameterNameValues> 
+						   <pub:item> 
+							  <pub:name>pni_consolidation_set_id</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| pni_consolidation_set_id ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>pni_time_period_id</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| pni_time_period_id ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>pni_time_period_id2</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| pni_time_period_id2 ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>pni_unidad_pago</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| pni_unidad_pago ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>psi_source</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| psi_source ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>pni_org_id</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| pni_org_id ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>pni_vendor_id</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| pni_vendor_id ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>pni_element_type_id1</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| pni_element_type_id1 ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>psi_region</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| psi_region ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>psi_tipoNegocio</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| psi_tipoNegocio ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>psi_unidad</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| psi_unidad ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>psi_cuenta</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| psi_cuenta ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>psi_Intercompania</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| psi_Intercompania ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>psi_Proyecto</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| psi_Proyecto ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							  <pub:name>pni_payroll_id</pub:name> 
+							  <pub:values> 
+								 <pub:item>'|| pni_payroll_id ||'</pub:item> 
+							  </pub:values> 
+						   </pub:item> 
+						   <pub:item> 
+							   <pub:name>p_user_name</pub:name> 
+							   <pub:values> 
+								 <pub:item>'|| p_user_name||'</pub:item> 
+							   </pub:values> 
+							</pub:item> 
+						</pub:parameterNameValues> 
+						<pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS Interfase Nomina AP Sindicatos/TOKS Interfase Nomina AP Sindicatos - REP.xdo</pub:reportAbsolutePath> 
+						<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+					 </pub:reportRequest> 
+					 <pub:appParams/> 
+				  </pub:runReport> 
+			   </soap:Body> 
+			</soap:Envelope>';
+
+		GRG_COMMON_CONNECTIONS.get_otbi_report(
+												 l_ws_envelope => l_ws_envelope
+												,l_user_token => P_USER_TOKEN
+												,x_ws_response => l_clob
+												,p_instance_name => 'DEV2'
+											);										  
+ 
+        l_ws_resp_xml2 := XMLTYPE.createXML (l_clob); 
+ 
+        DBMS_OUTPUT.put_line (' Llenando tabla...'); 
+		 
+		SELECT DISTINCT 
+			xml_data.vendor_name
+			,xml_data.REGION
+		INTO 
+			l_vendor_name
+			,l_region
+		FROM XMLTABLE ( 
+			   '/DATA_DS/G_1' 
+			   PASSING xmltype.createxml (l_clob) 
+			   COLUMNS 
+			   VENDOR_NAME VARCHAR2(2000) PATH 'VENDOR_NAME',
+			   REGION      VARCHAR2(2000) PATH 'REGION' 			   
+						) xml_data; 
+		
+		SELECT MAX (xml_data.INVOICE_NUM)
+		INTO l_periodo
+		FROM XMLTABLE ( 
+			   '/DATA_DS/G_1' 
+			   PASSING xmltype.createxml (l_clob) 
+			   COLUMNS 
+			   INVOICE_NUM VARCHAR2(2000) PATH 'INVOICE_NUM'		   
+						) xml_data; 
+					    
+		l_clob_text:= '============================== Pago derivados de Nomina para Sindicatos =============================.'||CHR(10) 
+					||'Fecha Proceso: ' || TO_CHAR(SYSDATE - 6/24,' dd-mm-yyyy hh24:mi:ss')||CHR(10) 
+					||'Region:    '||l_region||CHR(10)
+					||'Proveedor: '||l_vendor_name||CHR(10)  
+					||'Proceso:   '||psi_source||CHR(10) 
+					||'Reporte del mes '||l_periodo||CHR(10)
+					||'| L?a '||'| Unidad                         |         Importe'||CHR(10) 
+					||'=====================================================================================================.'||CHR(10); 
+ 
+		ln_cont_det      := 0; 
+		--v_process        := INTERFAZ_NOMINA_SEQ.nextval; 
+		l_invoice_amount := 0; 
+ 
+        FOR i 
+            IN (SELECT  xml_data.INVOICE_ID, 
+                        xml_data.INVOICE_NUM, 
+                        xml_data.INVOICE_DATE, 
+                        xml_data.GL_DATE, 
+                        xml_data.INVOICE_TYPE_LOOKUP_CODE, 
+                        xml_data.VENDOR_ID, 
+						xml_data.VENDOR_NAME, 
+                        xml_data.VENDOR_SITE_ID, 
+                        xml_data.INVOICE_AMOUNT, 
+                        xml_data.INVOICE_CURRENCY_CODE, 
+                        xml_data.TERMS_NAME, 
+                        xml_data.SOURCE, 
+                        xml_data.PAYMENT_METHOD_LOOKUP_CODE, 
+                        xml_data.PAY_GROUP_LOOKUP_CODE, 
+                        xml_data.EXCLUSIVE_PAYMENT_FLAG, 
+                        xml_data.ORG_ID, 
+                        xml_data.DESCRIPTION, 
+                        xml_data.GROUP_ID, ----- 
+                        xml_data.ACCTS_PAY_CODE_COMBINATION_ID, ------- 
+						--FALTA AGREGAR. CREATED_BY  (TRAE UN VALOR NULL Y NO SE ENCUENTRA LA COLUMNA EN LA TABLA ) 
+                        xml_data.CREATION_DATE, ------ 
+                        xml_data.GOODS_RECEIVED_DATE, 
+                        xml_data.INVOICE_RECEIVED_DATE, 
+                        xml_data.LINE_NUMBER, 
+                        xml_data.INVOICE_LINE_ID, 
+                        xml_data.LINE_TYPE_LOOKUP_CODE, 
+                        xml_data.PA_ADDITION_FLAG, 
+                        xml_data.ACCOUNT_DATE, 
+                        xml_data.LDESCRIPTION,    ------ 
+                        xml_data.DIST_CODE_COMBINATION_ID, 
+                        xml_data.INTERFAZ, 
+                        xml_data.TIPONEGOCIO, 
+                        xml_data.UNIDAD, 
+                        xml_data.CUENTA, 
+                        xml_data.INTERCOMPAÑIA, 
+                        xml_data.PROYECTO, 
+                        xml_data.COMPAÑIA,
+						--
+						xml_data.DEPARTAMENTO,
+						xml_data.REGION
+                  FROM XMLTABLE ( 
+                           '/DATA_DS/G_1' 
+                           PASSING xmltype.createxml (l_clob) 
+                           COLUMNS  INVOICE_ID NUMBER PATH 'INVOICE_ID', 
+                                    INVOICE_NUM VARCHAR2(100) PATH 'INVOICE_NUM', 
+                                    INVOICE_DATE VARCHAR2(100) PATH 'INVOICE_DATE', 
+                                    GL_DATE VARCHAR2(100) PATH 'GL_DATE', 
+                                    INVOICE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'INVOICE_TYPE_LOOKUP_CODE', 
+                                    VENDOR_ID NUMBER PATH 'VENDOR_ID', 
+									VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME', 
+                                    VENDOR_SITE_ID NUMBER PATH 'VENDOR_SITE_ID', 
+                                    INVOICE_AMOUNT NUMBER(15,4) PATH 'INVOICE_AMOUNT', 
+                                    INVOICE_CURRENCY_CODE VARCHAR2(100) PATH 'INVOICE_CURRENCY_CODE', 
+                                    TERMS_NAME VARCHAR2(100) PATH 'TERMS_NAME', 
+                                    SOURCE VARCHAR2(100) PATH 'SOURCE', 
+                                    PAYMENT_METHOD_LOOKUP_CODE VARCHAR2(100) PATH 'PAYMENT_METHOD_LOOKUP_CODE', 
+                                    PAY_GROUP_LOOKUP_CODE VARCHAR2(100) PATH 'PAY_GROUP_LOOKUP_CODE', 
+                                    EXCLUSIVE_PAYMENT_FLAG VARCHAR2(100) PATH 'EXCLUSIVE_PAYMENT_FLAG', 
+                                    ORG_ID NUMBER PATH 'ORG_ID', 
+                                    DESCRIPTION VARCHAR2(100) PATH 'DESCRIPTION', 
+                                    GROUP_ID VARCHAR2(100) PATH 'GROUP_ID', ----- 
+                                    ACCTS_PAY_CODE_COMBINATION_ID NUMBER PATH 'ACCTS_PAY_CODE_COMBINATION_ID', ------- 
+                                    CREATION_DATE VARCHAR2(100) PATH 'CREATION_DATE', ------ 
+                                    GOODS_RECEIVED_DATE VARCHAR2(100) PATH 'GOODS_RECEIVED_DATE',                           
+                                    INVOICE_RECEIVED_DATE VARCHAR2(100) PATH 'INVOICE_RECEIVED_DATE',                              
+                                    LINE_NUMBER NUMBER PATH 'LINE_NUMBER', 
+                                    INVOICE_LINE_ID NUMBER PATH 'INVOICE_LINE_ID', 
+                                    LINE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'LINE_TYPE_LOOKUP_CODE', 
+                                    PA_ADDITION_FLAG VARCHAR2(100) PATH 'PA_ADDITION_FLAG', 
+                                    ACCOUNT_DATE VARCHAR2(100) PATH 'ACCOUNT_DATE', 
+                                    LDESCRIPTION VARCHAR2(100) PATH 'LDESCRIPTION',    ------ 
+                                    DIST_CODE_COMBINATION_ID NUMBER PATH 'DIST_CODE_COMBINATION_ID', 
+                                    INTERFAZ VARCHAR2(100) PATH 'INTERFAZ', 
+                                    TIPONEGOCIO VARCHAR2(250) PATH 'TIPONEGOCIO', 
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD', 
+                                    CUENTA VARCHAR2(250) PATH 'CUENTA', 
+                                    INTERCOMPAÑIA VARCHAR2(250) PATH 'INTERCOMPAÑIA', 
+                                    PROYECTO VARCHAR2(250) PATH 'PROYECTO', 
+                                    COMPAÑIA VARCHAR2(250) PATH 'COMPAÑIA',
+									REGION VARCHAR2(2000) PATH 'REGION',
+									DEPARTAMENTO VARCHAR2(250) PATH 'DEPARTAMENTO'
+									) 
+                       xml_data) -- Aqu?e crea el XML de respuesta por nodos, es como formatear. 
+
+        LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX. 
+				 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES ( 
+                                INVOICE_ID, 
+                                INVOICE_NUM, 
+                                INVOICE_DATE, 
+                                GL_DATE, 
+                                INVOICE_TYPE_LOOKUP_CODE, 
+                                VENDOR_ID, 
+                                VENDOR_SITE_ID, 
+                                INVOICE_AMOUNT, 
+                                INVOICE_CURRENCY_CODE, 
+                                TERMS_NAME, 
+                                SOURCE, 
+                                PAYMENT_METHOD_LOOKUP_CODE, 
+                                PAY_GROUP_LOOKUP_CODE, 
+                                EXCLUSIVE_PAYMENT_FLAG, 
+                                ORG_ID, ----- 
+                                DESCRIPTION, ------- 
+                                GROUP_ID, ------ 
+                                ACCTS_PAY_CODE_COMB_ID, 
+                                CREATION_DATE, 
+                                GOODS_RECEIVED_DATE,   
+                                INVOICE_RECEIVED_DATE, 
+                                LINE_NUMBER, 
+                                INVOICE_LINE_ID, 
+                                LINE_TYPE_LOOKUP_CODE, 
+                                PA_ADITTION_FLAG,  
+                                ACCOUNT_DATE, 
+                                LDESCRIPTION, 
+                                DIST_CODE_COMBINATION_ID,                                 
+                                INTERFAZ, 
+								ID, 
+                                TIPONEGOCIO, 
+                                UNIDAD, 
+                                CUENTA, 
+                                INTERCOMPAÑIA, 
+                                PROYECTO, 
+                                COMPAÑIA 
+								) 
+                         VALUES ( 
+                                i.INVOICE_ID, 
+                                --i.INVOICE_NUM,   
+                                substr(i.INVOICE_NUM,1,7)|| ' ' ||0,
+								to_date(SUBSTR(i.INVOICE_DATE,1,10),'yyyy-mm-dd'), 
+                                to_date(SUBSTR(i.GL_DATE,1,10),'yyyy-mm-dd'), 
+                                i.INVOICE_TYPE_LOOKUP_CODE, 
+                                i.VENDOR_ID, 
+                                i.VENDOR_SITE_ID, 
+                                i.INVOICE_AMOUNT, 
+                                i.INVOICE_CURRENCY_CODE, 
+                                i.TERMS_NAME, 
+                                i.SOURCE, 
+                                i.PAYMENT_METHOD_LOOKUP_CODE, 
+                                i.PAY_GROUP_LOOKUP_CODE, 
+                                i.EXCLUSIVE_PAYMENT_FLAG, 
+                                i.ORG_ID, ----- 
+                                i.DESCRIPTION, ------- 
+                                i.GROUP_ID, ------ 
+                                i.ACCTS_PAY_CODE_COMBINATION_ID, 
+                                to_date(SUBSTR(i.CREATION_DATE,1,10),'yyyy-mm-dd'), 
+                                to_date(SUBSTR(i.GOODS_RECEIVED_DATE,1,10),'yyyy-mm-dd'), 
+                                to_date(SUBSTR(i.INVOICE_RECEIVED_DATE,1,10),'yyyy-mm-dd'), 
+                                i.LINE_NUMBER, 
+                                i.INVOICE_LINE_ID, 
+                                i.LINE_TYPE_LOOKUP_CODE, 
+                                i.PA_ADDITION_FLAG, 
+                                to_date(SUBSTR(i.ACCOUNT_DATE,1,10),'yyyy-mm-dd'), 
+                                --i.LDESCRIPTION, 
+                                NVL(i.LDESCRIPTION,i.DEPARTAMENTO),
+								i.DIST_CODE_COMBINATION_ID, 
+                                'INTERFASE_NOMINA_AP_SINDICATOS', --i.INTERFAZ, 
+								v_inv_int_temp, 
+                                i.TIPONEGOCIO, 
+                                i.UNIDAD, 
+                                i.CUENTA, 
+                                i.INTERCOMPAÑIA, 
+                                i.PROYECTO, 
+                                i.COMPAÑIA 
+								); 
+			ln_cont_det:= ln_cont_det + 1; 
+			l_invoice_amount:= l_invoice_amount + i.INVOICE_AMOUNT; 
+			l_clob_text:= l_clob_text||'Linea:'||rpad(ln_cont_det,10)||'| Unidad : '||lpad(rpad(NVL(i.LDESCRIPTION,i.DEPARTAMENTO),40),40)||'          '||TO_CHAR(i.INVOICE_AMOUNT, '999,999,999,999.99') ||CHR(10);  
+                                 
+                             
+--            END IF; 
+        END LOOP; 
+		
+        BEGIN
+    		SELECT  1
+    		INTO    v_val 
+    		FROM    XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES 
+            WHERE   1=1 
+    		        AND ID = v_inv_int_temp
+    		        AND interfaz = 'INTERFASE_NOMINA_AP_SINDICATOS'
+                    AND ROWNUM = 1;
+
+        EXCEPTION WHEN OTHERS THEN
+            v_val := 0;
+        END;
+ 
+		IF v_val > 0 THEN		 
+			l_clob_text:= l_clob_text||'=========================================================================================================='||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de registros es: '||v_val||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de importe insertados en lineas es: '||TO_CHAR(l_invoice_amount, '999,999,999,999.99')||CHR(10); 
+ 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_TXT (DATA_TXT,PROCESS_ID,CREATION_DATE,INTERFACE_NAME) VALUES (l_clob_text,v_inv_int_temp,SYSDATE,'INTERFASE_NOMINA_AP_SINDICATOS'); 
+			COMMIT; 
+		ELSE  
+			mensaje := 'No se encontraron datos'; 
+			apex_json.open_object; 
+			apex_json.write('mensaje', mensaje); 
+			apex_json.close_object; 
+		END IF; 
+        COMMIT; 
+		 
+    EXCEPTION 
+	WHEN OTHERS THEN 
+		DBMS_OUTPUT.put_line ('Se ha producido un error general en la Interfaz de n?a AP SINDICATOS: '|| SQLERRM); 
+		mensaje := 'Se ha producido un error general en la Interfaz de n?a AP SINDICATOS: '; 
+		error := SQLERRM; 
+		apex_json.open_object; 
+		apex_json.write('mensaje', mensaje); 
+		apex_json.write('error', error); 
+		apex_json.close_object; 
+    END get_data_interfase_nomina_sindicatos; 
+------------------------------------------------------------------- 
+/*FONDO AHORRO*/   
+    PROCEDURE get_data_fondo_ahorro 
+                      ( 
+                       P_USER_TOKEN IN VARCHAR2,    
+                       p_consolidation_set_id IN VARCHAR2, 
+                       p_time_period_id IN VARCHAR2, 
+                       p_unidad_pago IN VARCHAR2, 
+                       p_concepto_pago IN VARCHAR2, 
+                       p_source IN VARCHAR2, 
+                       p_org_id IN VARCHAR2, 
+                       p_vendor_id IN VARCHAR2, 
+                       p_element_type_id1 IN VARCHAR2, 
+                       p_element_type_id2 IN VARCHAR2, 
+                       p_tipoNegocio IN VARCHAR2,    
+                       p_unidad IN VARCHAR2, 
+                       p_cuenta IN VARCHAR2, 
+                       p_Intercompania IN VARCHAR2, 
+                       p_Proyecto IN VARCHAR2,  
+                       p_payroll_id IN VARCHAR2, 
+                       pni_inv_id_temp IN VARCHAR2, 
+                       p_user_name IN VARCHAR2    
+                       )   
+    AS 
+        l_user_name                VARCHAR2 (100); --Aqu?an las credenciales 
+        l_password                 VARCHAR2 (100); 
+        l_ws_url                   VARCHAR2 (500); --Aqu?a el WSDL de Oracle para consumir informaci?e informacion del wsdl 
+        l_ws_action                VARCHAR2 (500):= 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar 
+        l_ws_response_clob         CLOB; 
+        l_ws_envelope              CLOB; 
+        l_ws_resp_xml              XMLTYPE; 
+        l_ws_resp_xml2             XMLTYPE; 
+        v_cdata                    CLOB; 
+        l_clob                     CLOB; 
+        v_val                      PLS_INTEGER; 
+        v_inv_int_temp             VARCHAR2(100); 
+        v_concepto                 VARCHAR2(100); 
+        v_source                   VARCHAR2(100); 
+        mensaje                    VARCHAR2(300); 
+        error                      VARCHAR2(300); 
+		ls_concatenated_segments   VARCHAR2(2000); 
+		l_vendor_name              VARCHAR2(2000); 
+		ln_cont_det                NUMBER; 
+		l_clob_text                CLOB; 
+		l_invoice_amount           NUMBER; 
+		v_process                  NUMBER; 
+    BEGIN 
+        v_inv_int_temp := pni_inv_id_temp; 
+        v_concepto := p_concepto_pago; 
+        v_source := p_source; 
+        DBMS_OUTPUT.put_line ('Inicio de la Interfaz de n?a AP fondo ahorro...'); 
+         --Este es el XML que se manda al servicio: 
+        l_ws_envelope := 
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+			   <soap:Body> 
+				  <pub:runReport> 
+					 <pub:reportRequest> 
+						   <pub:parameterNameValues> 
+						    
+							  <pub:item> 
+							<pub:name>p_consolidation_set_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_consolidation_set_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							  <pub:item> 
+							<pub:name>p_time_period_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_time_period_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							 <pub:item> 
+							<pub:name>p_unidad_pago</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_unidad_pago||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							 <pub:item> 
+							<pub:name>p_source</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_source||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							  <pub:item> 
+							<pub:name>p_org_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_org_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							<pub:item> 
+							<pub:name>p_vendor_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_vendor_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							   <pub:item> 
+							<pub:name>p_element_type_id1</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_element_type_id1||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							 <pub:item> 
+							<pub:name>p_element_type_id2</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_element_type_id2||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							<pub:item> 
+							<pub:name>p_tipoNegocio</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_tipoNegocio||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>  
+ 
+							<pub:item> 
+							<pub:name>p_unidad</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_unidad||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+							 
+							<pub:item> 
+							<pub:name>p_cuenta</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_cuenta||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>  
+ 
+							 <pub:item> 
+							<pub:name>p_Intercompania</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_Intercompania||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+ 
+							 <pub:item> 
+							<pub:name>p_Proyecto</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_Proyecto||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+ 
+							 <pub:item> 
+							<pub:name>p_payroll_id</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_payroll_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							<pub:item> 
+							<pub:name>p_user_name</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_user_name||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+						   </pub:parameterNameValues> 
+						<pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS Interfase Fondo Ahorro/Toks Interface fondo_ahorro-RT.xdo</pub:reportAbsolutePath> 
+						<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+					 </pub:reportRequest> 
+				  </pub:runReport> 
+			   </soap:Body> 
+			</soap:Envelope>';
+
+		GRG_COMMON_CONNECTIONS.get_otbi_report(
+												 l_ws_envelope => l_ws_envelope
+												,l_user_token => P_USER_TOKEN
+												,x_ws_response => l_clob
+												,p_instance_name => 'DEV2'
+											);	
+ 
+		l_ws_resp_xml2 := XMLTYPE.createXML (l_clob); 
+ 
+        DBMS_OUTPUT.put_line (' Llenando tabla...'); 
+		 
+		SELECT DISTINCT xml_data.vendor_name 
+		INTO l_vendor_name 
+		FROM XMLTABLE ( 
+			   '/DATA_DS/G_1' 
+			   PASSING xmltype.createxml (l_clob) 
+			   COLUMNS VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME' 
+						) xml_data; 
+					   	 
+		l_clob_text:= '============================== Pago derivados de Nomina para Fondo de Ahorro =============================.'||CHR(10) 
+					||'Fecha Proceso: ' || TO_CHAR(SYSDATE - 6/24,' dd-mm-yyyy hh24:mi:ss')||CHR(10) 
+					||'Proveedor: '||l_vendor_name||CHR(10)  
+					||'Proceso:   '||p_source||CHR(10)  
+					||'| L?a '||'| Unidad                         |         Importe'||CHR(10) 
+					||'=========================================================================================================='||CHR(10); 
+ 
+		ln_cont_det      := 0; 
+		--v_process        := INTERFAZ_NOMINA_SEQ.nextval; 
+		l_invoice_amount := 0; 
+ 
+        FOR i 
+            IN (SELECT  xml_data.TIME_PERIOD_ID, 
+                        xml_data.INVOICE_ID, 
+                        xml_data.INVOICE_NUM, 
+                        xml_data.INVOICE_DATE, 
+                        xml_data.GL_DATE, 
+                        xml_data.INVOICE_TYPE_LOOKUP_CODE, 
+                        xml_data.VENDOR_ID, 
+						xml_data.VENDOR_NAME, 
+                        xml_data.VENDOR_SITE_ID, 
+                        xml_data.INVOICE_AMOUNT, 
+                        xml_data.INVOICE_CURRENCY_CODE, 
+                        xml_data.TERMS_NAME, 
+                        xml_data.SOURCE, 
+                        xml_data.PAYMENT_METHOD_LOOKUP_CODE, 
+                        xml_data.PAY_GROUP_LOOKUP_CODE, 
+                        xml_data.EXCLUSIVE_PAYMENT_FLAG, 
+                        xml_data.ORG_ID, ----- 
+                        xml_data.DESCRIPTION, ------- 
+                        xml_data.GROUP_ID, ------ 
+                        xml_data.ACCTS_PAY_CODE_COMB_ID, 
+                        xml_data.LINE_NUMBER, 
+                        xml_data.INVOICE_LINE_ID, 
+                        xml_data.LINE_TYPE_LOOKUP_CODE, 
+                        xml_data.PA_ADITTION_FLAG, 
+                        xml_data.ACCOUNT_DATE,    ------ 
+                        xml_data.LDESCRIPTION, 
+                        xml_data.DIST_CODE_COMBINATION_ID, 
+                        xml_data.METODO_PAGO, 
+                        xml_data.PAYMENT_PRIORITY, 
+                        xml_data.TIPONEGOCIO, 
+                        xml_data.UNIDAD, 
+                        xml_data.CUENTA, 
+                        xml_data.INTERCOMPAÑIA, 
+                        xml_data.PROYECTO, 
+                        xml_data.COMPAÑIA 
+                  FROM XMLTABLE ( 
+                           '/DATA_DS/G_1' 
+                           PASSING xmltype.createxml (l_clob) 
+                           COLUMNS TIME_PERIOD_ID NUMBER PATH 'TIME_PERIOD_ID', 
+                                    INVOICE_ID NUMBER PATH 'INVOICE_ID', 
+                                    INVOICE_NUM VARCHAR2(100) PATH 'INVOICE_NUM', 
+                                    INVOICE_DATE VARCHAR2(100) PATH 'INVOICE_DATE', 
+                                    GL_DATE VARCHAR2(100) PATH 'GL_DATE', 
+                                    INVOICE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'INVOICE_TYPE_LOOKUP_CODE', 
+                                    VENDOR_ID NUMBER PATH 'VENDOR_ID', 
+									VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME', 
+                                    VENDOR_SITE_ID NUMBER PATH 'VENDOR_SITE_ID', 
+                                    INVOICE_AMOUNT NUMBER PATH 'INVOICE_AMOUNT', 
+                                    INVOICE_CURRENCY_CODE VARCHAR2(100) PATH 'INVOICE_CURRENCY_CODE', 
+                                    TERMS_NAME VARCHAR2(100) PATH 'TERMS_NAME', 
+                                    SOURCE VARCHAR2(100) PATH 'SOURCE', 
+                                    PAYMENT_METHOD_LOOKUP_CODE VARCHAR2(100) PATH 'PAYMENT_METHOD_LOOKUP_CODE', 
+                                    PAY_GROUP_LOOKUP_CODE VARCHAR2(100) PATH 'PAY_GROUP_LOOKUP_CODE', 
+                                    EXCLUSIVE_PAYMENT_FLAG VARCHAR2(100) PATH 'EXCLUSIVE_PAYMENT_FLAG', 
+                                    ORG_ID NUMBER PATH 'ORG_ID', ----- 
+                                    DESCRIPTION VARCHAR2(100) PATH 'DESCRIPTION', ------- 
+                                    GROUP_ID VARCHAR2(100) PATH 'GROUP_ID', ------ 
+                                    ACCTS_PAY_CODE_COMB_ID NUMBER PATH 'ACCTS_PAY_CODE_COMB_ID', 
+                                    LINE_NUMBER NUMBER PATH 'LINE_NUMBER', 
+                                    INVOICE_LINE_ID NUMBER PATH 'INVOICE_LINE_ID', 
+                                    LINE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'LINE_TYPE_LOOKUP_CODE', 
+                                    PA_ADITTION_FLAG VARCHAR2(100) PATH 'PA_ADITTION_FLAG', 
+                                    ACCOUNT_DATE VARCHAR2(100) PATH 'ACCOUNT_DATE',    ------ 
+                                    LDESCRIPTION VARCHAR2(100) PATH 'LDESCRIPTION', 
+                                    DIST_CODE_COMBINATION_ID NUMBER PATH 'DIST_CODE_COMBINATION_ID', 
+                                    METODO_PAGO VARCHAR2(100) PATH 'METODO_PAGO', 
+                                    PAYMENT_PRIORITY NUMBER PATH 'PAYMENT_PRIORITY', 
+                                    TIPONEGOCIO VARCHAR2(250) PATH 'TIPONEGOCIO', 
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD', 
+                                    CUENTA VARCHAR2(250) PATH 'CUENTA', 
+                                    INTERCOMPAÑIA VARCHAR2(250) PATH 'INTERCOMPAÑIA', 
+                                    PROYECTO VARCHAR2(250) PATH 'PROYECTO', 
+                                    COMPAÑIA VARCHAR2(250) PATH 'COMPAÑIA' 
+                                    --DEPARTAMENTO VARCHAR2(100) PATH 'DEPARTAMENTO' 
+                                    ) 
+                       xml_data) -- Aqu?e crea el XML de respuesta por nodos, es como formatear. 
+
+		LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX. 
+			 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES ( 
+                                TIME_PERIOD_ID, 
+                                PERSON_NUMBER, 
+                                INVOICE_ID, 
+                                INVOICE_NUM, 
+                                INVOICE_DATE, 
+                                GL_DATE, 
+                                INVOICE_TYPE_LOOKUP_CODE, 
+                                VENDOR_ID, 
+                                VENDOR_SITE_ID, 
+                                INVOICE_AMOUNT, 
+                                INVOICE_CURRENCY_CODE, 
+                                TERMS_NAME, 
+                                SOURCE, 
+                                PAYMENT_METHOD_LOOKUP_CODE, 
+                                PAY_GROUP_LOOKUP_CODE, 
+                                EXCLUSIVE_PAYMENT_FLAG, 
+                                ORG_ID, ----- 
+                                DESCRIPTION, ------- 
+                                GROUP_ID, ------ 
+                                ACCTS_PAY_CODE_COMB_ID, 
+                                LINE_NUMBER, 
+                                INVOICE_LINE_ID, 
+                                LINE_TYPE_LOOKUP_CODE, 
+                                PA_ADITTION_FLAG, 
+                                ACCOUNT_DATE,    ------ 
+                                LDESCRIPTION, 
+                                DIST_CODE_COMBINATION_ID, 
+                                METODO_PAGO, 
+                                PAYROLL_RELATIONSHIP_ID, 
+                                PAYROLL_ACTION_ID, 
+                                PAYMENT_PRIORITY, 
+                                creation_date, 
+                                DEPARTAMENTO, 
+                                INTERFAZ, 
+                                ID, 
+                                TIPONEGOCIO, 
+                                UNIDAD, 
+                                CUENTA, 
+                                INTERCOMPAÑIA, 
+                                PROYECTO, 
+                                COMPAÑIA 
+                                  ) 
+                         VALUES ( 
+                                i.TIME_PERIOD_ID, 
+                                0, 
+                                i.INVOICE_ID, 
+                                i.INVOICE_NUM, 
+                                to_date(substr(i.INVOICE_DATE,1,10),'yyyy-mm-dd'), 
+                                TO_DATE(substr(i.GL_DATE,1,10),'yyyy-mm-dd'), 
+                                i.INVOICE_TYPE_LOOKUP_CODE, 
+                                i.VENDOR_ID, 
+                                i.VENDOR_SITE_ID, 
+                                i.INVOICE_AMOUNT, 
+                                i.INVOICE_CURRENCY_CODE, 
+                                i.TERMS_NAME, 
+                                i.SOURCE, 
+                                i.PAYMENT_METHOD_LOOKUP_CODE, 
+                                i.PAY_GROUP_LOOKUP_CODE, 
+                                i.EXCLUSIVE_PAYMENT_FLAG, 
+                                i.ORG_ID, ----- 
+                                v_concepto||'_'||v_source, ------- 
+                                i.GROUP_ID, ------ 
+                                i.ACCTS_PAY_CODE_COMB_ID, 
+                                i.LINE_NUMBER, 
+                                i.INVOICE_LINE_ID, 
+                                i.LINE_TYPE_LOOKUP_CODE, 
+                                i.PA_ADITTION_FLAG, 
+                                TO_DATE(substr(i.ACCOUNT_DATE,1,10),'yyyy-mm-dd'),    ------ 
+                                i.LDESCRIPTION, 
+                                i.DIST_CODE_COMBINATION_ID, 
+                                i.METODO_PAGO, 
+                                0, 
+                                0, 
+                                i.PAYMENT_PRIORITY, 
+                                sysdate - 5/24, 
+                                NULL, 
+                                'INTERFAZ_NOMINA_AP_FONDO_AHORRO', 
+                                pni_inv_id_temp, 
+                                i.TIPONEGOCIO, 
+                                i.UNIDAD, 
+                                i.CUENTA, 
+                                i.INTERCOMPAÑIA, 
+                                i.PROYECTO, 
+                                i.COMPAÑIA 
+                                 ); 
+                 
+			ln_cont_det:= ln_cont_det + 1; 
+			l_invoice_amount:= l_invoice_amount + i.INVOICE_AMOUNT; 
+				 
+			l_clob_text:= l_clob_text||'Linea:'||rpad(ln_cont_det,10)||'| Unidad : '||lpad(rpad(i.LDESCRIPTION,40),40)||'          '||TO_CHAR(i.INVOICE_AMOUNT, '999,999,999,999.99')||CHR(10); 
+			 
+			 
+		END LOOP; 
+
+        BEGIN
+    		SELECT  1
+    		INTO    v_val 
+    		FROM    XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES 
+    		WHERE   ID = pni_inv_id_temp
+    		        AND interfaz = 'INTERFAZ_NOMINA_AP_FONDO_AHORRO'
+                    AND ROWNUM = 1;
+
+        EXCEPTION WHEN OTHERS THEN
+            v_val := 0;
+        END;
+		 
+		IF v_val > 0 THEN 
+			l_clob_text:= l_clob_text||'=========================================================================================================='||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de registros es: '||v_val||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de importe insertados en lineas es: '||TO_CHAR(l_invoice_amount, '999,999,999,999.99')||CHR(10); 
+ 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_TXT (DATA_TXT,PROCESS_ID,CREATION_DATE,INTERFACE_NAME) VALUES (l_clob_text,v_inv_int_temp,SYSDATE,'INTERFAZ_NOMINA_AP_FONDO_AHORRO'); 
+			COMMIT; 
+		ELSE  
+			mensaje := 'No se encontraron datos'; 
+			apex_json.open_object; 
+			apex_json.write('mensaje', mensaje); 
+			apex_json.close_object; 
+		END IF; 
+        COMMIT; 
+                 
+    EXCEPTION 
+	WHEN OTHERS THEN 
+		DBMS_OUTPUT.put_line ('Se ha producido un error general en la Interfaz de n?a AP: '|| SQLERRM); 
+		mensaje := 'Se ha producido un error general en la Interfaz de n?a AP:'; 
+		error := SQLERRM; 
+		apex_json.open_object; 
+		apex_json.write('mensaje', mensaje); 
+		apex_json.write('error', error); 
+		apex_json.close_object; 
+    END get_data_fondo_ahorro;   
+	 
+	/*VALES DESPENSA */ 
+ 
+    PROCEDURE get_data_vales_despensa 
+                      ( 
+                       P_USER_TOKEN           IN  VARCHAR2,    
+                       p_consolidation_set_id IN  VARCHAR2, 
+                       p_time_period_id       IN  VARCHAR2, 
+                       p_unidad_pago          IN  VARCHAR2, 
+                       p_source               IN  VARCHAR2, 
+                       p_org_id               IN  VARCHAR2, 
+                       --p_vendor_id            IN  VARCHAR2, 
+                       p_element_type_id1     IN  VARCHAR2, 
+                       p_element_type_id2     IN  VARCHAR2, 
+                       p_tipoNegocio          IN  VARCHAR2,    
+                       p_unidad               IN  VARCHAR2, 
+                       p_cuenta               IN  VARCHAR2, 
+                       p_Intercompania        IN  VARCHAR2, 
+                       p_Proyecto             IN  VARCHAR2,    
+                       p_payroll_id           IN  VARCHAR2, 
+                       p_inv_id_temp          IN  VARCHAR2, 
+                       p_user_name            IN  VARCHAR2, 
+					   p_process_id           IN  NUMBER, 
+                       x_process_id           OUT NUMBER 
+                       )   
+    AS 
+        l_user_name                VARCHAR2 (100);--Aqu?an las credenciales 
+        l_password                 VARCHAR2 (100); 
+        l_ws_url                   VARCHAR2 (500); --Aqu?a el WSDL de Oracle para consumir informaci?e informacion del wsdl 
+        l_ws_action                VARCHAR2 (500):= 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar 
+        l_ws_response_clob         CLOB; 
+        l_ws_envelope              CLOB; 
+        l_ws_resp_xml              XMLTYPE; 
+        l_ws_resp_xml2             XMLTYPE; 
+        v_cdata                    CLOB; 
+        l_clob                     CLOB; 
+        v_val                      PLS_INTEGER; 
+        v_inv_int_temp             VARCHAR2(100); 
+        mensaje                    VARCHAR2(300); 
+        error                      VARCHAR2(300); 
+		ls_concatenated_segments   VARCHAR2(2000); 
+		l_vendor_name              VARCHAR2(2000); 
+		ln_cont_det                NUMBER; 
+		l_clob_text                CLOB; 
+		l_invoice_amount           NUMBER; 
+		v_process                  NUMBER; 
+    BEGIN 
+ 
+        v_inv_int_temp := p_inv_id_temp; 
+        DBMS_OUTPUT.put_line ('Inicio de la Interfaz de n?a AP cheques...'); 
+         --Este es el XML que se manda al servicio: 
+        l_ws_envelope := 
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+			   <soap:Body> 
+				  <pub:runReport> 
+					 <pub:reportRequest> 
+						   <pub:parameterNameValues> 
+						    
+							  <pub:item> 
+							<pub:name>P_CONSOLIDATION_SET_ID</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_consolidation_set_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							  <pub:item> 
+							<pub:name>P_TIME_PERIOD_ID</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_time_period_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							 <pub:item> 
+							<pub:name>P_UNIDAD_PAGO</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_unidad_pago||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							 <pub:item> 
+							<pub:name>P_SOURCE</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_source||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							 <pub:item> 
+							<pub:name>P_ORG_ID</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_org_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							  
+							<pub:item> 
+							<pub:name>P_ELEMENT_TYPE_ID1</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_element_type_id1||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							   <pub:item> 
+							<pub:name>P_ELEMENT_TYPE_ID2</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_element_type_id2||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+						   <pub:item> 
+							<pub:name>P_TIPONEGOCIO</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_tipoNegocio||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>  
+ 
+							<pub:item> 
+							<pub:name>P_UNIDAD</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_unidad||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+							 
+							<pub:item> 
+							<pub:name>P_CUENTA</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_cuenta||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>  
+ 
+							 <pub:item> 
+							<pub:name>P_INTERCOMPANIA</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_Intercompania||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+ 
+							 <pub:item> 
+							<pub:name>P_PROYECTO</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_Proyecto||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+ 
+							 <pub:item> 
+							<pub:name>P_PAYROLL_ID</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_payroll_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							<pub:item> 
+							<pub:name>P_USER_NAME</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_user_name||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+						   </pub:parameterNameValues> 
+						<pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS Interface Nomina AP Vales de Despensa/XXTOKS_INT_NOMINA_AP_VD_RTF.xdo</pub:reportAbsolutePath> 
+						<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+					 </pub:reportRequest> 
+				  </pub:runReport> 
+			   </soap:Body> 
+			</soap:Envelope>';  
+
+ 		GRG_COMMON_CONNECTIONS.get_otbi_report(
+													 l_ws_envelope => l_ws_envelope
+													,l_user_token => P_USER_TOKEN
+													,x_ws_response => l_clob
+													,p_instance_name => 'DEV2'
+												);	
+		
+        l_ws_resp_xml2 := XMLTYPE.createXML (l_clob); 
+                 
+        DBMS_OUTPUT.put_line (' Llenando tabla...'); 
+		 
+		l_clob_text:= '====================================== Pago derivados de Nomina para Vales de Despensa ===================================================================='||CHR(10) 
+					||'|Fecha Proceso: ' || TO_CHAR(SYSDATE - 6/24,' dd-mm-yyyy hh24:mi:ss')||CHR(10) 
+					||'|Proceso:   '||p_source||CHR(10)  
+					||'| Linea  '||'| Unidad                 |Estafeta              |Empleado                               |Proveedor                                 |Importe   |'||CHR(10) 
+					||'==========================================================================================================================================================='||CHR(10); 
+ 
+        ln_cont_det      := 0; 
+		--v_process        := INTERFAZ_NOMINA_SEQ.nextval; 
+		l_invoice_amount := 0; 
+		DBMS_OUTPUT.put_line ('v_process --> '||v_process); 
+		 
+		FOR i 
+            IN (SELECT  xml_data.TIME_PERIOD_ID, 
+                        xml_data.INVOICE_ID, 
+                        xml_data.INVOICE_NUM, 
+                        xml_data.INVOICE_DATE, 
+                        xml_data.GL_DATE, 
+                        xml_data.INVOICE_TYPE_LOOKUP_CODE, 
+                        xml_data.VENDOR_ID, 
+						xml_data.VENDOR_NAME, 
+                        xml_data.VENDOR_SITE_ID, 
+                        xml_data.INVOICE_AMOUNT, 
+                        xml_data.INVOICE_CURRENCY_CODE, 
+                        xml_data.TERMS_NAME, 
+                        xml_data.SOURCE, 
+                        xml_data.PAYMENT_METHOD_LOOKUP_CODE, 
+                        xml_data.PAY_GROUP_LOOKUP_CODE, 
+                        xml_data.EXCLUSIVE_PAYMENT_FLAG, 
+                        xml_data.ORG_ID, ----- 
+                        xml_data.DESCRIPTION, ------- 
+                        xml_data.GROUP_ID, ------ 
+                        xml_data.ACCTS_PAY_CODE_COMB_ID, 
+                        xml_data.LINE_NUMBER, 
+                        xml_data.INVOICE_LINE_ID, 
+                        xml_data.LINE_TYPE_LOOKUP_CODE, 
+                        xml_data.PA_ADITTION_FLAG, 
+                        xml_data.ACCOUNT_DATE,    ------ 
+                        xml_data.LDESCRIPTION, 
+                        xml_data.DIST_CODE_COMBINATION_ID, 
+                        xml_data.METODO_PAGO, 
+                        xml_data.PAYMENT_PRIORITY, 
+                        xml_data.TIPONEGOCIO, 
+                        xml_data.UNIDAD, 
+                        xml_data.CUENTA, 
+                        xml_data.INTERCOMPAÑIA, 
+                        xml_data.PROYECTO, 
+                        xml_data.COMPAÑIA, 
+						xml_data.NO_COLABORADOR, 
+						xml_data.PENSIONADO, 
+						xml_data.NOMBRE_EMPLEADO 
+                  FROM XMLTABLE ( 
+                           '/DATA_DS/G_1' 
+                           PASSING xmltype.createxml (l_clob) 
+                           COLUMNS TIME_PERIOD_ID NUMBER PATH 'TIME_PERIOD_ID', 
+                                    INVOICE_ID NUMBER PATH 'INVOICE_ID', 
+                                    INVOICE_NUM VARCHAR2(2000) PATH 'INVOICE_NUM', 
+                                    INVOICE_DATE VARCHAR2(100) PATH 'INVOICE_DATE', 
+                                    GL_DATE VARCHAR2(100) PATH 'GL_DATE', 
+                                    INVOICE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'INVOICE_TYPE_LOOKUP_CODE', 
+                                    VENDOR_ID NUMBER PATH 'VENDOR_ID', 
+                                    VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME', 
+									VENDOR_SITE_ID NUMBER PATH 'VENDOR_SITE_ID', 
+                                    INVOICE_AMOUNT NUMBER PATH 'INVOICE_AMOUNT', 
+                                    INVOICE_CURRENCY_CODE VARCHAR2(100) PATH 'INVOICE_CURRENCY_CODE', 
+                                    TERMS_NAME VARCHAR2(100) PATH 'TERMS_NAME', 
+                                    SOURCE VARCHAR2(100) PATH 'SOURCE', 
+                                    PAYMENT_METHOD_LOOKUP_CODE VARCHAR2(100) PATH 'PAYMENT_METHOD_LOOKUP_CODE', 
+                                    PAY_GROUP_LOOKUP_CODE VARCHAR2(100) PATH 'PAY_GROUP_LOOKUP_CODE', 
+                                    EXCLUSIVE_PAYMENT_FLAG VARCHAR2(100) PATH 'EXCLUSIVE_PAYMENT_FLAG', 
+                                    ORG_ID NUMBER PATH 'ORG_ID', ----- 
+                                    DESCRIPTION VARCHAR2(100) PATH 'DESCRIPTION', ------- 
+                                    GROUP_ID VARCHAR2(100) PATH 'GROUP_ID', ------ 
+                                    ACCTS_PAY_CODE_COMB_ID NUMBER PATH 'ACCTS_PAY_CODE_COMB_ID', 
+                                    LINE_NUMBER NUMBER PATH 'LINE_NUMBER', 
+                                    INVOICE_LINE_ID NUMBER PATH 'INVOICE_LINE_ID', 
+                                    LINE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'LINE_TYPE_LOOKUP_CODE', 
+                                    PA_ADITTION_FLAG VARCHAR2(100) PATH 'PA_ADITTION_FLAG', 
+                                    ACCOUNT_DATE VARCHAR2(100) PATH 'ACCOUNT_DATE',    ------ 
+                                    LDESCRIPTION VARCHAR2(100) PATH 'LDESCRIPTION', 
+                                    DIST_CODE_COMBINATION_ID NUMBER PATH 'DIST_CODE_COMBINATION_ID', 
+                                    METODO_PAGO VARCHAR2(100) PATH 'METODO_PAGO', 
+                                    PAYMENT_PRIORITY NUMBER PATH 'PAYMENT_PRIORITY', 
+                                    TIPONEGOCIO VARCHAR2(250) PATH 'TIPONEGOCIO', 
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD', 
+                                    CUENTA VARCHAR2(250) PATH 'CUENTA', 
+                                    INTERCOMPAÑIA VARCHAR2(250) PATH 'INTERCOMPAÑIA', 
+                                    PROYECTO VARCHAR2(250) PATH 'PROYECTO', 
+                                    COMPAÑIA VARCHAR2(250) PATH 'COMPAÑIA', 
+									NO_COLABORADOR VARCHAR2(250) PATH 'NO_COLABORADOR', 
+									PENSIONADO VARCHAR2(250) PATH 'PENSIONADO', 
+									NOMBRE_EMPLEADO VARCHAR2(250) PATH 'NOMBRE_EMPLEADO' 
+                                    ) 
+                       xml_data) -- Aqu?e crea el XML de respuesta por nodos, es como formatear. 
+
+        LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX. 
+             
+			DBMS_OUTPUT.put_line ('ENTRA AL FOR .......'); 
+			 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES ( 
+                                TIME_PERIOD_ID, 
+                                INVOICE_ID, 
+                                INVOICE_NUM, 
+                                INVOICE_DATE, 
+                                GL_DATE, 
+                                INVOICE_TYPE_LOOKUP_CODE, 
+                                VENDOR_ID, 
+                                VENDOR_SITE_ID, 
+                                INVOICE_AMOUNT, 
+                                INVOICE_CURRENCY_CODE, 
+                                TERMS_NAME, 
+                                SOURCE, 
+                                PAYMENT_METHOD_LOOKUP_CODE, 
+                                PAY_GROUP_LOOKUP_CODE, 
+                                EXCLUSIVE_PAYMENT_FLAG, 
+                                ORG_ID, ----- 
+                                DESCRIPTION, -------INTERFAZ 
+                                GROUP_ID, ------ 
+                                ACCTS_PAY_CODE_COMB_ID, 
+                                LINE_NUMBER, 
+                                INVOICE_LINE_ID, 
+                                LINE_TYPE_LOOKUP_CODE, 
+                                PA_ADITTION_FLAG, 
+                                ACCOUNT_DATE,    ------ 
+                                LDESCRIPTION, 
+                                DIST_CODE_COMBINATION_ID, 
+                                METODO_PAGO, 
+                                PAYMENT_PRIORITY, 
+                                creation_date, 
+                                INTERFAZ, 
+                                ID, 
+                                TIPONEGOCIO, 
+                                UNIDAD, 
+                                CUENTA, 
+                                INTERCOMPAÑIA, 
+                                PROYECTO, 
+                                COMPAÑIA, 
+								NO_COLABORADOR, 
+								PENSIONADO, 
+								NOMBRE_EMPLEADO) 
+                         VALUES ( 
+                                i.TIME_PERIOD_ID, 
+                                i.INVOICE_ID, 
+                                i.INVOICE_NUM, 
+                                TO_DATE(substr(i.INVOICE_DATE,1,10),'yyyy-mm-dd'), 
+                                TO_DATE(substr(i.GL_DATE,1,10),'yyyy-mm-dd'), 
+                                i.INVOICE_TYPE_LOOKUP_CODE, 
+                                i.VENDOR_ID, 
+                                i.VENDOR_SITE_ID, 
+                                i.INVOICE_AMOUNT, 
+                                i.INVOICE_CURRENCY_CODE, 
+                                i.TERMS_NAME, 
+                                i.SOURCE, 
+                                i.PAYMENT_METHOD_LOOKUP_CODE, 
+                                i.PAY_GROUP_LOOKUP_CODE, 
+                                i.EXCLUSIVE_PAYMENT_FLAG, 
+                                i.ORG_ID, ----- 
+                                i.DESCRIPTION, ------- 
+                                i.GROUP_ID, ------ 
+                                i.ACCTS_PAY_CODE_COMB_ID, 
+                                i.LINE_NUMBER, 
+                                i.INVOICE_LINE_ID, 
+                                i.LINE_TYPE_LOOKUP_CODE, 
+                                i.PA_ADITTION_FLAG, 
+                                TO_DATE(substr(i.ACCOUNT_DATE,1,10),'yyyy-mm-dd'),    ------ 
+                                i.LDESCRIPTION, 
+                                i.DIST_CODE_COMBINATION_ID, 
+                                i.METODO_PAGO, 
+                                i.PAYMENT_PRIORITY, 
+                                sysdate - 5/24, 
+                                'INTERFAZ_NOMINA_AP_VALES_DESPENSA', 
+                                v_inv_int_temp, 
+                                i.TIPONEGOCIO, 
+                                i.UNIDAD, 
+                                i.CUENTA, 
+                                i.INTERCOMPAÑIA, 
+                                i.PROYECTO, 
+                                i.COMPAÑIA, 
+								i.NO_COLABORADOR, 
+								i.PENSIONADO, 
+								i.NOMBRE_EMPLEADO); 
+								 
+			ln_cont_det:= ln_cont_det + 1; 
+			l_invoice_amount:= l_invoice_amount + i.INVOICE_AMOUNT; 
+			l_clob_text:= l_clob_text||rpad(ln_cont_det,10)||'   '||lpad(rpad(i.LDESCRIPTION,20),20)||'   '||lpad(rpad(i.NO_COLABORADOR,20),20)||'   '||lpad(rpad(i.NOMBRE_EMPLEADO,60),40)||'   '||lpad(rpad(i.PENSIONADO,30),30)||'   '||TO_CHAR(i.INVOICE_AMOUNT, '999,999,999,999.99')||CHR(10); 
+			 
+--            END IF; 
+        END LOOP; 
+        
+        BEGIN
+    		SELECT  1
+    		INTO    v_val 
+    		FROM    XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES 
+    		WHERE   ID = p_inv_id_temp
+    		        AND interfaz = 'INTERFAZ_NOMINA_AP_VALES_DESPENSA'
+                    AND ROWNUM = 1;
+
+        EXCEPTION WHEN OTHERS THEN 
+            v_val := 0;
+        END; 
+		 
+		DBMS_OUTPUT.put_line ('v_val --> '||v_val); 
+ 
+		IF v_val > 0 THEN 
+			l_clob_text:= l_clob_text||'================================================================================================================================================'||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de registros es: '||v_val||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de importe insertados en lineas es: '||TO_CHAR(l_invoice_amount, '999,999,999,999.99')||CHR(10); 
+ 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_TXT (DATA_TXT,PROCESS_ID,CREATION_DATE,INTERFACE_NAME) VALUES (l_clob_text,v_inv_int_temp,SYSDATE,'INTERFAZ_NOMINA_AP_VALES_DESPENSA'); 
+			COMMIT; 
+ 
+			x_process_id :=  v_inv_int_temp; 
+		ELSE  
+			mensaje := 'No se encontraron datos'; 
+			apex_json.open_object; 
+			apex_json.write('mensaje', mensaje); 
+			apex_json.close_object; 
+		END IF; 
+		 
+        COMMIT; 
+                 
+    EXCEPTION 
+    WHEN OTHERS THEN 
+		DBMS_OUTPUT.put_line ('Se ha producido un error general en la Interfaz de n?a AP: '|| SQLERRM); 
+		mensaje := 'Se ha producido un error general en la Interfaz de n?a AP:'; 
+		error := SQLERRM; 
+		apex_json.open_object; 
+		apex_json.write('mensaje', mensaje); 
+		apex_json.write('error', error); 
+		apex_json.close_object; 
+    END get_data_vales_despensa; 
+
+    /*FINIQUITO PENSION DEFUNSIONES */
+
+    PROCEDURE get_data_finq_defu_pensiones
+                      (
+                       P_USER_TOKEN           IN  VARCHAR2,   
+                       p_consolidation_set_id IN  VARCHAR2,
+                       p_time_period_id       IN  VARCHAR2,
+                       p_unidad_pago          IN  VARCHAR2,
+                       p_source               IN  VARCHAR2,
+                       p_org_id               IN  VARCHAR2,
+                       --p_vendor_id            IN  VARCHAR2,
+                       p_element_type_id1     IN  VARCHAR2,
+                       p_element_type_id2     IN  VARCHAR2,
+                       p_tipoNegocio          IN  VARCHAR2,   
+                       p_unidad               IN  VARCHAR2,
+                       p_cuenta               IN  VARCHAR2,
+                       p_Intercompania        IN  VARCHAR2,
+                       p_Proyecto             IN  VARCHAR2,   
+                       p_payroll_id           IN  VARCHAR2,
+                       p_inv_id_temp          IN  VARCHAR2,
+                       p_user_name            IN  VARCHAR2,
+                       p_juego_asig           IN  VARCHAR2,
+					   p_boton                IN  VARCHAR2
+					  -- p_process_id           IN  NUMBER,
+                       --x_process_id           OUT NUMBER
+                       )  
+    AS
+        l_user_name                VARCHAR2 (100);--Aquí van las credenciales
+        l_password                 VARCHAR2 (100);
+        l_ws_url                   VARCHAR2 (500); --Aquí va el WSDL de Oracle para consumir información de informacion del wsdl
+        l_ws_action                VARCHAR2 (500):= 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar
+        l_ws_response_clob         CLOB;
+        l_ws_envelope              CLOB;
+        l_ws_resp_xml              XMLTYPE;
+        l_ws_resp_xml2             XMLTYPE;
+        v_cdata                    CLOB;
+        l_clob                     CLOB;
+        v_val                      PLS_INTEGER;
+        v_inv_int_temp             VARCHAR2(100);
+        mensaje                    VARCHAR2(300);
+        error                      VARCHAR2(300);
+		ls_concatenated_segments   VARCHAR2(2000);
+		l_vendor_name              VARCHAR2(2000);
+		ln_cont_det                NUMBER;
+		l_clob_text                CLOB;
+		l_invoice_amount           NUMBER;
+		v_process                  NUMBER;
+    BEGIN
+
+        DELETE FROM XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES_FINQ_VISTAPREVIA;
+
+		--v_inv_int_temp := p_inv_id_temp;
+        DBMS_OUTPUT.put_line ('Inicio de la Interfaz de nómina AP cheques...');
+         --Este es el XML que se manda al servicio:
+        l_ws_envelope :=
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+			   <soap:Body>
+				  <pub:runReport>
+					 <pub:reportRequest>
+						   <pub:parameterNameValues>
+						   
+							  <pub:item>
+							<pub:name>P_CONSOLIDATION_SET_ID</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_consolidation_set_id||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+							 
+							  <pub:item>
+							<pub:name>P_TIME_PERIOD_ID</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_time_period_id||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+							 
+							 <pub:item>
+							<pub:name>P_UNIDAD_PAGO</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_unidad_pago||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+
+							 <pub:item>
+							<pub:name>P_SOURCE</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_source||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+
+							 <pub:item>
+							<pub:name>P_ORG_ID</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_org_id||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+
+							 
+							<pub:item>
+							<pub:name>P_ELEMENT_TYPE_ID1</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_element_type_id1||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+
+							   <pub:item>
+							<pub:name>P_ELEMENT_TYPE_ID2</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_element_type_id2||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+
+						   <pub:item>
+							<pub:name>P_TIPONEGOCIO</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_tipoNegocio||'</pub:item>
+							 </pub:values>
+							 </pub:item> 
+
+							<pub:item>
+							<pub:name>P_UNIDAD</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_unidad||'</pub:item>
+							 </pub:values>
+							 </pub:item>  
+							
+							<pub:item>
+							<pub:name>P_CUENTA</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_cuenta||'</pub:item>
+							 </pub:values>
+							 </pub:item> 
+
+							 <pub:item>
+							<pub:name>P_INTERCOMPANIA</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_Intercompania||'</pub:item>
+							 </pub:values>
+							 </pub:item>  
+
+							 <pub:item>
+							<pub:name>P_PROYECTO</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_Proyecto||'</pub:item>
+							 </pub:values>
+							 </pub:item>  
+
+							 <pub:item>
+							<pub:name>P_PAYROLL_ID</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_payroll_id||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+
+							<pub:item>
+							<pub:name>P_USER_NAME</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_user_name||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+
+                             <pub:item>
+							<pub:name>p_assignment_set_id</pub:name>
+							<pub:values>
+							 <pub:item>'|| p_juego_asig||'</pub:item>
+							 </pub:values>
+							 </pub:item>
+
+
+						   </pub:parameterNameValues>
+						<pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS Interface Nomina AP Finiquitos Defuncion Pensiones/XXTOKS_INT_NOM_AP_FINQ_DEF_PENS_RTF.xdo</pub:reportAbsolutePath>
+						<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+					 </pub:reportRequest>
+				  </pub:runReport>
+			   </soap:Body>
+			</soap:Envelope>'; 
+		
+		GRG_COMMON_CONNECTIONS.get_otbi_report(
+													l_ws_envelope => l_ws_envelope
+													,l_user_token => P_USER_TOKEN
+													,x_ws_response => l_clob
+													,p_instance_name => 'DEV2' --+
+												);	
+		
+        l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+                
+        DBMS_OUTPUT.put_line (' Llenando tabla...');
+		
+		l_clob_text:= '====================================== Pago derivados de Nomina para Finiquitos Defunción Pensiones ===================================================================='||CHR(10)
+					||'|Fecha Proceso: ' || TO_CHAR(SYSDATE - 6/24,' dd-mm-yyyy hh24:mi:ss')||CHR(10)
+					||'|Proceso:   '||p_source||CHR(10) 
+					||'| Linea  '||'| Unidad                 |Estafeta              |Empleado                               |Proveedor/Beneficiario                    |Importe   |'||CHR(10)
+					||'==========================================================================================================================================================='||CHR(10);
+
+        ln_cont_det      := 0;
+		--v_process        := INTERFAZ_NOMINA_SEQ.nextval;
+		l_invoice_amount := 0;
+		DBMS_OUTPUT.put_line ('v_process --> '||v_process);
+		
+		FOR i
+            IN (SELECT  xml_data.TIME_PERIOD_ID,
+                        xml_data.INVOICE_ID,
+                        xml_data.INVOICE_NUM,
+                        xml_data.INVOICE_DATE,
+                        xml_data.GL_DATE,
+                        xml_data.INVOICE_TYPE_LOOKUP_CODE,
+                        xml_data.VENDOR_ID,
+						xml_data.VENDOR_NAME,
+                        xml_data.VENDOR_SITE_ID,
+                        xml_data.INVOICE_AMOUNT,
+                        xml_data.INVOICE_CURRENCY_CODE,
+                        xml_data.TERMS_NAME,
+                        xml_data.SOURCE,
+                        xml_data.PAYMENT_METHOD_LOOKUP_CODE,
+                        xml_data.PAY_GROUP_LOOKUP_CODE,
+                        xml_data.EXCLUSIVE_PAYMENT_FLAG,
+                        xml_data.ORG_ID, -----
+                        xml_data.DESCRIPTION, -------
+                        xml_data.GROUP_ID, ------
+                        xml_data.ACCTS_PAY_CODE_COMB_ID,
+                        xml_data.LINE_NUMBER,
+                        xml_data.INVOICE_LINE_ID,
+                        xml_data.LINE_TYPE_LOOKUP_CODE,
+                        xml_data.PA_ADITTION_FLAG,
+                        xml_data.ACCOUNT_DATE,    ------
+                        xml_data.LDESCRIPTION,
+                        xml_data.DIST_CODE_COMBINATION_ID,
+                        xml_data.METODO_PAGO,
+                        xml_data.PAYMENT_PRIORITY,
+                        xml_data.TIPONEGOCIO,
+                        xml_data.UNIDAD,
+                        xml_data.CUENTA,
+                        xml_data.INTERCOMPAÑIA,
+                        xml_data.PROYECTO,
+                        xml_data.COMPAÑIA,
+						xml_data.NO_COLABORADOR,
+						xml_data.PENSIONADO,
+						xml_data.NOMBRE_EMPLEADO
+                  FROM XMLTABLE (
+                           '/DATA_DS/G_1'
+                           PASSING xmltype.createxml (l_clob)
+                           COLUMNS TIME_PERIOD_ID NUMBER PATH 'TIME_PERIOD_ID',
+                                    INVOICE_ID NUMBER PATH 'INVOICE_ID',
+                                    INVOICE_NUM VARCHAR2(2000) PATH 'INVOICE_NUM',
+                                    INVOICE_DATE VARCHAR2(100) PATH 'INVOICE_DATE',
+                                    GL_DATE VARCHAR2(100) PATH 'GL_DATE',
+                                    INVOICE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'INVOICE_TYPE_LOOKUP_CODE',
+                                    VENDOR_ID NUMBER PATH 'VENDOR_ID',
+                                    VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME',
+									VENDOR_SITE_ID NUMBER PATH 'VENDOR_SITE_ID',
+                                    INVOICE_AMOUNT NUMBER PATH 'INVOICE_AMOUNT',
+                                    INVOICE_CURRENCY_CODE VARCHAR2(100) PATH 'INVOICE_CURRENCY_CODE',
+                                    TERMS_NAME VARCHAR2(100) PATH 'TERMS_NAME',
+                                    SOURCE VARCHAR2(100) PATH 'SOURCE',
+                                    PAYMENT_METHOD_LOOKUP_CODE VARCHAR2(100) PATH 'PAYMENT_METHOD_LOOKUP_CODE',
+                                    PAY_GROUP_LOOKUP_CODE VARCHAR2(100) PATH 'PAY_GROUP_LOOKUP_CODE',
+                                    EXCLUSIVE_PAYMENT_FLAG VARCHAR2(100) PATH 'EXCLUSIVE_PAYMENT_FLAG',
+                                    ORG_ID NUMBER PATH 'ORG_ID', -----
+                                    DESCRIPTION VARCHAR2(100) PATH 'DESCRIPTION', -------
+                                    GROUP_ID VARCHAR2(100) PATH 'GROUP_ID', ------
+                                    ACCTS_PAY_CODE_COMB_ID NUMBER PATH 'ACCTS_PAY_CODE_COMB_ID',
+                                    LINE_NUMBER NUMBER PATH 'LINE_NUMBER',
+                                    INVOICE_LINE_ID NUMBER PATH 'INVOICE_LINE_ID',
+                                    LINE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'LINE_TYPE_LOOKUP_CODE',
+                                    PA_ADITTION_FLAG VARCHAR2(100) PATH 'PA_ADITTION_FLAG',
+                                    ACCOUNT_DATE VARCHAR2(100) PATH 'ACCOUNT_DATE',    ------
+                                    LDESCRIPTION VARCHAR2(100) PATH 'LDESCRIPTION',
+                                    DIST_CODE_COMBINATION_ID NUMBER PATH 'DIST_CODE_COMBINATION_ID',
+                                    METODO_PAGO VARCHAR2(100) PATH 'METODO_PAGO',
+                                    PAYMENT_PRIORITY NUMBER PATH 'PAYMENT_PRIORITY',
+                                    TIPONEGOCIO VARCHAR2(250) PATH 'TIPONEGOCIO',
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD',
+                                    CUENTA VARCHAR2(250) PATH 'CUENTA',
+                                    INTERCOMPAÑIA VARCHAR2(250) PATH 'INTERCOMPAÑIA',
+                                    PROYECTO VARCHAR2(250) PATH 'PROYECTO',
+                                    COMPAÑIA VARCHAR2(250) PATH 'COMPAÑIA',
+									NO_COLABORADOR VARCHAR2(250) PATH 'NO_COLABORADOR',
+									PENSIONADO VARCHAR2(250) PATH 'PENSIONADO',
+									NOMBRE_EMPLEADO VARCHAR2(250) PATH 'NOMBRE_EMPLEADO'
+                                    )
+                       xml_data) -- Aquí se crea el XML de respuesta por nodos, es como formatear.
+
+        LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX.
+            
+			DBMS_OUTPUT.put_line ('ENTRA AL FOR .......');
+			
+			IF p_boton = 'Y' THEN
+
+				INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES (
+									TIME_PERIOD_ID,
+									INVOICE_ID,
+									INVOICE_NUM,
+									INVOICE_DATE,
+									GL_DATE,
+									INVOICE_TYPE_LOOKUP_CODE,
+									VENDOR_ID,
+									VENDOR_SITE_ID,
+									INVOICE_AMOUNT,
+									INVOICE_CURRENCY_CODE,
+									TERMS_NAME,
+									SOURCE,
+									PAYMENT_METHOD_LOOKUP_CODE,
+									PAY_GROUP_LOOKUP_CODE,
+									EXCLUSIVE_PAYMENT_FLAG,
+									ORG_ID, -----
+									DESCRIPTION, -------INTERFAZ
+									GROUP_ID, ------
+									ACCTS_PAY_CODE_COMB_ID,
+									LINE_NUMBER,
+									INVOICE_LINE_ID,
+									LINE_TYPE_LOOKUP_CODE,
+									PA_ADITTION_FLAG,
+									ACCOUNT_DATE,    ------
+									LDESCRIPTION,
+									DIST_CODE_COMBINATION_ID,
+									METODO_PAGO,
+									PAYMENT_PRIORITY,
+									creation_date,
+									INTERFAZ,
+									ID,
+									TIPONEGOCIO,
+									UNIDAD,
+									CUENTA,
+									INTERCOMPAÑIA,
+									PROYECTO,
+									COMPAÑIA,
+									NO_COLABORADOR,
+									PENSIONADO,
+									NOMBRE_EMPLEADO)
+							VALUES (
+									i.TIME_PERIOD_ID,
+									i.INVOICE_ID,
+									i.INVOICE_NUM,
+									TO_DATE(substr(i.INVOICE_DATE,1,10),'yyyy-mm-dd'),
+									TO_DATE(substr(i.GL_DATE,1,10),'yyyy-mm-dd'),
+									i.INVOICE_TYPE_LOOKUP_CODE,
+									i.VENDOR_ID,
+									i.VENDOR_SITE_ID,
+									i.INVOICE_AMOUNT,
+									i.INVOICE_CURRENCY_CODE,
+									i.TERMS_NAME,
+									i.SOURCE,
+									i.PAYMENT_METHOD_LOOKUP_CODE,
+									i.PAY_GROUP_LOOKUP_CODE,
+									i.EXCLUSIVE_PAYMENT_FLAG,
+									i.ORG_ID, -----
+									i.DESCRIPTION, -------
+									i.GROUP_ID, ------
+									i.ACCTS_PAY_CODE_COMB_ID,
+									i.LINE_NUMBER,
+									i.INVOICE_LINE_ID,
+									i.LINE_TYPE_LOOKUP_CODE,
+									i.PA_ADITTION_FLAG,
+									TO_DATE(substr(i.ACCOUNT_DATE,1,10),'yyyy-mm-dd'),    ------
+									i.LDESCRIPTION,
+									i.DIST_CODE_COMBINATION_ID,
+									i.METODO_PAGO,
+									i.PAYMENT_PRIORITY,
+									sysdate - 5/24,
+									'INTERFAZ_NOMINA_AP_FINQ_DEFUN_PENS',
+									p_inv_id_temp,--v_inv_int_temp,
+									i.TIPONEGOCIO,
+									i.UNIDAD,
+									i.CUENTA,
+									i.INTERCOMPAÑIA,
+									i.PROYECTO,
+									i.COMPAÑIA,
+									i.NO_COLABORADOR,
+									--i.PENSIONADO,
+									i.VENDOR_NAME,
+									i.NOMBRE_EMPLEADO);
+			ELSE 
+				INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES_FINQ_VISTAPREVIA (
+									TIME_PERIOD_ID,
+									INVOICE_ID,
+									INVOICE_NUM,
+									INVOICE_DATE,
+									GL_DATE,
+									INVOICE_TYPE_LOOKUP_CODE,
+									VENDOR_ID,
+									VENDOR_SITE_ID,
+									INVOICE_AMOUNT,
+									INVOICE_CURRENCY_CODE,
+									TERMS_NAME,
+									SOURCE,
+									PAYMENT_METHOD_LOOKUP_CODE,
+									PAY_GROUP_LOOKUP_CODE,
+									EXCLUSIVE_PAYMENT_FLAG,
+									ORG_ID, -----
+									DESCRIPTION, -------INTERFAZ
+									GROUP_ID, ------
+									ACCTS_PAY_CODE_COMB_ID,
+									LINE_NUMBER,
+									INVOICE_LINE_ID,
+									LINE_TYPE_LOOKUP_CODE,
+									PA_ADITTION_FLAG,
+									ACCOUNT_DATE,    ------
+									LDESCRIPTION,
+									DIST_CODE_COMBINATION_ID,
+									METODO_PAGO,
+									PAYMENT_PRIORITY,
+									creation_date,
+									INTERFAZ,
+									ID,
+									TIPONEGOCIO,
+									UNIDAD,
+									CUENTA,
+									INTERCOMPAÑIA,
+									PROYECTO,
+									COMPAÑIA,
+									NO_COLABORADOR,
+									PENSIONADO,
+									NOMBRE_EMPLEADO)
+							VALUES (
+									i.TIME_PERIOD_ID,
+									i.INVOICE_ID,
+									i.INVOICE_NUM,
+									TO_DATE(substr(i.INVOICE_DATE,1,10),'yyyy-mm-dd'),
+									TO_DATE(substr(i.GL_DATE,1,10),'yyyy-mm-dd'),
+									i.INVOICE_TYPE_LOOKUP_CODE,
+									i.VENDOR_ID,
+									i.VENDOR_SITE_ID,
+									i.INVOICE_AMOUNT,
+									i.INVOICE_CURRENCY_CODE,
+									i.TERMS_NAME,
+									i.SOURCE,
+									i.PAYMENT_METHOD_LOOKUP_CODE,
+									i.PAY_GROUP_LOOKUP_CODE,
+									i.EXCLUSIVE_PAYMENT_FLAG,
+									i.ORG_ID, -----
+									i.DESCRIPTION, -------
+									i.GROUP_ID, ------
+									i.ACCTS_PAY_CODE_COMB_ID,
+									i.LINE_NUMBER,
+									i.INVOICE_LINE_ID,
+									i.LINE_TYPE_LOOKUP_CODE,
+									i.PA_ADITTION_FLAG,
+									TO_DATE(substr(i.ACCOUNT_DATE,1,10),'yyyy-mm-dd'),    ------
+									i.LDESCRIPTION,
+									i.DIST_CODE_COMBINATION_ID,
+									i.METODO_PAGO,
+									i.PAYMENT_PRIORITY,
+									sysdate - 5/24,
+									'INTERFAZ_NOMINA_AP_FINQ_DEFUN_PENS',
+									p_inv_id_temp,--v_inv_int_temp,
+									i.TIPONEGOCIO,
+									i.UNIDAD,
+									i.CUENTA,
+									i.INTERCOMPAÑIA,
+									i.PROYECTO,
+									i.COMPAÑIA,
+									i.NO_COLABORADOR,
+									--i.PENSIONADO,
+									i.VENDOR_NAME,
+									i.NOMBRE_EMPLEADO);
+			END IF;
+
+			ln_cont_det:= ln_cont_det + 1;
+			l_invoice_amount:= l_invoice_amount + i.INVOICE_AMOUNT;
+			l_clob_text:= l_clob_text||rpad(ln_cont_det,10)||'   '||lpad(rpad(i.LDESCRIPTION,20),20)||'   '||lpad(rpad(i.NO_COLABORADOR,20),20)||'   '||lpad(rpad(i.NOMBRE_EMPLEADO,60),40)||'   '||lpad(rpad(i.VENDOR_NAME,30),30)||'   '||TO_CHAR(i.INVOICE_AMOUNT, '999,999,999,999.99')||CHR(10);
+			
+        END LOOP;
+        
+		IF p_boton = 'Y' THEN
+    	    BEGIN
+                SELECT  1
+    			INTO    v_val
+    			FROM    XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES
+    			WHERE   ID = p_inv_id_temp
+    			        AND interfaz = 'INTERFAZ_NOMINA_AP_FINQ_DEFUN_PENS'
+                        AND ROWNUM = 1;
+            
+            EXCEPTION WHEN OTHERS THEN
+                v_val := 0;
+            END;
+		ELSE
+    	    BEGIN
+                SELECT  1
+    			INTO    v_val
+    			FROM    XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES_FINQ_VISTAPREVIA
+    			WHERE   ID = p_inv_id_temp
+    			        AND interfaz = 'INTERFAZ_NOMINA_AP_FINQ_DEFUN_PENS'
+                        AND ROWNUM = 1;
+            
+            EXCEPTION WHEN OTHERS THEN
+                v_val := 0;
+            END;
+		END IF;
+		
+		DBMS_OUTPUT.put_line ('v_val --> '||v_val);
+
+		IF v_val > 0 THEN
+			
+			l_clob_text:= l_clob_text||'================================================================================================================================================'||CHR(10);
+			l_clob_text:= l_clob_text||'Total de registros es: '||v_val||CHR(10);
+			l_clob_text:= l_clob_text||'Total de importe insertados en lineas es: '||TO_CHAR(l_invoice_amount, '999,999,999,999.99')||CHR(10);
+
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_TXT (DATA_TXT,PROCESS_ID,CREATION_DATE,INTERFACE_NAME) VALUES (l_clob_text,p_inv_id_temp,SYSDATE,'INTERFAZ_NOMINA_AP_FINQ_DEFUN_PENS');
+			COMMIT;
+
+			--x_process_id :=  p_inv_id_temp;
+		ELSE 
+			mensaje := 'No se encontraron datos en la interfaz FINQU';
+			apex_json.open_object;
+			apex_json.write('mensaje', mensaje);
+			apex_json.close_object;
+		END IF;
+		
+        COMMIT;
+                
+    EXCEPTION
+    WHEN OTHERS THEN
+		DBMS_OUTPUT.put_line ('Se ha producido un error general en la Interfaz de nómina AP: '|| SQLERRM);
+		mensaje := 'Se ha producido un error general en la Interfaz de nómina AP:';
+		error := SQLERRM;
+		apex_json.open_object;
+		apex_json.write('mensaje', mensaje);
+		apex_json.write('error', error);
+		apex_json.close_object;
+    END get_data_finq_defu_pensiones; 
+
+	/*VALES DESPENSA PENSION ALIMENTICIA */ 
+ 
+    PROCEDURE get_data_pension_alimenticia 
+                      ( 
+                       P_USER_TOKEN           IN  VARCHAR2,    
+                       p_consolidation_set_id IN  VARCHAR2, 
+                       p_time_period_id       IN  VARCHAR2, 
+                       p_unidad_pago          IN  VARCHAR2, 
+                       p_source               IN  VARCHAR2, 
+                       p_org_id               IN  VARCHAR2, 
+                       p_element_type_id1     IN  VARCHAR2, 
+                       p_tipoNegocio          IN  VARCHAR2,    
+                       p_unidad               IN  VARCHAR2, 
+                       p_cuenta               IN  VARCHAR2, 
+                       p_Intercompania        IN  VARCHAR2, 
+                       p_Proyecto             IN  VARCHAR2,    
+                       p_payroll_id           IN  VARCHAR2, 
+                       p_inv_id_temp          IN  VARCHAR2, 
+                       p_user_name            IN  VARCHAR2, 
+					   p_process_id           IN  NUMBER, 
+                       x_process_id           OUT NUMBER 
+                       )   
+    AS 
+        l_user_name                VARCHAR2 (100);--Aqu?an las credenciales 
+        l_password                 VARCHAR2 (100); 
+        l_ws_url                   VARCHAR2 (500); --Aqu?a el WSDL de Oracle para consumir informaci?e informacion del wsdl 
+        l_ws_action                VARCHAR2 (500):= 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar 
+        l_ws_response_clob         CLOB; 
+        l_ws_envelope              CLOB; 
+        l_ws_resp_xml              XMLTYPE; 
+        l_ws_resp_xml2             XMLTYPE; 
+        v_cdata                    CLOB; 
+        l_clob                     CLOB; 
+        v_val                      PLS_INTEGER; 
+        v_inv_int_temp             VARCHAR2(100); 
+        mensaje                    VARCHAR2(300); 
+        error                      VARCHAR2(300); 
+		ls_concatenated_segments   VARCHAR2(2000); 
+		l_vendor_name              VARCHAR2(2000); 
+		ln_cont_det                NUMBER; 
+		l_clob_text                CLOB; 
+		l_invoice_amount           NUMBER; 
+		v_process                  NUMBER; 
+    BEGIN 
+ 
+        v_inv_int_temp := p_inv_id_temp; 
+        DBMS_OUTPUT.put_line ('Inicio de la Interfaz de n?a AP cheques...'); 
+         --Este es el XML que se manda al servicio: 
+        l_ws_envelope := 
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+			   <soap:Body> 
+				  <pub:runReport> 
+					 <pub:reportRequest> 
+						   <pub:parameterNameValues> 
+						    
+							  <pub:item> 
+							<pub:name>P_CONSOLIDATION_SET_ID</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_consolidation_set_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							  <pub:item> 
+							<pub:name>P_TIME_PERIOD_ID</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_time_period_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+							  
+							 <pub:item> 
+							<pub:name>P_UNIDAD_PAGO</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_unidad_pago||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							 <pub:item> 
+							<pub:name>P_SOURCE</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_source||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							 <pub:item> 
+							<pub:name>P_ORG_ID</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_org_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							  
+							<pub:item> 
+							<pub:name>P_ELEMENT_TYPE_ID1</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_element_type_id1||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							   <pub:item> 
+							<pub:name>P_ELEMENT_TYPE_ID2</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_element_type_id2||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+						   <pub:item> 
+							<pub:name>P_TIPONEGOCIO</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_tipoNegocio||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>  
+ 
+							<pub:item> 
+							<pub:name>P_UNIDAD</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_unidad||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+							 
+							<pub:item> 
+							<pub:name>P_CUENTA</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_cuenta||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>  
+ 
+							 <pub:item> 
+							<pub:name>P_INTERCOMPANIA</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_Intercompania||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+ 
+							 <pub:item> 
+							<pub:name>P_PROYECTO</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_Proyecto||'</pub:item> 
+							 </pub:values> 
+							 </pub:item>   
+ 
+							 <pub:item> 
+							<pub:name>P_PAYROLL_ID</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_payroll_id||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+							<pub:item> 
+							<pub:name>P_USER_NAME</pub:name> 
+							<pub:values> 
+							 <pub:item>'|| p_user_name||'</pub:item> 
+							 </pub:values> 
+							 </pub:item> 
+ 
+						   </pub:parameterNameValues> 
+						<pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS Interfase Nomina AP Plan de Ayuda Mutua/Plan Ayuda Mutua AP - RT.xdo</pub:reportAbsolutePath> 
+						<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+					 </pub:reportRequest> 
+				  </pub:runReport> 
+			   </soap:Body> 
+			</soap:Envelope>';  
+
+ 		GRG_COMMON_CONNECTIONS.get_otbi_report(
+													 l_ws_envelope => l_ws_envelope
+													,l_user_token => P_USER_TOKEN
+													,x_ws_response => l_clob
+													,p_instance_name => 'DEV1'
+												);	
+		
+        l_ws_resp_xml2 := XMLTYPE.createXML (l_clob); 
+                 
+        DBMS_OUTPUT.put_line (' Llenando tabla...'); 
+		 
+		l_clob_text:= '====================================== Pago derivados de Nomina para Vales de Despensa Pension Alimenticia ================================================'||CHR(10) 
+					||'|Fecha Proceso: ' || TO_CHAR(SYSDATE - 6/24,' dd-mm-yyyy hh24:mi:ss')||CHR(10) 
+					||'|Proceso:   '||p_source||CHR(10)  
+					||'| Linea  '||'| Unidad                 |Estafeta              |Empleado                               |Proveedor                                 |Importe   |'||CHR(10) 
+					||'==========================================================================================================================================================='||CHR(10); 
+ 
+        ln_cont_det      := 0; 
+		--v_process        := INTERFAZ_NOMINA_SEQ.nextval; 
+		l_invoice_amount := 0; 
+		DBMS_OUTPUT.put_line ('v_process --> '||v_process); 
+		 
+		FOR i 
+            IN (SELECT  xml_data.TIME_PERIOD_ID, 
+                        xml_data.INVOICE_ID, 
+                        xml_data.INVOICE_NUM, 
+                        xml_data.INVOICE_DATE, 
+                        xml_data.GL_DATE, 
+                        xml_data.INVOICE_TYPE_LOOKUP_CODE, 
+                        xml_data.VENDOR_ID, 
+						xml_data.VENDOR_NAME, 
+                        xml_data.VENDOR_SITE_ID, 
+                        xml_data.INVOICE_AMOUNT, 
+                        xml_data.INVOICE_CURRENCY_CODE, 
+                        xml_data.TERMS_NAME, 
+                        xml_data.SOURCE, 
+                        xml_data.PAYMENT_METHOD_LOOKUP_CODE, 
+                        xml_data.PAY_GROUP_LOOKUP_CODE, 
+                        xml_data.EXCLUSIVE_PAYMENT_FLAG, 
+                        xml_data.ORG_ID, ----- 
+                        xml_data.DESCRIPTION, ------- 
+                        xml_data.GROUP_ID, ------ 
+                        xml_data.ACCTS_PAY_CODE_COMB_ID, 
+                        xml_data.LINE_NUMBER, 
+                        xml_data.INVOICE_LINE_ID, 
+                        xml_data.LINE_TYPE_LOOKUP_CODE, 
+                        xml_data.PA_ADITTION_FLAG, 
+                        xml_data.ACCOUNT_DATE,    ------ 
+                        xml_data.LDESCRIPTION, 
+                        xml_data.DIST_CODE_COMBINATION_ID, 
+                        xml_data.METODO_PAGO, 
+                        xml_data.PAYMENT_PRIORITY, 
+                        xml_data.TIPONEGOCIO, 
+                        xml_data.UNIDAD, 
+                        xml_data.CUENTA, 
+                        xml_data.INTERCOMPAÑIA, 
+                        xml_data.PROYECTO, 
+                        xml_data.COMPAÑIA, 
+						xml_data.NO_COLABORADOR, 
+						xml_data.PENSIONADO, 
+						xml_data.NOMBRE_EMPLEADO 
+                  FROM XMLTABLE ( 
+                           '/DATA_DS/G_1' 
+                           PASSING xmltype.createxml (l_clob) 
+                           COLUMNS TIME_PERIOD_ID NUMBER PATH 'TIME_PERIOD_ID', 
+                                    INVOICE_ID NUMBER PATH 'INVOICE_ID', 
+                                    INVOICE_NUM VARCHAR2(2000) PATH 'INVOICE_NUM', 
+                                    INVOICE_DATE VARCHAR2(100) PATH 'INVOICE_DATE', 
+                                    GL_DATE VARCHAR2(100) PATH 'GL_DATE', 
+                                    INVOICE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'INVOICE_TYPE_LOOKUP_CODE', 
+                                    VENDOR_ID NUMBER PATH 'VENDOR_ID', 
+                                    VENDOR_NAME VARCHAR2(200) PATH 'VENDOR_NAME', 
+									VENDOR_SITE_ID NUMBER PATH 'VENDOR_SITE_ID', 
+                                    INVOICE_AMOUNT NUMBER PATH 'INVOICE_AMOUNT', 
+                                    INVOICE_CURRENCY_CODE VARCHAR2(100) PATH 'INVOICE_CURRENCY_CODE', 
+                                    TERMS_NAME VARCHAR2(100) PATH 'TERMS_NAME', 
+                                    SOURCE VARCHAR2(100) PATH 'SOURCE', 
+                                    PAYMENT_METHOD_LOOKUP_CODE VARCHAR2(100) PATH 'PAYMENT_METHOD_LOOKUP_CODE', 
+                                    PAY_GROUP_LOOKUP_CODE VARCHAR2(100) PATH 'PAY_GROUP_LOOKUP_CODE', 
+                                    EXCLUSIVE_PAYMENT_FLAG VARCHAR2(100) PATH 'EXCLUSIVE_PAYMENT_FLAG', 
+                                    ORG_ID NUMBER PATH 'ORG_ID', ----- 
+                                    DESCRIPTION VARCHAR2(100) PATH 'DESCRIPTION', ------- 
+                                    GROUP_ID VARCHAR2(100) PATH 'GROUP_ID', ------ 
+                                    ACCTS_PAY_CODE_COMB_ID NUMBER PATH 'ACCTS_PAY_CODE_COMB_ID', 
+                                    LINE_NUMBER NUMBER PATH 'LINE_NUMBER', 
+                                    INVOICE_LINE_ID NUMBER PATH 'INVOICE_LINE_ID', 
+                                    LINE_TYPE_LOOKUP_CODE VARCHAR2(100) PATH 'LINE_TYPE_LOOKUP_CODE', 
+                                    PA_ADITTION_FLAG VARCHAR2(100) PATH 'PA_ADITTION_FLAG', 
+                                    ACCOUNT_DATE VARCHAR2(100) PATH 'ACCOUNT_DATE',    ------ 
+                                    LDESCRIPTION VARCHAR2(100) PATH 'LDESCRIPTION', 
+                                    DIST_CODE_COMBINATION_ID NUMBER PATH 'DIST_CODE_COMBINATION_ID', 
+                                    METODO_PAGO VARCHAR2(100) PATH 'METODO_PAGO', 
+                                    PAYMENT_PRIORITY NUMBER PATH 'PAYMENT_PRIORITY', 
+                                    TIPONEGOCIO VARCHAR2(250) PATH 'TIPONEGOCIO', 
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD', 
+                                    CUENTA VARCHAR2(250) PATH 'CUENTA', 
+                                    INTERCOMPAÑIA VARCHAR2(250) PATH 'INTERCOMPAÑIA', 
+                                    PROYECTO VARCHAR2(250) PATH 'PROYECTO', 
+                                    COMPAÑIA VARCHAR2(250) PATH 'COMPAÑIA', 
+									NO_COLABORADOR VARCHAR2(250) PATH 'NO_COLABORADOR', 
+									PENSIONADO VARCHAR2(250) PATH 'PENSIONADO', 
+									NOMBRE_EMPLEADO VARCHAR2(250) PATH 'NOMBRE_EMPLEADO' 
+                                    ) 
+                       xml_data) -- Aqu?e crea el XML de respuesta por nodos, es como formatear. 
+
+        LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX. 
+             
+			DBMS_OUTPUT.put_line ('ENTRA AL FOR .......'); 
+			 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES ( 
+                                TIME_PERIOD_ID, 
+                                INVOICE_ID, 
+                                INVOICE_NUM, 
+                                INVOICE_DATE, 
+                                GL_DATE, 
+                                INVOICE_TYPE_LOOKUP_CODE, 
+                                VENDOR_ID, 
+                                VENDOR_SITE_ID, 
+                                INVOICE_AMOUNT, 
+                                INVOICE_CURRENCY_CODE, 
+                                TERMS_NAME, 
+                                SOURCE, 
+                                PAYMENT_METHOD_LOOKUP_CODE, 
+                                PAY_GROUP_LOOKUP_CODE, 
+                                EXCLUSIVE_PAYMENT_FLAG, 
+                                ORG_ID, ----- 
+                                DESCRIPTION, -------INTERFAZ 
+                                GROUP_ID, ------ 
+                                ACCTS_PAY_CODE_COMB_ID, 
+                                LINE_NUMBER, 
+                                INVOICE_LINE_ID, 
+                                LINE_TYPE_LOOKUP_CODE, 
+                                PA_ADITTION_FLAG, 
+                                ACCOUNT_DATE,    ------ 
+                                LDESCRIPTION, 
+                                DIST_CODE_COMBINATION_ID, 
+                                METODO_PAGO, 
+                                PAYMENT_PRIORITY, 
+                                creation_date, 
+                                INTERFAZ, 
+                                ID, 
+                                TIPONEGOCIO, 
+                                UNIDAD, 
+                                CUENTA, 
+                                INTERCOMPAÑIA, 
+                                PROYECTO, 
+                                COMPAÑIA, 
+								NO_COLABORADOR, 
+								PENSIONADO, 
+								NOMBRE_EMPLEADO) 
+                         VALUES ( 
+                                i.TIME_PERIOD_ID, 
+                                i.INVOICE_ID, 
+                                i.INVOICE_NUM, 
+                                TO_DATE(substr(i.INVOICE_DATE,1,10),'yyyy-mm-dd'), 
+                                TO_DATE(substr(i.GL_DATE,1,10),'yyyy-mm-dd'), 
+                                i.INVOICE_TYPE_LOOKUP_CODE, 
+                                i.VENDOR_ID, 
+                                i.VENDOR_SITE_ID, 
+                                i.INVOICE_AMOUNT, 
+                                i.INVOICE_CURRENCY_CODE, 
+                                i.TERMS_NAME, 
+                                i.SOURCE, 
+                                i.PAYMENT_METHOD_LOOKUP_CODE, 
+                                i.PAY_GROUP_LOOKUP_CODE, 
+                                i.EXCLUSIVE_PAYMENT_FLAG, 
+                                i.ORG_ID, ----- 
+                                i.DESCRIPTION, ------- 
+                                i.GROUP_ID, ------ 
+                                i.ACCTS_PAY_CODE_COMB_ID, 
+                                i.LINE_NUMBER, 
+                                i.INVOICE_LINE_ID, 
+                                i.LINE_TYPE_LOOKUP_CODE, 
+                                i.PA_ADITTION_FLAG, 
+                                TO_DATE(substr(i.ACCOUNT_DATE,1,10),'yyyy-mm-dd'),    ------ 
+                                i.LDESCRIPTION, 
+                                i.DIST_CODE_COMBINATION_ID, 
+                                i.METODO_PAGO, 
+                                i.PAYMENT_PRIORITY, 
+                                sysdate - 5/24, 
+                                'INTERFAZ_NOMINA_AP_PENSION_ALIMENTICIA', 
+                                v_inv_int_temp, 
+                                i.TIPONEGOCIO, 
+                                i.UNIDAD, 
+                                i.CUENTA, 
+                                i.INTERCOMPAÑIA, 
+                                i.PROYECTO, 
+                                i.COMPAÑIA, 
+								i.NO_COLABORADOR, 
+								i.PENSIONADO, 
+								i.NOMBRE_EMPLEADO); 
+								 
+			ln_cont_det:= ln_cont_det + 1; 
+			l_invoice_amount:= l_invoice_amount + i.INVOICE_AMOUNT; 
+			l_clob_text:= l_clob_text||rpad(ln_cont_det,10)||'   '||lpad(rpad(i.LDESCRIPTION,20),20)||'   '||lpad(rpad(i.NO_COLABORADOR,20),20)||'   '||lpad(rpad(i.NOMBRE_EMPLEADO,60),40)||'   '||lpad(rpad(i.PENSIONADO,30),30)||'   '||TO_CHAR(i.INVOICE_AMOUNT, '999,999,999,999.99')||CHR(10); 
+			 
+--            END IF; 
+        END LOOP; 
+        
+        BEGIN
+    		SELECT  1
+    		INTO    v_val 
+    		FROM    XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES 
+    		WHERE   ID = p_inv_id_temp
+    		        AND interfaz = 'INTERFAZ_NOMINA_AP_PENSION_ALIMENTICIA'
+                    AND ROWNUM = 1;
+
+        EXCEPTION WHEN OTHERS THEN 
+            v_val := 0;
+        END; 
+		 
+		DBMS_OUTPUT.put_line ('v_val --> '||v_val); 
+ 
+		IF v_val > 0 THEN 
+			l_clob_text:= l_clob_text||'================================================================================================================================================'||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de registros es: '||v_val||CHR(10); 
+			l_clob_text:= l_clob_text||'Total de importe insertados en lineas es: '||TO_CHAR(l_invoice_amount, '999,999,999,999.99')||CHR(10); 
+ 
+			INSERT INTO XXTOKS_INTERFAZ_NOMINA_AP_TXT (DATA_TXT,PROCESS_ID,CREATION_DATE,INTERFACE_NAME) VALUES (l_clob_text,v_inv_int_temp,SYSDATE,'INTERFAZ_NOMINA_AP_PENSION_ALIMENTICIA'); 
+			COMMIT; 
+ 
+			x_process_id :=  v_inv_int_temp; 
+		ELSE  
+			mensaje := 'No se encontraron datos'; 
+			apex_json.open_object; 
+			apex_json.write('mensaje', mensaje); 
+			apex_json.close_object; 
+		END IF; 
+		 
+        COMMIT; 
+                 
+    EXCEPTION 
+    WHEN OTHERS THEN 
+		DBMS_OUTPUT.put_line ('Se ha producido un error general en la Interfaz de n?a AP: '|| SQLERRM); 
+		mensaje := 'Se ha producido un error general en la Interfaz de n?a AP:'; 
+		error := SQLERRM; 
+		apex_json.open_object; 
+		apex_json.write('mensaje', mensaje); 
+		apex_json.write('error', error); 
+		apex_json.close_object; 
+
+    END get_data_pension_alimenticia;     
+
+END XXTOKS_INTERFAZ_NOMINA_AP_CHEQUES_PKG;
