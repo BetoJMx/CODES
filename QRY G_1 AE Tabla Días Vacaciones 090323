@@ -1,0 +1,50 @@
+--QUERY G_1 AE Tabla Días Vacaciones
+/*
+    CONSULTA PARA EXTRACCION DE INFORMACION BASE SOBRE TABLAS DE FACTOR
+	PARA DÍAS DE VACACIONES.
+
+VERSION |RESPONSABLE            |CAMBIO                                                         |FECHA
+--------------------------------------------------------------------------------------------------------
+1.0.0   |ALBERTO JUAREZ         |Creación 		        										|260123
+1.0.1   |ALBERTO JUAREZ         |Agregación de valores created_by, last_updated_by				|090323
+*/
+
+SELECT  pvdt.name                       table_name,
+		TO_NUMBER(prif.low_value_text)  years_seniority,
+		--pvdf3.base_name,        
+		--pvdf3.value_identifier          columna,
+		prif2.value1					days_of_vacation,
+		TO_CHAR(
+			prif2.effective_start_date,
+			'YYYY-MM-DD'
+		 		) 						dov_effective_from,
+		TO_CHAR(
+			pvdf.effective_start_date,
+			'YYYY-MM-DD'
+				)						table_effective_from,
+		prif2.created_by, --*090323
+		prif2.last_updated_by --*090323 
+FROM    pay_value_definitions_tl  pvdt,
+		pay_value_definitions_f   pvdf,
+		--+
+		pay_value_definitions_f   pvdf2,
+		pay_range_items_f         prif,
+		--+
+		pay_value_definitions_f   pvdf3,
+		pay_range_items_f         prif2
+WHERE   1 = 1 
+		AND pvdt.value_defn_id = pvdf.value_defn_id
+		AND pvdt.name like 'Tabla%'
+		AND prif.value_defn_id = pvdf2.value_defn_id
+		AND pvdt.language = 'US'--userenv('LANG')
+		AND pvdf.value_defn_id = pvdf2.parent_value_defn_id
+		AND pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+		AND prif2.value_defn_id = pvdf3.value_defn_id
+		--+
+		AND pvdf3.value_identifier = 'C'
+		AND TRUNC(SYSDATE) BETWEEN pvdf.effective_start_date AND pvdf.effective_END_date
+		AND TRUNC(SYSDATE) BETWEEN pvdf2.effective_start_date AND pvdf2.effective_END_date
+		AND TRUNC(SYSDATE) BETWEEN prif.effective_start_date AND prif.effective_END_date
+		AND TRUNC(SYSDATE) BETWEEN pvdf3.effective_start_date AND pvdf3.effective_END_date
+		AND TRUNC(SYSDATE) BETWEEN prif2.effective_start_date AND prif2.effective_END_date
+ORDER BY 1,2,3
