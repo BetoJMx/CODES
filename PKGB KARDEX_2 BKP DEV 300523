@@ -1,0 +1,791 @@
+--PKGB KARDEX_2 BKP DEV 300523
+create or replace package body XXTOKS_KARDEX_2_PKG is
+
+
+    FUNCTION get_worker_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_KARDEX_TBL PIPELINED AS
+        l_linea              GRG_PAY_KARDEX_TYPE;
+        l_ws_resp_xml        XMLTYPE;
+        v_error              VARCHAR2(100);
+    BEGIN
+        l_ws_resp_xml := get_xml_information( 
+			'TOKS KARDEX BASE.xdo',
+			p_estafeta,
+			p_user_token
+		);
+        ----------------------------G_1-------------------------------------  
+        
+        FOR i IN (  SELECT 
+                    xml_data.LEGAL_ENTITY_ID,
+                    xml_data.ESTAFETA,
+                    xml_data.PERSON_ID,
+                    xml_data.NOMBRE,
+                    xml_data.FECHA_DE_INGRESO,
+					xml_data.FECHA_ANTIGUA,
+                    xml_data.RFC,
+                    xml_data.CURP,
+                    xml_data.NO_IMSS,
+                    xml_data.TELEFONO,
+                    xml_data.DEL_MUNICIPIO,
+                    xml_data.DOMICILIO,
+                    xml_data.UNIDAD,
+                    xml_data.PUESTO,
+                    xml_data.SUELDO,
+                    xml_data.APARTIR_DE,
+                    xml_data.FECHA_DE_BAJA,
+                    xml_data.MOTIVO,
+                    xml_data.TIPO,
+                    xml_data.DESCRIPCION_COMP
+                    FROM XMLTABLE (
+                            '/DATA_DS/G_1'
+                            PASSING l_ws_resp_xml
+                            COLUMNS LEGAL_ENTITY_ID        VARCHAR2 (250) PATH 'LEGAL_ENTITY_ID',
+                                    ESTAFETA               VARCHAR2 (250) PATH 'ESTAFETA',
+                                    PERSON_ID              VARCHAR2 (250) PATH 'PERSON_ID',
+                                    NOMBRE                 VARCHAR2 (250) PATH 'NOMBRE',
+                                    FECHA_DE_INGRESO       VARCHAR2 (250) PATH 'FECHA_DE_INGRESO',
+									FECHA_ANTIGUA          VARCHAR2 (250) PATH 'FECHA_ANTIGUA',
+                                    RFC                    VARCHAR2 (250) PATH 'RFC',
+                                    CURP                   VARCHAR2 (250) PATH 'CURP',
+                                    NO_IMSS                VARCHAR2 (250) PATH 'NO_IMSS',
+                                    TELEFONO               VARCHAR2 (250) PATH 'TELEFONO',
+                                    DEL_MUNICIPIO          VARCHAR2 (250) PATH 'DEL_MUNICIPIO',
+                                    DOMICILIO              VARCHAR2 (250) PATH 'DOMICILIO',
+                                    UNIDAD                 VARCHAR2 (250) PATH 'UNIDAD',
+                                    PUESTO                 VARCHAR2 (250) PATH 'PUESTO',
+                                    SUELDO                 VARCHAR2 (250) PATH 'SUELDO',
+                                    APARTIR_DE             VARCHAR2 (250) PATH 'APARTIR_DE',
+                                    FECHA_DE_BAJA          VARCHAR2 (250) PATH 'FECHA_DE_BAJA',
+                                    MOTIVO                 VARCHAR2 (250) PATH 'MOTIVO',
+                                    TIPO                   VARCHAR2 (250) PATH 'TIPO',
+                                    DESCRIPCION_COMP       VARCHAR2 (250) PATH 'DESCRIPCION_COMP'
+                         ) XML_DATA)
+            LOOP
+                l_linea := GRG_PAY_KARDEX_TYPE(
+                        i.LEGAL_ENTITY_ID,
+                        i.ESTAFETA,
+                        i.PERSON_ID,
+                        i.NOMBRE,
+                        i.FECHA_DE_INGRESO,
+						i.FECHA_ANTIGUA,
+                        i.RFC,
+                        i.CURP,
+                        i.NO_IMSS,
+                        i.TELEFONO,
+                        i.DEL_MUNICIPIO,
+                        i.DOMICILIO,
+                        i.UNIDAD,
+                        i.PUESTO,
+                        i.SUELDO,
+                        i.APARTIR_DE,
+                        i.FECHA_DE_BAJA,
+                        i.MOTIVO,
+                        i.TIPO,
+                        i.DESCRIPCION_COMP
+						
+                );
+                
+                PIPE ROW (l_linea);  
+            END LOOP;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_error := SQLERRM;
+            DBMS_OUTPUT.PUT_LINE( 'Error en el G_1: ' || v_error );
+
+            l_linea := GRG_PAY_KARDEX_TYPE(
+                    null,
+                    p_estafeta,
+                    null,
+                    substr( v_error, 1 , 250),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    substr( v_error, 1 , 250),
+                    0
+                );
+                
+                PIPE ROW (l_linea);
+    END get_worker_information;
+
+
+FUNCTION get_worker_information_v2 (
+        p_estafeta   IN VARCHAR2,
+		p_nombre     IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_KARDEX_TBL PIPELINED AS
+        l_linea              GRG_PAY_KARDEX_TYPE;
+        l_ws_resp_xml        XMLTYPE;
+        v_error              VARCHAR2(100);
+    BEGIN
+        l_ws_resp_xml := get_xml_information_v2( 
+			'catalogo-empleados-RTF.xdo',
+			p_estafeta,
+			p_nombre,
+			p_user_token
+		);
+        ----------------------------G_1-------------------------------------  
+        
+        FOR i IN (  SELECT 
+                    xml_data.LEGAL_ENTITY_ID,
+                    xml_data.ESTAFETA,
+                    xml_data.PERSON_ID,
+                    xml_data.NOMBRE,
+                    xml_data.FECHA_DE_INGRESO,
+					xml_data.FECHA_ANTIGUA,
+                    xml_data.RFC,
+                    xml_data.CURP,
+                    xml_data.NO_IMSS,
+                    xml_data.TELEFONO,
+                    xml_data.DEL_MUNICIPIO,
+                    xml_data.DOMICILIO,
+                    xml_data.UNIDAD,
+                    xml_data.PUESTO,
+                    xml_data.SUELDO,
+                    xml_data.APARTIR_DE,
+                    xml_data.FECHA_DE_BAJA,
+                    xml_data.MOTIVO,
+                    xml_data.TIPO,
+                    xml_data.DESCRIPCION_COMP
+                    FROM XMLTABLE (
+                            '/DATA_DS/G_1'
+                            PASSING l_ws_resp_xml
+                            COLUMNS LEGAL_ENTITY_ID        VARCHAR2 (250) PATH 'LEGAL_ENTITY_ID',
+                                    ESTAFETA               VARCHAR2 (250) PATH 'ESTAFETA',
+                                    PERSON_ID              VARCHAR2 (250) PATH 'PERSON_ID',
+                                    NOMBRE                 VARCHAR2 (250) PATH 'NOMBRE',
+                                    FECHA_DE_INGRESO       VARCHAR2 (250) PATH 'FECHA_DE_INGRESO',
+									FECHA_ANTIGUA          VARCHAR2 (250) PATH 'FECHA_ANTIGUA',
+                                    RFC                    VARCHAR2 (250) PATH 'RFC',
+                                    CURP                   VARCHAR2 (250) PATH 'CURP',
+                                    NO_IMSS                VARCHAR2 (250) PATH 'NO_IMSS',
+                                    TELEFONO               VARCHAR2 (250) PATH 'TELEFONO',
+                                    DEL_MUNICIPIO          VARCHAR2 (250) PATH 'DEL_MUNICIPIO',
+                                    DOMICILIO              VARCHAR2 (250) PATH 'DOMICILIO',
+                                    UNIDAD                 VARCHAR2 (250) PATH 'UNIDAD',
+                                    PUESTO                 VARCHAR2 (250) PATH 'PUESTO',
+                                    SUELDO                 VARCHAR2 (250) PATH 'SUELDO',
+                                    APARTIR_DE             VARCHAR2 (250) PATH 'APARTIR_DE',
+                                    FECHA_DE_BAJA          VARCHAR2 (250) PATH 'FECHA_DE_BAJA',
+                                    MOTIVO                 VARCHAR2 (250) PATH 'MOTIVO',
+                                    TIPO                   VARCHAR2 (250) PATH 'TIPO',
+                                    DESCRIPCION_COMP       VARCHAR2 (250) PATH 'DESCRIPCION_COMP'
+                         ) XML_DATA)
+            LOOP
+                l_linea := GRG_PAY_KARDEX_TYPE(
+                        i.LEGAL_ENTITY_ID,
+                        i.ESTAFETA,
+                        i.PERSON_ID,
+                        i.NOMBRE,
+                        i.FECHA_DE_INGRESO,
+						i.FECHA_ANTIGUA,
+                        i.RFC,
+                        i.CURP,
+                        i.NO_IMSS,
+                        i.TELEFONO,
+                        i.DEL_MUNICIPIO,
+                        i.DOMICILIO,
+                        i.UNIDAD,
+                        i.PUESTO,
+                        i.SUELDO,
+                        i.APARTIR_DE,
+                        i.FECHA_DE_BAJA,
+                        i.MOTIVO,
+                        i.TIPO,
+                        i.DESCRIPCION_COMP
+						
+                );
+                
+                PIPE ROW (l_linea);  
+            END LOOP;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_error := SQLERRM;
+            DBMS_OUTPUT.PUT_LINE( 'Error en el G_1: ' || v_error );
+
+            l_linea := GRG_PAY_KARDEX_TYPE(
+                    null,
+                    p_estafeta,
+                    null,
+                    substr( v_error, 1 , 250),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    substr( v_error, 1 , 250),
+                    0
+                );
+                
+                PIPE ROW (l_linea);
+    END get_worker_information_v2;
+    
+    FUNCTION get_vacation_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_VACATIONS_TBL PIPELINED AS
+        l_linea              GRG_PAY_VACATIONS_CLOUD_TYPE;
+        l_ws_resp_xml        XMLTYPE;
+        v_error              VARCHAR2(100);
+    BEGIN
+        l_ws_resp_xml := get_xml_information( 
+			'VACATIONS CLOUD KARDEX-RT.xdo',
+			p_estafeta,
+			p_user_token
+		);
+        
+        FOR i IN (  SELECT 
+                    XML_DATA.ESTAFETA,
+                    XML_DATA.PERIODO,
+                    XML_DATA.DIAS,
+                    XML_DATA.TOMADOS,
+                    XML_DATA.PENDIENTES
+                    FROM XMLTABLE (
+                            '/DATA_DS/G_1'
+                            PASSING l_ws_resp_xml
+                            COLUMNS ESTAFETA   VARCHAR2 (250) PATH 'ESTAFETA',
+                                    PERIODO    VARCHAR2 (250) PATH 'PERIODO',
+                                    DIAS       VARCHAR2 (250) PATH 'DIAS',
+                                    TOMADOS    VARCHAR2 (250) PATH 'TOMADOS',
+                                    PENDIENTES VARCHAR2 (250) PATH 'PENDIENTES'
+                         ) XML_DATA)
+            LOOP
+                l_linea := GRG_PAY_VACATIONS_CLOUD_TYPE(
+                        i.ESTAFETA,
+                        i.PERIODO,
+                        i.DIAS,
+                        i.TOMADOS,
+                        i.PENDIENTES,
+                        0
+                );
+                
+                PIPE ROW (l_linea);  
+            END LOOP;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_error := SQLERRM;
+            DBMS_OUTPUT.PUT_LINE( 'Error en el G_1: ' || v_error );
+
+            l_linea := GRG_PAY_VACATIONS_CLOUD_TYPE(
+                    p_estafeta,
+                    substr( v_error, 1 , 250),
+                    null,
+                    null,
+                    null,
+                    0
+                );
+                
+                PIPE ROW (l_linea);  
+    END get_vacation_information;
+    
+    
+    FUNCTION get_absence_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_ABSENCES_TBL PIPELINED AS
+        l_linea              GRG_PAY_ABSENCES_CLOUD_TYPE;
+        l_ws_resp_xml        XMLTYPE;
+        v_error              VARCHAR2(100);
+    BEGIN
+        l_ws_resp_xml := get_xml_information( 
+			'ABSENCES CLOUD KARDEX-REP.xdo',
+			p_estafeta,
+			p_user_token
+		);
+        
+        FOR i IN (  SELECT 
+                    XML_DATA.ESTAFETA,
+                    XML_DATA.FECHA_DE,
+                    XML_DATA.A,
+                    XML_DATA.CLAVE,
+                    XML_DATA.NODEDIAS,
+                    XML_DATA.DESCRIPCION
+                    FROM XMLTABLE (
+                            '/DATA_DS/G_1'
+                            PASSING l_ws_resp_xml
+                            COLUMNS ESTAFETA     VARCHAR2 (250) PATH 'ESTAFETA',
+                                    FECHA_DE     VARCHAR2 (250) PATH 'FECHA_DE',
+                                    A            VARCHAR2 (250) PATH 'A',
+                                    CLAVE        VARCHAR2 (250) PATH 'CLAVE',
+                                    NODEDIAS     VARCHAR2 (250) PATH 'NODEDIAS',
+                                    DESCRIPCION  VARCHAR2 (250) PATH 'DESCRIPCION'
+                         ) XML_DATA)
+            LOOP
+                l_linea := GRG_PAY_ABSENCES_CLOUD_TYPE(
+                        i.ESTAFETA,
+                        i.FECHA_DE,
+                        i.A,
+                        i.CLAVE,
+                        i.NODEDIAS,
+                        i.DESCRIPCION,
+                        0
+                );
+                
+                PIPE ROW (l_linea);  
+            END LOOP;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_error := SQLERRM;
+            DBMS_OUTPUT.PUT_LINE( 'Error en el G_1: ' || v_error );
+
+            l_linea := GRG_PAY_ABSENCES_CLOUD_TYPE(
+                    p_estafeta,
+                    null,
+                    null,
+                    null,
+                    null,
+                    substr( v_error, 1 , 250),
+                    0
+                );
+                
+                PIPE ROW (l_linea);  
+    END get_absence_information;
+    
+    
+    FUNCTION get_image_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_IMAGE_TBL PIPELINED AS
+        l_linea              GRG_PAY_IMAGE_CLOUD_TYPE;
+        l_ws_resp_xml        XMLTYPE;
+        v_error              VARCHAR2(100);
+    BEGIN
+        l_ws_resp_xml := get_xml_information( 
+			'PROFILE PIC KARDEX-REP.xdo',
+			p_estafeta,
+			p_user_token
+		);
+        
+        FOR i IN (  SELECT 
+                    XML_DATA.ESTAFETA,
+                    XML_DATA.IMAGE
+                    FROM XMLTABLE (
+                            '/DATA_DS/G_1'
+                            PASSING l_ws_resp_xml
+                            COLUMNS ESTAFETA      VARCHAR2 (250) PATH 'ESTAFETA',
+                                    IMAGE         CLOB           PATH 'IMAGE' 
+                         ) XML_DATA)
+            LOOP
+                l_linea := GRG_PAY_IMAGE_CLOUD_TYPE(
+                        i.ESTAFETA,
+                        i.IMAGE,
+                        0
+                );
+                
+                PIPE ROW (l_linea);  
+            END LOOP;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_error := SQLERRM;
+            DBMS_OUTPUT.PUT_LINE( 'Error en el G_1: ' || v_error );
+
+            l_linea := GRG_PAY_IMAGE_CLOUD_TYPE(
+                    p_estafeta,
+                    null,
+                    0
+                );
+                
+                PIPE ROW (l_linea);  
+    END get_image_information;
+    
+    
+    FUNCTION get_work_history_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_WORK_HISTORY_TBL PIPELINED AS
+        l_linea              GRG_PAY_WORK_HISTORY_TYPE;
+        l_ws_resp_xml        XMLTYPE;
+        v_error              VARCHAR2(100);
+        v_existe             NUMBER;
+    BEGIN
+        l_ws_resp_xml := get_xml_information( 
+			'WORK HISTORY KARDEX-REP.xdo',
+			p_estafeta,
+			p_user_token
+		);
+        
+        FOR i IN (  SELECT 
+                    XML_DATA.PERSON_NUMBER,
+                    XML_DATA.PERSON_ID,
+                    XML_DATA.FECHA,
+                    XML_DATA.JOB_ULT,
+                    XML_DATA.NAME_JOB_ULT,
+                    XML_DATA.SALARY_ULT,
+                    XML_DATA.ULT_ID,
+                    XML_DATA.TRABAJO_ANTERIOR,
+                    XML_DATA.SAL_ANT,
+                    XML_DATA.PUESTO,
+                    XML_DATA.SALARIO,
+                    XML_DATA.INCREMENTO,
+                    XML_DATA.PORCENTAJE
+                    FROM XMLTABLE (
+                            '/DATA_DS/G_1'
+                            PASSING l_ws_resp_xml
+                            COLUMNS PERSON_NUMBER        VARCHAR2 (250) PATH 'PERSON_NUMBER',
+                                    PERSON_ID            VARCHAR2 (250) PATH 'PERSON_ID',
+                                    FECHA                VARCHAR2 (250) PATH 'FECHA',
+                                    JOB_ULT              VARCHAR2 (250) PATH 'JOB_ULT',
+                                    NAME_JOB_ULT         VARCHAR2 (250) PATH 'NAME_JOB_ULT',
+                                    SALARY_ULT           VARCHAR2 (250) PATH 'SALARY_ULT',
+                                    ULT_ID               VARCHAR2 (250) PATH 'ULT_ID',
+                                    TRABAJO_ANTERIOR     VARCHAR2 (250) PATH 'TRABAJO_ANTERIOR',
+                                    SAL_ANT              VARCHAR2 (250) PATH 'SAL_ANT',
+                                    PUESTO               VARCHAR2 (250) PATH 'PUESTO',
+                                    SALARIO              VARCHAR2 (250) PATH 'SALARIO',
+                                    INCREMENTO           VARCHAR2 (250) PATH 'INCREMENTO',
+                                    PORCENTAJE           VARCHAR2 (250) PATH 'PORCENTAJE'
+                         ) XML_DATA)
+            LOOP
+                SELECT count(1)
+                INTO   v_existe
+                FROM   XXTOKS_KARDEX_EBS_WORK_HISTORY_TE wh
+                where  wh.PERSON_NUMBER = i.PERSON_NUMBER
+                and    to_char(wh.FECHA, 'dd/mm/yyyy') = i.FECHA;
+                
+                IF v_existe = 0 THEN
+                    l_linea := GRG_PAY_WORK_HISTORY_TYPE(
+                        i.PERSON_NUMBER,
+                        i.PERSON_ID,
+                        i.FECHA,
+                        i.JOB_ULT,
+                        i.NAME_JOB_ULT,
+                        i.SALARY_ULT,
+                        i.ULT_ID,
+                        i.TRABAJO_ANTERIOR,
+                        i.SAL_ANT,
+                        i.PUESTO,
+                        i.SALARIO,
+                        i.INCREMENTO,
+                        i.PORCENTAJE,
+                        0
+                    );
+                
+                    PIPE ROW (l_linea);  
+                END IF;
+            END LOOP;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_error := SQLERRM;
+            DBMS_OUTPUT.PUT_LINE( 'Error en el G_1: ' || v_error );
+
+            l_linea := GRG_PAY_WORK_HISTORY_TYPE(
+                    p_estafeta,
+                    null,
+                    null,
+                    null,
+                    substr( v_error, 1 , 250),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    0
+                );
+                
+                PIPE ROW (l_linea);  
+    END get_work_history_information;
+    
+    
+    FUNCTION get_courses_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_COURSES_TBL PIPELINED AS
+        l_linea              GRG_PAY_COURSES_CLOUD_TYPE;
+        l_ws_resp_xml        XMLTYPE;
+        v_error              VARCHAR2(100);
+    BEGIN
+        l_ws_resp_xml := get_xml_information( 
+			'COURSES KARDEX-REP.xdo',
+			p_estafeta,
+			p_user_token
+		);
+        
+        FOR i IN (  SELECT 
+                    XML_DATA.ESTAFETA,
+                    XML_DATA.NOMBRE,
+                    XML_DATA.CALIF,
+                    XML_DATA.FECHA
+                    FROM XMLTABLE (
+                            '/DATA_DS/G_1'
+                            PASSING l_ws_resp_xml
+                            COLUMNS ESTAFETA VARCHAR2 (250) PATH 'ESTAFETA',
+                                    NOMBRE   VARCHAR2 (250) PATH 'NOMBRE',
+                                    CALIF    VARCHAR2 (250) PATH 'CALIF',
+                                    FECHA    VARCHAR2 (250) PATH 'FECHA'
+                         ) XML_DATA)
+            LOOP
+                l_linea := GRG_PAY_COURSES_CLOUD_TYPE(
+                        i.ESTAFETA,
+                        i.NOMBRE,
+                        i.CALIF,
+                        i.FECHA,
+                        0
+                );
+                
+                PIPE ROW (l_linea);  
+            END LOOP;
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_error := SQLERRM;
+            DBMS_OUTPUT.PUT_LINE( 'Error en el G_1: ' || v_error );
+
+            l_linea := GRG_PAY_COURSES_CLOUD_TYPE(
+                    p_estafeta,
+                    null,
+                    null,
+                    null,
+                    0
+                );
+                
+                PIPE ROW (l_linea);  
+    END get_courses_information;
+    
+    
+    PROCEDURE post_datos_otbi
+    IS
+        v_user_token       VARCHAR2(4000) := 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsIng1dCI6IjFmT1ZVTGt1ZXh0WnZHN282NnhzSkt2S3lQRSIsImtpZCI6InRydXN0c2VydmljZSJ9.eyJleHAiOjE2MTM3MDY1MTIsInN1YiI6IjRDRV9KUEVSRVoiLCJpc3MiOiJ3d3cub3JhY2xlLmNvbSIsInBybiI6IjRDRV9KUEVSRVoiLCJpYXQiOjE2MTM2OTIxMTJ9.w3fMUpHun11UpmzXUaqyRHuGCQ4gyJwoXF3XmbbynMX01m3oV1-upLNTRmcHIctOSfia8vnRO_HjgfXty2etdqnI2RvDFsqa-JCNFGex_3OgKwCtPyeKiU-JofnWk_kyuEerdUXBpm65XfbvqnOhEN3bAQhx0zHDyWYDNHP6KkrnbyEkAaBVwckp3FX7kctIGaPfpqGtl2VFlpc9nd4dWlWa4MvJoBoegVrGAEgXy5JzrscqOSHkTvNo8lpANuQza0p23t_C4dXX6hksntrujFh2hVVoCd6mTU8wtoh944dO5h9a12qwifVvxeTADc14vRTVuMLBgtgVWKjbhggdxg';
+        v_error            VARCHAR2(100);
+        v_proces_id        NUMBER;
+        l_ws_resp_xml      XMLTYPE;
+        v_count            NUMBER := 0;
+    BEGIN
+        DBMS_OUTPUT.PUT_LINE('Limpiando tablas');
+        execute immediate 'truncate table PAY.XXTOKS_KARDEX_BASE';
+        
+        v_proces_id := XXTOKS_KARDEX_BASE_SEQ.nextval;
+        
+        l_ws_resp_xml := get_xml_information( 
+			'TOKS KARDEX BASE.xdo',
+			null,
+			v_user_token
+		);
+        ----------------------------G_1-------------------------------------  
+        
+        FOR i IN (  SELECT 
+                    xml_data.LEGAL_ENTITY_ID,
+                    xml_data.ESTAFETA,
+                    xml_data.PERSON_ID,
+                    xml_data.NOMBRE,
+                    xml_data.FECHA_DE_INGRESO,
+					xml_data.FECHA_ANTIGUA,
+                    xml_data.RFC,
+                    xml_data.CURP,
+                    xml_data.NO_IMSS,
+                    xml_data.TELEFONO,
+                    xml_data.DEL_MUNICIPIO,
+                    xml_data.DOMICILIO,
+                    xml_data.UNIDAD,
+                    xml_data.PUESTO,
+                    xml_data.SUELDO,
+                    xml_data.APARTIR_DE,
+                    xml_data.FECHA_DE_BAJA,
+                    xml_data.MOTIVO,
+                    xml_data.TIPO,
+                    xml_data.DESCRIPCION_COMP
+                    FROM XMLTABLE (
+                            '/DATA_DS/G_1'
+                            PASSING l_ws_resp_xml
+                            COLUMNS LEGAL_ENTITY_ID        VARCHAR2 (250) PATH 'LEGAL_ENTITY_ID',
+                                    ESTAFETA               VARCHAR2 (250) PATH 'ESTAFETA',
+                                    PERSON_ID              VARCHAR2 (250) PATH 'PERSON_ID',
+                                    NOMBRE                 VARCHAR2 (250) PATH 'NOMBRE',
+                                    FECHA_DE_INGRESO       VARCHAR2 (250) PATH 'FECHA_DE_INGRESO',
+									FECHA_ANTIGUA          VARCHAR2 (250) PATH 'FECHA_ANTIGUA',
+                                    RFC                    VARCHAR2 (250) PATH 'RFC',
+                                    CURP                   VARCHAR2 (250) PATH 'CURP',
+                                    NO_IMSS                VARCHAR2 (250) PATH 'NO_IMSS',
+                                    TELEFONO               VARCHAR2 (250) PATH 'TELEFONO',
+                                    DEL_MUNICIPIO          VARCHAR2 (250) PATH 'DEL_MUNICIPIO',
+                                    DOMICILIO              VARCHAR2 (250) PATH 'DOMICILIO',
+                                    UNIDAD                 VARCHAR2 (250) PATH 'UNIDAD',
+                                    PUESTO                 VARCHAR2 (250) PATH 'PUESTO',
+                                    SUELDO                 VARCHAR2 (250) PATH 'SUELDO',
+                                    APARTIR_DE             VARCHAR2 (250) PATH 'APARTIR_DE',
+                                    FECHA_DE_BAJA          VARCHAR2 (250) PATH 'FECHA_DE_BAJA',
+                                    MOTIVO                 VARCHAR2 (250) PATH 'MOTIVO',
+                                    TIPO                   VARCHAR2 (250) PATH 'TIPO',
+                                    DESCRIPCION_COMP       VARCHAR2 (250) PATH 'DESCRIPCION_COMP'
+                         ) XML_DATA)
+            LOOP
+                
+                INSERT INTO XXTOKS_KARDEX_BASE(
+                        LEGAL_ENTITY_ID,
+                        ESTAFETA,
+                        ID,
+                        NOMBRE,
+                        FECHA_DE_INGRESO,
+                        FECHA_ANTIGUA,
+                        RFC,
+                        CURP,
+                        NO_IMSS,
+                        TELEFONO,
+                        DEL_MUNICIPIO,
+                        DOMICILIO,
+                        UNIDAD,
+                        PUESTO,
+                        SUELDO,
+                        APARTIR_DE,
+                        FECHA_DE_BAJA,
+                        MOTIVO,
+                        TIPO,
+                        DESCRIPCION_COMP,
+                        PROCES_ID
+                )
+                VALUES(
+                        i.LEGAL_ENTITY_ID,
+                        i.ESTAFETA,
+                        i.PERSON_ID,
+                        i.NOMBRE,
+                        i.FECHA_DE_INGRESO,
+                        i.FECHA_ANTIGUA,
+                        i.RFC,
+                        i.CURP,
+                        i.NO_IMSS,
+                        i.TELEFONO,
+                        i.DEL_MUNICIPIO,
+                        i.DOMICILIO,
+                        i.UNIDAD,
+                        i.PUESTO,
+                        i.SUELDO,
+                        i.APARTIR_DE,
+                        i.FECHA_DE_BAJA,
+                        i.MOTIVO,
+                        i.TIPO,
+                        i.DESCRIPCION_COMP,
+                        v_proces_id
+                );
+
+                v_count := v_count + 1;
+                IF mod( v_count, 100 ) = 0 THEN
+                   commit;
+                END IF;
+            END LOOP;
+                
+        COMMIT;
+        dbms_output.put_line( 'Total Insertados: ' || v_count );
+    EXCEPTION 
+        WHEN OTHERS THEN 
+            v_error := SQLERRM;
+            DBMS_OUTPUT.PUT_LINE( 'Error en el G_1: ' || v_error );
+    END post_datos_otbi;
+    
+
+    FUNCTION get_xml_information (
+        p_report_name   IN VARCHAR2,
+        p_estafeta      IN VARCHAR2,
+        p_user_token    IN VARCHAR2 )
+    RETURN XMLTYPE AS
+        l_clob               CLOB;
+        l_ws_envelope        CLOB;
+        l_ws_resp_xml2       XMLTYPE;
+    BEGIN
+        
+        l_ws_envelope := 
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+    <soap:Body>
+        <pub:runReport>
+            <pub:reportRequest>
+                <pub:parameterNameValues>
+                    <pub:item>
+                        <pub:name>P_ESTAFETA</pub:name>
+                        <pub:values>
+                            <pub:item>' || p_estafeta || '</pub:item>
+                        </pub:values>
+                    </pub:item>
+                </pub:parameterNameValues>
+                <pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS KARDEX Electrónico/' || p_report_name || '</pub:reportAbsolutePath>
+                <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+            </pub:reportRequest>
+        </pub:runReport>
+    </soap:Body>
+</soap:Envelope>';
+
+        ----------------------------TOKEN--------------------------------
+        --GRG_COMMON_CONNECTIONS.get_otbi_report(
+        GRG_COMMON_CONNECTIONS.get_otbi_report_for_oacs(
+                  l_ws_envelope   => l_ws_envelope
+                , l_user_token    => p_user_token
+                , x_ws_response   => l_clob
+                , p_instance_name => 'DEV1'
+        );
+        ----------------------------TOKEN--------------------------------
+        
+        return XMLTYPE.createXML (l_clob);
+    END get_xml_information;
+	
+FUNCTION get_xml_information_v2 (
+        p_report_name   IN VARCHAR2,
+        p_estafeta      IN VARCHAR2,
+		p_nombre        IN VARCHAR2,
+        p_user_token    IN VARCHAR2 )
+    RETURN XMLTYPE AS
+        l_clob               CLOB;
+        l_ws_envelope        CLOB;
+        l_ws_resp_xml2       XMLTYPE;
+    BEGIN
+        
+        l_ws_envelope := 
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+    <soap:Body>
+        <pub:runReport>
+            <pub:reportRequest>
+                <pub:parameterNameValues>
+                    <pub:item>
+                        <pub:name>P_ESTAFETA</pub:name>
+                        <pub:values>
+                            <pub:item>' || p_estafeta || '</pub:item>
+                        </pub:values>
+						
+						<pub:name>P_NOMBRE</pub:name>
+                        <pub:values>
+                            <pub:item>' || p_nombre || '</pub:item>
+                        </pub:values>
+						
+                    </pub:item>
+                </pub:parameterNameValues>
+                <pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS KARDEX Electrónico/' || p_report_name || '</pub:reportAbsolutePath>
+                <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+            </pub:reportRequest>
+        </pub:runReport>
+    </soap:Body>
+</soap:Envelope>';
+
+        ----------------------------TOKEN--------------------------------
+        --GRG_COMMON_CONNECTIONS.get_otbi_report(
+        GRG_COMMON_CONNECTIONS.get_otbi_report_for_oacs(
+                  l_ws_envelope   => l_ws_envelope
+                , l_user_token    => p_user_token
+                , x_ws_response   => l_clob
+                , p_instance_name => 'DEV1'
+        );
+        ----------------------------TOKEN--------------------------------
+        
+        return XMLTYPE.createXML (l_clob);
+    END get_xml_information_v2;
+    
+END XXTOKS_KARDEX_2_PKG;
+/
