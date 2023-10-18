@@ -1,0 +1,52 @@
+-- JOB CARGA INFORMACION PTU
+DECLARE 
+    --pragma autonomous_transaction; 
+ 
+    p_process_year          NUMBER := :p_process_year; 
+    p_legal_employeer_id    NUMBER := :p_legal_employeer_id; 
+    p_legal_employeer_name  VARCHAR2 (100) := :p_legal_employeer_name; 
+    p_user_name             VARCHAR2 (100) := :p_user_name;
+ 
+    l_job_name    VARCHAR2(2000):= 'GRG_PTU_EXTRACCION_'; 
+    l_sql         VARCHAR2(5000); 
+    l_job_action  VARCHAR2(5000); 
+ 
+    l_seq_job      VARCHAR2(100); 
+BEGIN 
+    l_seq_job := TO_CHAR (SYSDATE -6/24, 'YYYYMMDDHHMISS');
+
+    l_sql := '  DECLARE 
+                    p_status NUMBER; 
+                BEGIN 
+                    GRG_PROCESO_PTU_V3.main ( ' ||p_process_year
+                                                ||','||p_legal_employeer_id
+                                                ||','||''''||p_legal_employeer_name||''''
+                                                ||','||''''||l_seq_job||''''
+                                                ||','||''''||p_user_name||''''
+                                                ||','||'p_status ); 
+                END;'; 
+ 
+    l_job_action:= REPLACE(l_sql,'''','NULL'); 
+    dbms_output.put_line(l_job_action); 
+
+    BEGIN
+        dbms_scheduler.create_job (job_name   => l_job_name||l_seq_job
+                                ,job_type   => 'PLSQL_BLOCK' 
+                                ,job_action => l_job_action 
+                                ,enabled    => TRUE 
+                                ,auto_drop  => TRUE 
+                                ,comments   => 'Ejecuta de forma asincrona el servicio de carga de informacion PTU'); 
+        
+        EXCEPTION WHEN OTHERS THEN
+        --DBMS_OUPUT.PUT_LINE(''||SQLERRM);
+
+        apex_json.open_object; 
+        apex_json.write ('process_id:', ''||SQLERRM); 
+        apex_json.close_object;				
+    END;
+ 
+    apex_json.open_object; 
+    apex_json.write ('process_id:', l_seq_job); 
+    apex_json.close_object;						   
+    dbms_output.put_line('termine');
+END; 
