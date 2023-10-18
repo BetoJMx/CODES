@@ -1,0 +1,147 @@
+--QRY NOMVSVENTAS ASIENTOSCONTABLES
+WITH      xx_cuentas AS(
+                        SELECT    REGEXP_SUBSTR (:p_cuentas, '[^|]+', 1, level) segment4
+                        FROM      dual
+                        CONNECT BY LEVEL <= LENGTH (REGEXP_REPLACE (:p_cuentas, '[^|]+')) + 1
+                       )
+SELECT    gjct.je_category_key
+        , gjct.user_je_category_name
+        , SUM(NVL(gjl.entered_dr, 0) - NVL(gjl.entered_cr, 0)) saldo
+        , gcc.segment3
+        , (
+            SELECT    CONVERT(REPLACE(REPLACE(ffvv.description, 'Ñ', 'N'), 'ñ', 'n'),'us7ascii','al32utf8') segment3_desc
+            FROM      fnd_flex_values_vl ffvv
+                    , fnd_id_flex_segments_vl fifsv
+                    , gl_ledgers glx
+            WHERE     ffvv.flex_value_set_id = fifsv.flex_value_set_id
+            AND       fifsv.id_flex_code = 'GL#'
+            AND       fifsv.enabled_flag = 'Y'
+            AND       ffvv.enabled_flag = 'Y'
+            AND       UPPER (fifsv.application_column_name) = 'SEGMENT3'
+            AND       fifsv.id_flex_num = glx.chart_of_accounts_id
+            AND       glx.ledger_id = gl.ledger_id
+            AND       ffvv.flex_value = gcc.segment3
+          ) segment3_desc
+        , gcc.segment4
+        , (
+            SELECT    CONVERT(REPLACE(REPLACE(ffvv.description, 'Ñ', 'N'), 'ñ', 'n'),'us7ascii','al32utf8') segment4_desc
+            FROM      fnd_flex_values_vl ffvv
+                    , fnd_id_flex_segments_vl fifsv
+                    , gl_ledgers glx
+            WHERE     ffvv.flex_value_set_id = fifsv.flex_value_set_id
+            AND       fifsv.id_flex_code = 'GL#'
+            AND       fifsv.enabled_flag = 'Y'
+            AND       ffvv.enabled_flag = 'Y'
+            AND       UPPER (fifsv.application_column_name) = 'SEGMENT4'
+            AND       fifsv.id_flex_num = glx.chart_of_accounts_id
+            AND       glx.ledger_id = gl.ledger_id
+            AND       ffvv.flex_value = gcc.segment4
+          ) segment4_desc
+        , gp.period_num
+        , gp.period_year
+FROM      gl_je_headers gjh
+        , gl_je_lines gjl
+        , gl_code_combinations gcc
+        , gl_je_categories gjct
+        , gl_period_statuses gp
+        , gl_ledgers gl
+WHERE     1 = 1
+AND       gjh.je_header_id = gjl.je_header_id
+AND       gjl.code_combination_id = gcc.code_combination_id
+AND       gjh.je_category = gjct.je_category_name
+AND       gjh.period_name = gp.period_name
+AND       gp.application_id = 101
+AND       gjh.ledger_id = gl.ledger_id
+AND       gl.ledger_category_code = 'PRIMARY'
+AND       gp.ledger_id = gl.ledger_id
+AND       gjh.actual_flag IN ('A')
+AND       gjh.status = 'P'
+AND       gjh.currency_code = 'MXN'
+AND       gp.period_num BETWEEN 1 AND 12
+AND       gp.period_year = :p_anio_actual
+AND       gcc.segment1 IN (
+                            SELECT    ffvv.flex_value   segment1
+                            FROM      fun_all_business_units_v fabu
+                                    , hr_legal_entities        hle
+                                    , gl_ledgers               gl
+                                    , fnd_flex_values_vl       ffvv
+                                    , fnd_id_flex_segments_vl  fifsv
+                                    , gl_ledger_segment_values glsv
+                            WHERE     1 = 1
+                            AND       fabu.status = 'A'
+                            AND       fabu.legal_entity_id = hle.legal_entity_id
+                            AND       hle.classification_code = 'HCM_LEMP'
+                            AND       hle.status = 'A'
+                            AND       hle.organization_id = :p_organization_id 
+                            AND       fabu.primary_ledger_id = gl.ledger_id
+                            AND       gl.chart_of_accounts_id = fifsv.id_flex_num
+                            AND       fifsv.id_flex_code = 'GL#'
+                            AND       fifsv.enabled_flag = 'Y'
+                            AND       UPPER(fifsv.application_column_name) = 'SEGMENT1'
+                            AND       fifsv.flex_value_set_id = ffvv.flex_value_set_id
+                            AND       ffvv.enabled_flag = 'Y'
+                            AND       ffvv.flex_value = glsv.segment_value
+                            AND       fabu.legal_entity_id = glsv.legal_entity_id
+                            AND       gl.ledger_id = glsv.ledger_id 
+                            AND       TRUNC(SYSDATE) BETWEEN hle.effective_start_date AND hle.effective_end_date
+                            AND       EXISTS (
+                                                SELECT    NULL
+                                                FROM      (
+                                                            SELECT    emp_ven.empresa
+                                                                    , emp_ven.empresa_nomina 
+                                                                    , regexp_substr(emp_ven.empresa_venta, '[^~]+', 1, level) empresa_venta
+                                                            FROM      (
+                                                                        SELECT    emp_nom.empresa
+                                                                                , regexp_substr(emp_nom.empresa_nomina, '[^~]+', 1, level) empresa_nomina
+                                                                                , emp_nom.empresa_venta
+                                                                        FROM      (
+                                                                                    SELECT    flv.meaning empresa
+                                                                                            , flv.description empresa_nomina
+                                                                                            , flv.tag||'~' empresa_venta
+                                                                                    FROM      fnd_lookup_values flv
+                                                                                    WHERE     flv.lookup_type = 'XXTOKS_PLANTILLA_VS_VENTA'
+                                                                                    AND       flv.language = SYS_CONTEXT ('USERENV', 'LANG')
+                                                                                    AND       flv.meaning = fabu.bu_name 
+                                                                                  ) emp_nom
+                                                                        CONNECT BY level <= LENGTH(regexp_replace(emp_nom.empresa_nomina, '[^~]+')) + 1
+                                                                      ) emp_ven
+                                                            CONNECT BY level <= LENGTH(regexp_replace(emp_ven.empresa_venta, '[^~]+')) + 1
+                                                          ) venta_nomina
+                                                WHERE     1 = 1
+                                                AND       venta_nomina.empresa_venta IS NOT NULL
+                                                AND       venta_nomina.empresa_nomina = fabu.bu_name 
+                                              )
+                          )
+--
+AND       (   gcc.segment3 = NVL(:p_unidad, gcc.segment3)
+           OR gcc.segment3 IN (
+                                SELECT    '0000'
+                                FROM      dual
+                                WHERE     1 = 1
+                                AND       :p_id_departamento IS NOT NULL
+                              )
+           OR gcc.segment3 IN (
+                                SELECT    '0000'
+                                FROM      dual
+                                WHERE     1 = 1
+                                AND       :p_id_distrito IS NOT NULL
+                              )
+          )
+--
+AND       EXISTS (
+                    SELECT    NULL
+                    FROM      xx_cuentas xc
+                    WHERE     1 = 1
+                    AND       xc.segment4 = gcc.segment4
+                 )
+--
+GROUP BY  gjct.je_category_key
+        , gjct.user_je_category_name
+        , gcc.segment3
+        , gcc.segment4
+        , gp.period_num
+        , gp.period_year
+        , gl.ledger_id
+ORDER BY  gcc.segment3
+        , gcc.segment4
+        , gp.period_num
