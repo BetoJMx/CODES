@@ -1,0 +1,1094 @@
+--PKGB BKP PROD VISTA AE 310822
+CREATE OR REPLACE PACKAGE BODY PAY.XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG   
+as  
+  
+PROCEDURE execute_query  
+    AS  
+    vCadena varchar2(100);  
+    vHorario varchar2(10);  
+BEGIN  
+    --XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG.get_information_ae(0);  
+  
+    select to_char( sysdate, 'DD' )   
+    into   vHorario  
+    from   dual;  
+  
+    if vHorario = '06' then  
+        vCadena := 'XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG.run_imagen_ae;';  
+        XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG.EXECUTE_JOB(vCadena);  
+    end if;  
+    commit;  
+END  execute_query;      
+--+  
+procedure execute_job( pJob IN VARCHAR2 )  
+is  
+    pragma autonomous_transaction;  
+    vjobNum BINARY_INTEGER;  
+     
+BEGIN   
+    DBMS_JOB.SUBMIT(vjobNum, pJob);  
+    COMMIT;   
+end execute_job;   
+--+  
+  
+procedure run_imagen_ae  
+is  
+  
+cursor imagen is  
+   SELECT person_id  
+        FROM TOKS_AE_ORACLE_V   
+        WHERE person_id NOT IN (SELECT person_id   
+                                    FROM XXTOKS_IMAGEN_AE_ORACLE)  
+        AND   rownum <= 6000;  
+  
+begin  
+DBMS_OUTPUT.put_line ('paso for');  
+  for reg in imagen loop  
+    XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG.load_image(reg.person_id);  
+  end loop;  
+  COMMIT;  
+    
+end run_imagen_ae;  
+  
+--+  
+procedure load_image( p_person_id in varchar2 ) as  
+    l_user                VARCHAR2 (100); --Aquí van las credenciales  
+    l_pass                 VARCHAR2 (100);  
+                                 
+    l_url varchar2(4000);  
+    l_ws_response_clob    CLOB;  
+    L_WS_START            NUMBER;  
+    L_WS_END              NUMBER;   
+    L_WS_PHOTO_URL        varchar2(4000);   
+    l_ws_response_photo   CLOB;  
+    l_blob       BLOB;  
+    l_xml       XMLTYPE;  
+    --+  
+    l_ws_token             VARCHAR2(3650);  
+    
+begin  
+    --apex_web_service.g_request_headers (1).name := 'Content-Type';  
+    --apex_web_service.g_request_headers (1).VALUE := 'application/json';  
+      
+   /*  ---CREDENCIALES----  
+    XXTOKS_PAY_HDL_WSDL_PKG.get_data('LOAD_IMAGE',l_url, l_user, l_pass);   
+      ------------------    
+      */  
+        
+       --------------------TOKEN-----------------------------PRUEBAS CORREO   
+          
+        GRG_COMMON_CONNECTIONS.get_security_token( l_ws_token );  
+        apex_web_service.g_request_headers (1).name  := 'Authorization';  
+        apex_web_service.g_request_headers (1).value := l_ws_token;  
+          
+        l_url := GRG_COMMON_CONNECTIONS.get_parameter('API_LOAD_IMAGE_URL');  
+          
+        --------------------TOKEN-----------------------------  
+  
+    insert into XXTOKS_CAT_OTBI_LOG values(   
+        l_url || p_person_id || '/child/photos/'-- ||  
+        --l_user || '/' || l_pass,   
+        ,sysdate   
+        );  
+    
+    DBMS_OUTPUT.put_line ('Usuarios:' ||l_url ||l_ws_token);--l_user ||'/' ||l_pass );  
+      
+    l_ws_response_clob :=  
+        apex_web_service.make_rest_request (p_url           => l_url || p_person_id || '/child/photos',  
+                                            p_http_method   => 'GET',  
+                                            p_body          => null  
+                                            --p_username      => l_user,  
+                                            --p_password      => l_pass  
+                                            );   
+      
+    DBMS_OUTPUT.put_line ('paso el web service');  
+      
+    insert into XXTOKS_CAT_OTBI_LOG values( l_ws_response_clob, sysdate );  
+      
+    --enclosure  
+      
+    if INSTR(l_ws_response_clob, 'enclosure') > 0 then   
+        L_WS_START :=   INSTR(l_ws_response_clob, '"href" : "', INSTR(l_ws_response_clob, 'enclosure') );   
+        L_WS_END :=   INSTR(l_ws_response_clob, '"', L_WS_START+10 ) - L_WS_START - 10;   
+        L_WS_PHOTO_URL := SUBSTR(l_ws_response_clob, L_WS_START+10, L_WS_END );   
+            
+        DBMS_OUTPUT.put_line ('PERSON' ||p_person_id);   
+        DBMS_OUTPUT.put_line ('URL' ||L_WS_PHOTO_URL);   
+           
+        -- l_ws_response_clob  :=  invocarImagen (L_WS_PHOTO_URL,l_user_nam,l_password);  
+        l_ws_response_clob  :=  invocarImagen (L_WS_PHOTO_URL,'Authorization',l_ws_token);   
+          
+        --Aqui pones una tablita separada, por favor   
+        --l_ws_response_photo := from_base64(l_ws_response_clob);   
+          
+        DBMS_OUTPUT.put_line ('pasa el base 64');   
+           
+        --Esta tablita debe tener la URL y un CLOB para la Imagen y el person_id   
+        insert into XXTOKS_IMAGEN_AE_ORACLE( URL, IMAGEN, PERSON_ID )  
+        values(L_WS_PHOTO_URL,l_ws_response_clob,p_person_id);   
+        DBMS_OUTPUT.put_line ('inserta');   
+        update    
+        TOKS_AE_ORACLE_V set FOTO =  L_WS_PHOTO_URL   
+        where PERSON_ID =p_person_id ;   
+          
+        DBMS_OUTPUT.put_line ('PARAMETROS');   
+          
+         DBMS_OUTPUT.put_line ('p_person_id:' ||p_person_id);   
+         DBMS_OUTPUT.put_line ('L_WS_PHOTO_URL:' ||L_WS_PHOTO_URL);  
+         DBMS_OUTPUT.put_line ('l_user:' ||l_user);  
+         DBMS_OUTPUT.put_line ('l_pass:' ||l_pass);  
+         DBMS_OUTPUT.put_line ('l_url:' ||l_url);  
+         --DBMS_OUTPUT.put_line ('l_ws_response_clob:' ||l_ws_response_clob);  
+         DBMS_OUTPUT.put_line ('L_WS_START:' ||L_WS_START);  
+         DBMS_OUTPUT.put_line ('L_WS_END:' ||L_WS_END);  
+         DBMS_OUTPUT.put_line ('l_ws_token:' ||l_ws_token);  
+           
+          
+          
+        commit;   
+    end if;     
+    commit;   
+end load_image;   
+   -------------------------------------------------------------  
+-------------------------------------------------------------  
+  
+PROCEDURE get_information_ae (p_id_empleador IN VARCHAR2)  
+                              
+    AS   
+    l_user_name                VARCHAR2 (100);  
+    l_password                 VARCHAR2 (100);  
+    l_ws_url                   VARCHAR2 (500);  
+    l_ws_action                VARCHAR2 (500):= 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar  
+     
+    l_ws_response_clob         CLOB;  
+    l_ws_envelope              CLOB;  
+    l_ws_resp_xml              XMLTYPE;  
+    l_ws_resp_xml2             XMLTYPE;  
+    v_cdata                    CLOB;  
+    l_clob                     CLOB;  
+    v_val                      PLS_INTEGER;  
+    v_insert                   number;  
+    v_update                   number;  
+    l_count                    number := 0; 
+  
+BEGIN  
+    l_ws_envelope :=  
+        '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">  
+            <soap:Body>  
+                <pub:runReport>  
+                    <pub:reportRequest>  
+                        <pub:parameterNameValues>  
+                            <pub:item>  
+                                <pub:name>p_id_empleador</pub:name>  
+                                <pub:values>  
+                                    <pub:item>' || p_id_empleador || '</pub:item>  
+                                </pub:values>  
+                            </pub:item>  
+                        </pub:parameterNameValues>  
+                        <pub:reportAbsolutePath>/Reportes Custom/PAY/VISTA_TOKS_AE_ORACLE_V/TOKS_AE_ORACLE_V_RP.xdo</pub:reportAbsolutePath>  
+                        <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>  
+                    </pub:reportRequest>  
+                </pub:runReport>  
+            </soap:Body>  
+        </soap:Envelope>';  
+  
+    --------------------TOKEN------------------------- PRUEBAS DE CORREO   
+      
+    GRG_COMMON_CONNECTIONS.get_otbi_report(  
+            l_ws_envelope => l_ws_envelope,  
+            l_user_token  => null,  
+            x_ws_response => l_clob);  
+  
+    l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);  
+      
+    v_insert := 0;  
+    v_update := 0;  
+    --------------------TOKEN-------------------------  
+FOR i in(SELECT  
+  
+       XML_DATA.ESTAFETA,  
+       XML_DATA.ID_LOCAL,  
+       XML_DATA.DES_LOCAL,  
+       XML_DATA.REG_PATRONAL,  
+       XML_DATA.ID_EMPLEADOR,  
+       XML_DATA.DES_EMPLEADOR,  
+       XML_DATA.ID_PSTO,  
+       XML_DATA.NOMBRE,  
+       XML_DATA.NUMIMSS,  
+       XML_DATA.RFC,  
+       XML_DATA.CURP,  
+       XML_DATA.SEXO,  
+       XML_DATA.FECHAINGRESO,  
+       XML_DATA.FECHABAJA,  
+       XML_DATA.FECHANTFBAJA,  
+       XML_DATA.IDLOCALIMSS,  
+       XML_DATA.STATUS,  
+       XML_DATA.ZONA,  
+       XML_DATA.FECHACAP,  
+       XML_DATA.DIR,  
+       XML_DATA.SINDICALIZADO,  
+       XML_DATA.CHECA_TARJETA,  
+       XML_DATA.PRIMA_DOMINICAL,  
+       XML_DATA.FESTIVO_LABORAD,  
+       XML_DATA.DESCANSO_LABORA,  
+       XML_DATA.HORAS_EXTRAS,  
+       XML_DATA.AYUDA_TRANSPORT,  
+       XML_DATA.PUESTO,  
+       XML_DATA.NIVEL_COMIDA,  
+       XML_DATA.FPAGOPORHORA,  
+       XML_DATA.HRS_JORNADA,  
+       XML_DATA.EFF_START_DATE,  
+       XML_DATA.EFF_END_DATE,  
+       XML_DATA.TABLAVACACIONES,  
+       XML_DATA.NOMINA,  
+       XML_DATA.SALARIO_HORA,  
+       XML_DATA.TIPO_NOMINA,  
+       XML_DATA.ID_MARCA,  
+       XML_DATA.MARCA,  
+       XML_DATA.NOMBRE_S,  
+       XML_DATA.APELLIDO_PAT,  
+       XML_DATA.APELLIDO_MAT,  
+       XML_DATA.CORREO1,  
+       XML_DATA.CORREO2,  
+--       XML_DATA.FOTO,  
+       XML_DATA.IDNOMINA,  
+       XML_DATA.PERIODCDD_NOMIN,  
+       XML_DATA.DES_TIPO_NOMINA,  
+       XML_DATA.PERSON_ID,  
+       XML_DATA.ASSIGNMENT_NUMBER,  
+       XML_DATA.ULT_FECH_ACTU,  
+       XML_DATA.DISTRITO,  
+       XML_DATA.REGION,  
+       XML_DATA.MANAGER_LINE,  
+       XML_DATA.SUPERVISOR_DISTRITO,  
+       XML_DATA.SUPERVISOR_REGION,  
+       --  
+       XML_DATA.HORASSEMANALES,  
+       XML_DATA.HORASDESCANSO36,  
+       XML_DATA.HORASDESCANSO26,  
+       --+ 150322  
+       XML_DATA.U_CALLE,  
+       XML_DATA.U_CP,  
+       XML_DATA.U_CD_EDO,  
+       --+ 150222  
+       XML_DATA.EMP_POSTAL_CODE,  
+	  --+ 01.06.22 ADLH. SE AGREGRAN CAMPOS DE DIRECCION 
+	   XML_DATA.EMP_CALLE, 
+	   XML_DATA.EMP_NUM_EXTERIOR, 
+	   XML_DATA.EMP_COLONIA, 
+	   XML_DATA.EMP_CIUDAD, 
+	   XML_DATA.EMP_DELEGACION_MUNICIPIO, 
+	   XML_DATA.EMP_ESTADO 
+  FROM XMLTABLE(  
+                '/DATA_DS/G_1'  
+                PASSING XMLTYPE.createXML(l_clob)  
+                COLUMNS   
+  
+                        ESTAFETA            VARCHAR2(250) PATH 'ESTAFETA',  
+                        ID_LOCAL            VARCHAR2(250) PATH 'ID_LOCAL',  
+                        DES_LOCAL           VARCHAR2(250) PATH 'DES_LOCAL',  
+                        REG_PATRONAL        VARCHAR2(250) PATH 'REG_PATRONAL',  
+                        ID_EMPLEADOR        VARCHAR2(250) PATH 'ID_EMPLEADOR',   
+                        DES_EMPLEADOR       VARCHAR2(250) PATH 'DES_EMPLEADOR',  
+                        ID_PSTO             VARCHAR2(250) PATH 'ID_PSTO',  
+                        NOMBRE              VARCHAR2(250) PATH 'NOMBRE',  
+                        NUMIMSS             VARCHAR2(250) PATH 'NUMIMSS',  
+                        RFC                 VARCHAR2(250) PATH 'RFC',  
+                        CURP                VARCHAR2(250) PATH 'CURP',  
+                        SEXO                VARCHAR2(250) PATH 'SEXO',  
+                        FECHAINGRESO        VARCHAR2(250) PATH 'FECHAINGRESO',  
+                        FECHABAJA           VARCHAR2(250) PATH 'FECHABAJA',  
+                        FECHANTFBAJA        VARCHAR2(250) PATH 'FECHANTFBAJA',  
+                        IDLOCALIMSS         VARCHAR2(250) PATH 'IDLOCALIMSS',  
+                        STATUS              VARCHAR2(250) PATH 'STATUS',  
+                        ZONA                VARCHAR2(250) PATH 'ZONA',  
+                        FECHACAP            VARCHAR2(250) PATH 'FECHACAP',  
+                        DIR                 VARCHAR2(250) PATH 'DIR',  
+                        SINDICALIZADO       VARCHAR2(250) PATH 'SINDICALIZADO',  
+                        CHECA_TARJETA       VARCHAR2(250) PATH 'CHECA_TARJETA',  
+                        PRIMA_DOMINICAL     VARCHAR2(250) PATH 'PRIMA_DOMINICAL',  
+                        FESTIVO_LABORAD     VARCHAR2(250) PATH 'FESTIVO_LABORAD',  
+                        DESCANSO_LABORA     VARCHAR2(250) PATH 'DESCANSO_LABORA',  
+                        HORAS_EXTRAS        VARCHAR2(250) PATH 'HORAS_EXTRAS',  
+                        AYUDA_TRANSPORT     VARCHAR2(250) PATH 'AYUDA_TRANSPORT',  
+                        PUESTO              VARCHAR2(250) PATH 'PUESTO',  
+                        NIVEL_COMIDA        VARCHAR2(250) PATH 'NIVEL_COMIDA',  
+                        FPAGOPORHORA        VARCHAR2(250) PATH 'FPAGOPORHORA',  
+                        HRS_JORNADA         VARCHAR2(250) PATH 'HRS_JORNADA',  
+                        EFF_START_DATE      VARCHAR2(250) PATH 'EFF_START_DATE',  
+                        EFF_END_DATE        VARCHAR2(250) PATH 'EFF_END_DATE',  
+                        TABLAVACACIONES     VARCHAR2(250) PATH 'TABLAVACACIONES',  
+                        NOMINA              VARCHAR2(250) PATH 'NOMINA',  
+                        SALARIO_HORA        VARCHAR2(250) PATH 'SALARIO_HORA',  
+                        TIPO_NOMINA         VARCHAR2(250) PATH 'TIPO_NOMINA',  
+                        ID_MARCA            VARCHAR2(250) PATH 'ID_MARCA',  
+                        MARCA               VARCHAR2(250) PATH 'MARCA',  
+                        NOMBRE_S            VARCHAR2(250) PATH 'NOMBRE_S',  
+                        APELLIDO_PAT        VARCHAR2(250) PATH 'APELLIDO_PAT',  
+                        APELLIDO_MAT        VARCHAR2(250) PATH 'APELLIDO_MAT',  
+                        CORREO1             VARCHAR2(250) PATH 'CORREO1',  
+                        CORREO2             VARCHAR2(250) PATH 'CORREO2',  
+                        --FOTO                VARCHAR2(250) PATH 'FOTO',  
+                        IDNOMINA            VARCHAR2(250) PATH 'IDNOMINA',  
+                        PERIODCDD_NOMIN     VARCHAR2(250) PATH 'PERIODCDD_NOMIN',  
+                        DES_TIPO_NOMINA     VARCHAR2(250) PATH 'DES_TIPO_NOMINA',  
+                        PERSON_ID           VARCHAR2(250) PATH 'PERSON_ID',  
+                        ASSIGNMENT_NUMBER   VARCHAR (250) PATH 'ASSIGNMENT_NUMBER',  
+                        ULT_FECH_ACTU       VARCHAR2(250) PATH 'ULT_FECH_ACTU',  
+                        DISTRITO            VARCHAR2(250) PATH 'DISTRITO',  
+                        REGION              VARCHAR2(250) PATH 'REGION',  
+                        MANAGER_LINE        VARCHAR2(250) PATH 'MANAGER_LINE',  
+                        SUPERVISOR_DISTRITO VARCHAR2(250) PATH 'SUPERVISOR_DISTRITO',  
+                        SUPERVISOR_REGION   VARCHAR2(250) PATH 'SUPERVISOR_REGION',  
+                        --+  
+                        HORASSEMANALES      VARCHAR2(250) PATH 'HORASSEMANALES',  
+                        HORASDESCANSO36     VARCHAR2(250) PATH 'HORASDESCANSO36',  
+                        HORASDESCANSO26     VARCHAR2(250) PATH 'HORASDESCANSO26',  
+                        --+ 150322  
+                        U_CALLE             VARCHAR2(250) PATH 'U_CALLE',  
+                        U_CP                VARCHAR2(250) PATH 'U_CP',  
+                        U_CD_EDO            VARCHAR2(250) PATH 'U_CD_EDO',  
+                        --+ 150322  
+                        EMP_POSTAL_CODE     VARCHAR2(250) PATH 'EMP_POSTAL_CODE',  
+						--+ 01.06.22 ADLH. SE AGREGRAN CAMPOS DE DIRECCION 
+                        EMP_CALLE                 VARCHAR2(250) PATH 'EMP_CALLE', 
+                        EMP_NUM_EXTERIOR          VARCHAR2(250) PATH 'EMP_NUM_EXTERIOR', 
+                        EMP_COLONIA               VARCHAR2(250) PATH 'EMP_COLONIA', 
+                        EMP_CIUDAD                VARCHAR2(250) PATH 'EMP_CIUDAD', 
+                        EMP_DELEGACION_MUNICIPIO  VARCHAR2(250) PATH 'EMP_DELEGACION_MUNICIPIO', 
+                        EMP_ESTADO                VARCHAR2(250) PATH 'EMP_ESTADO'						 
+                        ) XML_DATA)    
+  loop   
+    --DBMS_OUTPUT.put_line ('ESTAFETA : ' || i.ESTAFETA);  
+    --DBMS_OUTPUT.put_line ('DATOS_EMPLEDOS_INSERTADOS');  
+  
+ SELECT COUNT(*) INTO v_val  
+   FROM TOKS_AE_ORACLE_V  
+  WHERE ESTAFETA= i.ESTAFETA;  
+	 
+	l_count := l_count + 1; 
+	  
+   IF v_val = 0 THEN  
+    v_insert := v_insert + 1;  
+        INSERT INTO TOKS_AE_ORACLE_V(   
+                         ESTAFETA,  
+                         ID_LOCAL,  
+                         DES_LOCAL,  
+                         REG_PATRONAL,  
+                         ID_EMPLEADOR,  
+                         DES_EMPLEADOR,  
+                         ID_PSTO,  
+                         NOMBRE,  
+                         NUMIMSS,  
+                         RFC,  
+                         CURP,  
+                         SEXO,  
+                         FECHAINGRESO,  
+                         FECHABAJA,  
+                         FECHANTFBAJA,  
+                         IDLOCALIMSS,  
+                         STATUS,  
+                         ZONA,  
+                         FECHACAP,  
+                         DIR,  
+                         SINDICALIZADO,  
+                         CHECA_TARJETA,  
+                         PRIMA_DOMINICAL,  
+                         FESTIVO_LABORAD,  
+                         DESCANSO_LABORA,  
+                         HORAS_EXTRAS,  
+                         AYUDA_TRANSPORT,  
+                         PUESTO,  
+                         NIVEL_COMIDA,  
+                         FPAGOPORHORA,  
+                         HRS_JORNADA,  
+                         EFF_START_DATE,  
+                         EFF_END_DATE,  
+                         TABLAVACACIONES,  
+                         NOMINA,  
+                         SALARIO_HORA,  
+                         TIPO_NOMINA,  
+                         ID_MARCA,  
+                         MARCA,  
+                         NOMBRE_S,  
+                         APELLIDO_PAT,  
+                         APELLIDO_MAT,  
+                         CORREO1,  
+                         CORREO2,  
+                         IDNOMINA,  
+                         PERIODCDD_NOMIN,  
+                         DES_TIPO_NOMINA,  
+                         PERSON_ID,  
+                         ASSIGNMENT_NUMBER,  
+                         ULT_FECH_ACTU,  
+                         DISTRITO,  
+                         REGION,  
+                         MANAGER_LINE,  
+                         SUPERVISOR_DISTRITO,  
+                         SUPERVISOR_REGION,  
+                         --  
+                         HORASSEMANALES,  
+                         HORASDESCANSO36,  
+                         HORASDESCANSO26,  
+                         --+ 150322  
+                         UNIDAD_CALLE,  
+                         UNIDAD_CP,  
+                         UNIDAD_CD_EDO,  
+                         --+ 150322  
+                         EMP_POSTAL_CODE,  
+						 --+ 01.06.22 ADLH. SE AGREGRAN CAMPOS DE DIRECCION 
+						 EMP_CALLE,                
+						 EMP_NUM_EXTERIOR,        
+						 EMP_COLONIA,              
+						 EMP_CIUDAD,             
+						 EMP_DELEGACION_MUNICIPIO, 
+						 EMP_ESTADO               
+                         )  
+                VALUES ( i.ESTAFETA,   
+                         i.ID_LOCAL,  
+                         i.DES_LOCAL,  
+                         i.REG_PATRONAL,  
+                         i.ID_EMPLEADOR,  
+                         i.DES_EMPLEADOR,  
+                         i.ID_PSTO,  
+                         i.NOMBRE,   
+                         i.NUMIMSS,  
+                         i.RFC,  
+                         i.CURP,  
+                         i.SEXO,  
+                         i.FECHAINGRESO,  
+                         i.FECHABAJA,  
+                         i.FECHANTFBAJA,  
+                         i.IDLOCALIMSS,  
+                         i.STATUS,   
+                         i.ZONA,  
+                         i.FECHACAP,  
+                         i.DIR,  
+                         i.SINDICALIZADO,  
+                         i.CHECA_TARJETA,  
+                         i.PRIMA_DOMINICAL,  
+                         i.FESTIVO_LABORAD,  
+                         i.DESCANSO_LABORA,  
+                         i.HORAS_EXTRAS,  
+                         i.AYUDA_TRANSPORT,  
+                         i.PUESTO,  
+                         i.NIVEL_COMIDA,  
+                         i.FPAGOPORHORA,  
+                         i.HRS_JORNADA,  
+                         i.EFF_START_DATE,  
+                         i.EFF_END_DATE,  
+                         i.TABLAVACACIONES,  
+                         i.NOMINA,  
+                         i.SALARIO_HORA,  
+                         i.TIPO_NOMINA,  
+                         i.ID_MARCA,  
+                         i.MARCA,  
+                         i.NOMBRE_S,  
+                         i.APELLIDO_PAT,  
+                         i.APELLIDO_MAT,  
+                         i.CORREO1,  
+                         i.CORREO2,  
+                         i.IDNOMINA,  
+                         i.PERIODCDD_NOMIN,  
+                         i.DES_TIPO_NOMINA,  
+                         i.PERSON_ID,  
+                         i.ASSIGNMENT_NUMBER,  
+                         i.ULT_FECH_ACTU,  
+                         i.DISTRITO,  
+                         i.REGION,  
+                         i.MANAGER_LINE,  
+                         i.SUPERVISOR_DISTRITO,  
+                         i.SUPERVISOR_REGION,  
+                         --  
+                         i.HORASSEMANALES,  
+                         i.HORASDESCANSO36,  
+                         i.HORASDESCANSO26,  
+                         --+ 150322  
+                         i.U_CALLE,  
+                         i.U_CP,  
+                         i.U_CD_EDO,  
+                         --+ 150322  
+                         i.EMP_POSTAL_CODE,  
+						--+ 01.06.22 ADLH. SE AGREGRAN CAMPOS DE DIRECCION 
+						 i.EMP_CALLE,                
+						 i.EMP_NUM_EXTERIOR,        
+						 i.EMP_COLONIA,              
+						 i.EMP_CIUDAD,             
+						 i.EMP_DELEGACION_MUNICIPIO, 
+						 i.EMP_ESTADO               
+                         );  
+
+        INSERT INTO TOKS_AE_ORACLE_NEW_EMP_LOG( 
+                ESTAFETA,
+                FECHA_CREACION
+                ) VALUES ( 
+                        i.ESTAFETA,
+                        SYSDATE - 5/24
+                        );
+    Else  
+        v_update := v_update + 1;  
+            Update TOKS_AE_ORACLE_V set  
+                         ESTAFETA=i.ESTAFETA,  
+                         ID_LOCAL=i.ID_LOCAL,  
+                         DES_LOCAL=i.DES_LOCAL,  
+                         REG_PATRONAL=i.REG_PATRONAL,  
+                         ID_EMPLEADOR=i.ID_EMPLEADOR,  
+                         DES_EMPLEADOR=i.DES_EMPLEADOR,  
+                         ID_PSTO=i.ID_PSTO,  
+                         NOMBRE=i.NOMBRE,  
+                         NUMIMSS=i.NUMIMSS,  
+                         RFC=i.RFC,  
+                         CURP=i.CURP,  
+                         SEXO=i.SEXO,  
+                         FECHAINGRESO=i.FECHAINGRESO,  
+                         FECHABAJA=i.FECHABAJA,  
+                         FECHANTFBAJA=i.FECHANTFBAJA,  
+                         IDLOCALIMSS=i.IDLOCALIMSS,  
+                         STATUS=i.STATUS,  
+                         ZONA=i.ZONA,  
+                         FECHACAP=i.FECHACAP,  
+                         DIR=i.DIR,  
+                         SINDICALIZADO=i.SINDICALIZADO,  
+                         CHECA_TARJETA=i.CHECA_TARJETA,  
+                         PRIMA_DOMINICAL=i.PRIMA_DOMINICAL,  
+                         FESTIVO_LABORAD=i.FESTIVO_LABORAD,  
+                         DESCANSO_LABORA=i.DESCANSO_LABORA,  
+                         HORAS_EXTRAS=i.HORAS_EXTRAS,  
+                         AYUDA_TRANSPORT=i.AYUDA_TRANSPORT,  
+                         PUESTO=i.PUESTO,  
+                         NIVEL_COMIDA=i.NIVEL_COMIDA,  
+                         FPAGOPORHORA=i.FPAGOPORHORA,  
+                         HRS_JORNADA=i.HRS_JORNADA,  
+                         EFF_START_DATE=i.EFF_START_DATE,  
+                         EFF_END_DATE=i.EFF_END_DATE,  
+                         TABLAVACACIONES=i.TABLAVACACIONES,  
+                         NOMINA=i.NOMINA,  
+                         SALARIO_HORA=i.SALARIO_HORA,  
+                         TIPO_NOMINA=i.TIPO_NOMINA,  
+                         ID_MARCA=i.ID_MARCA,  
+                         MARCA=i.MARCA,  
+                         NOMBRE_S=i.NOMBRE_S,  
+                         APELLIDO_PAT=i.APELLIDO_PAT,  
+                         APELLIDO_MAT=i.APELLIDO_MAT,  
+                         CORREO1=i.CORREO1,  
+                         CORREO2=i.CORREO2,  
+                         IDNOMINA=i.IDNOMINA,  
+                         PERIODCDD_NOMIN=i.PERIODCDD_NOMIN,  
+                         DES_TIPO_NOMINA=i.DES_TIPO_NOMINA,  
+                         PERSON_ID=i.PERSON_ID,  
+                         ASSIGNMENT_NUMBER=i.ASSIGNMENT_NUMBER,  
+                         ULT_FECH_ACTU=i.ULT_FECH_ACTU,  
+                         DISTRITO=i.DISTRITO,  
+                         REGION=i.REGION,  
+                         MANAGER_LINE=i.MANAGER_LINE,  
+                         SUPERVISOR_DISTRITO=i.SUPERVISOR_DISTRITO,  
+                         SUPERVISOR_REGION=i.SUPERVISOR_REGION,  
+                         --  
+                         HORASSEMANALES = i.HORASSEMANALES,  
+                         HORASDESCANSO36 = i.HORASDESCANSO36,  
+                         HORASDESCANSO26 = i.HORASDESCANSO26,  
+                         --+ 150322  
+                         UNIDAD_CALLE = i.U_CALLE,  
+                         UNIDAD_CP = i.U_CP,  
+                         UNIDAD_CD_EDO = i.U_CD_EDO,  
+                         EMP_POSTAL_CODE = i.EMP_POSTAL_CODE, 
+						 --+ 01.06.22 ADLH. SE AGREGRAN CAMPOS DE DIRECCION 
+						 EMP_CALLE                =     i.EMP_CALLE,                
+						 EMP_NUM_EXTERIOR         =     i.EMP_NUM_EXTERIOR,        
+						 EMP_COLONIA              =     i.EMP_COLONIA,              
+						 EMP_CIUDAD               =     i.EMP_CIUDAD,             
+						 EMP_DELEGACION_MUNICIPIO =     i.EMP_DELEGACION_MUNICIPIO, 
+						 EMP_ESTADO               =      i.EMP_ESTADO    
+        WHERE ESTAFETA= i.ESTAFETA;  
+     END IF;  
+	  
+    IF mod(l_count,500) = 0 THEN 
+        COMMIT; 
+    END IF; 
+	 
+ end loop;  
+
+    COMMIT;
+  
+    dbms_output.put_line ( 'v_insert: ' || v_insert  );  
+    dbms_output.put_line ( 'v_update: ' || v_update  );  
+    --XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG.ENVIAR_EMAIL;  
+  
+EXCEPTION WHEN OTHERS  
+     THEN   
+         DBMS_OUTPUT.put_line(SQLERRM);  
+END get_information_ae;  
+   
+PROCEDURE ENVIAR_EMAIL   
+      
+    AS   
+      
+    l_body      CLOB;  
+    l_body_html CLOB;  
+	l_correo    VARCHAR2(4000);  
+  
+CURSOR datos IS  
+      
+    SELECT ESTAFETA, NOMBRE, CORREO1, CORREO2, PUESTO, ID_LOCAL, DES_LOCAL  
+    FROM TOKS_AE_ORACLE_V   
+    WHERE   
+      SINDICALIZADO   is null AND   
+      CHECA_TARJETA   is null AND   
+      PRIMA_DOMINICAL is null AND   
+      FESTIVO_LABORAD is null AND   
+      DESCANSO_LABORA is null AND   
+      HORAS_EXTRAS    is null;  
+  
+BEGIN  
+    SELECT LISTAGG(CORREO, ',') WITHIN GROUP (ORDER BY ESTAFETA)  
+     into  l_correo  
+	 FROM GRG_LOOKUP_CORREO_T  
+      where DESCRIPCION like '%VISTA AE%';  
+	    
+    l_body_html := l_body_html ||   
+        '<html>'||  
+              '<head>'||  
+                  '<body>'||  
+                        '<div class="container">Se ejecuto el proceso de asistencia electronica.</div>' ||  
+                        '<div class="container">' ||  
+                                '<h2>Lista de empleados sin banderas de asistencia electrónica</h2>'||  
+                                '<table border="1">'||  
+                                  '<tbody>'||  
+                                  '<tr>'||  
+                                  '<td>ESTAFETA</td>'||  
+                                  '<td>NOMBRE</td>'||  
+                                  '<td>PUESTO</td>'||  
+                                  '<td>NO. UNIDAD</td>'||  
+                                  '<td>UNIDAD</td>'||  
+                                  '<td>CORREO1</td>'||  
+                                  '<td>CORREO2</td>'||  
+                                  '</tr>';  
+  
+    FOR i IN datos LOOP   
+                  
+        l_body_html := l_body_html ||  
+                                  '<tr>'||  
+                                  '<td>'|| i.ESTAFETA ||'</td>'||  
+                                  '<td>'|| i.NOMBRE ||'</td>'||  
+                                  '<td>'|| i.PUESTO ||'</td>'||  
+                                  '<td>'|| i.ID_LOCAL ||'</td>'||  
+                                  '<td>'|| i.DES_LOCAL ||'</td>'||  
+                                  '<td>'|| i.CORREO1 ||'</td>'||  
+                                  '<td>'|| i.CORREO2 ||'</td>'||  
+                                  '</tr>';  
+  
+    END LOOP i;  
+  
+    l_body_html := l_body_html ||  
+                                  '</tbody>' ||  
+                                '</table>'||  
+                        '</div><br><br>'||  
+                  '</body>'||  
+        '</html>';  
+  
+    apex_mail.send(  
+    p_to        => l_correo,   
+    p_from      => 'no-reply@toksopc.grupotoks.com.mx',   
+    p_body      => l_body,  
+    p_body_html => l_body_html,  
+    p_subj      => 'Lista de empleados sin banderas de asistencia electrónica');  
+  
+END ENVIAR_EMAIL;  
+  
+PROCEDURE execute_query_f (x_salida OUT VARCHAR2)  
+  AS  
+  
+ BEGIN   
+     XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG.execute_query;  
+     x_salida := 'S';  
+ EXCEPTION WHEN OTHERS  
+     THEN   
+       x_salida := 'error ' || SQLERRM;  
+ END execute_query_f;  
+  
+  
+    function from_base64(  
+      p_clob in clob) return clob is  
+  
+      l_length integer := dbms_lob.getLength(p_clob);  
+      l_offset integer := 1;  
+      l_amt binary_integer := 800;--800  
+      l_buffer varchar2(9200);--9200  
+  
+      l_result clob := empty_clob();  
+    begin    
+  
+      while l_offset <= l_length loop  
+        l_buffer := replace(replace(dbms_lob.substr(p_clob, l_amt, l_offset), chr(10), null), chr(13), null);  
+        l_offset := l_offset + l_amt;  
+        while l_offset <= l_length and mod(dbms_lob.getLength(l_buffer), 4) > 0 loop  
+          l_buffer := l_buffer || replace(replace(dbms_lob.substr(p_clob, 1, l_offset), chr(10), null), chr(13), null);  
+          l_offset := l_offset + 1;  
+        end loop;  
+        l_result := l_result || utl_raw.cast_to_varchar2(utl_encode.base64_decode(utl_raw.cast_to_raw(l_buffer)));  
+      end loop;  
+  
+      return l_result;  
+    end;  
+  
+    function blob_to_base64(  
+          i_blob in clob ) return clob  
+    is  
+        l_step                          pls_integer := 22500;   
+        l_converted                     varchar2(32767);  
+        io_clob                         clob;  
+  
+        l_buffer_size_approx            pls_integer := 1048576;  
+        l_buffer                        clob;  
+    begin  
+        dbms_lob.createtemporary(l_buffer, true, dbms_lob.call);  
+  
+        for i in 0 .. trunc((dbms_lob.getlength(i_blob) - 1 )/l_step) loop  
+            l_converted := utl_raw.cast_to_varchar2(utl_encode.base64_encode(dbms_lob.substr(i_blob, l_step, i * l_step + 1)));  
+            dbms_lob.writeappend(l_buffer, length(l_converted), l_converted);  
+  
+            if dbms_lob.getlength(l_buffer) >= l_buffer_size_approx then  
+                dbms_lob.append(io_clob, l_buffer);  
+                dbms_lob.trim(l_buffer, 0);  
+            end if;  
+        end loop;  
+  
+        dbms_lob.append(io_clob, l_buffer);  
+        dbms_lob.freetemporary(l_buffer);  
+        return io_clob;  
+    end;  
+  
+PROCEDURE get_lookup_correo   
+  AS  
+      l_user_name VARCHAR2 (100);  
+      l_password  VARCHAR2 (100);  
+      l_ws_url    VARCHAR2 (500);  
+      l_ws_action VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar  
+      l_ws_token  VARCHAR2 (2000);  
+      l_ws_response_clob   CLOB;  
+      l_ws_envelope        CLOB;  
+      l_ws_resp_xml        XMLTYPE;  
+      l_ws_resp_xml2       XMLTYPE;  
+      v_cdata              CLOB;  
+      l_clob               CLOB;  
+        
+      v_existe             NUMBER;  
+    BEGIN  
+	  
+    l_ws_envelope :=  
+        '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">  
+        <soap:Body>  
+          <pub:runReport>  
+            <pub:reportRequest>  
+              <pub:parameterNameValues>  
+          
+              </pub:parameterNameValues>  
+              <pub:reportAbsolutePath>  
+			  /Reportes Custom/PAY/VISTA_TOKS_AE_ORACLE_V/LOOKUP_CORREO/LOOKUP_CORREO_VISTA_AE.xdo</pub:reportAbsolutePath>  
+              <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>  
+            </pub:reportRequest>  
+          </pub:runReport>  
+        </soap:Body>  
+        </soap:Envelope>';  
+         
+-------------------------------------------------------------------  
+     GRG_COMMON_CONNECTIONS.get_otbi_report(  
+            l_ws_envelope => l_ws_envelope,  
+            l_user_token  => null,  
+            x_ws_response => l_clob );  
+          
+        l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);  
+------------------------------------------------------------------		  
+							  
+		execute immediate 'truncate table PAY.GRG_LOOKUP_CORREO_T';  
+  
+        FOR i  
+            IN (SELECT   
+                    xml_data.LOOKUP_TYPE ,  
+                    xml_data.LOOKUP_CODE ,  
+                    xml_data.MEANING ,  
+                    xml_data.DESCRIPTION ,  
+                    xml_data.ENABLED_FLAG   
+               
+                      
+               FROM XMLTABLE (  
+                          '/DATA_DS/G_1'  
+                          PASSING xmltype.createxml (l_clob)  
+                          COLUMNS LOOKUP_TYPE              VARCHAR2 (200) PATH 'LOOKUP_TYPE',  
+                                  LOOKUP_CODE              VARCHAR2 (200) PATH 'LOOKUP_CODE',  
+                                  MEANING                  VARCHAR2 (200) PATH 'MEANING',  
+                                  DESCRIPTION              VARCHAR2 (100) PATH 'DESCRIPTION',  
+                                  ENABLED_FLAG              VARCHAR2 (10) PATH 'ENABLED_FLAG'  
+        
+                 
+                    ) xml_data )  
+				LOOP	  
+					INSERT INTO GRG_LOOKUP_CORREO_T(  
+					            ESTAFETA,   
+								CORREO,  
+								DESCRIPCION)  
+					VALUES (  
+					 i.lookup_code,  
+					 i.meaning,  
+					 i.description);  
+					   
+			  
+         
+	   END LOOP;  
+	      
+     exception   
+	  when others then  
+       -- l_ws_response_clob := SQLERRM;  
+        --insert into xxtoks_cat_otbi_log values( l_ws_response_clob, sysdate );  
+        --commit;  
+		DBMS_OUTPUT.put_line ('Se ha producido una excepción.'|| SQLERRM);  
+  END get_lookup_correo;  
+  
+  PROCEDURE validate_information  
+    
+          ( p_estafeta   IN VARCHAR2,  
+		    --x_mensaje    OUT VARCHAR2,  
+            x_status     OUT VARCHAR2,  
+            x_exception  OUT VARCHAR2)  
+  is  
+  l_exist number;  
+  begin  
+  
+                  SELECT count(*)  
+                    INTO l_exist                  
+                FROM TOKS_AE_ORACLE_V  
+                WHERE 1 = 1  
+                AND ESTAFETA = p_estafeta  
+                AND STATUS = 'A' ;  
+		       --  x_mensaje := 'OK';  
+                  x_status  := '200';  
+				  
+	if l_exist = 0 then 		  
+				 -- x_mensaje := 'No se encuentra';  
+                  x_status  := '404';  
+  end if;    
+         EXCEPTION WHEN OTHERS THEN   
+           --x_mensaje := 'Ha ocurrido un error ';  
+           x_exception := 'Error ' || SQLERRM;  
+           x_status := '500';            
+  end;  
+    
+  
+  ---PROCEDIMIENTO  
+  
+PROCEDURE GET_DISABILITY_ID  
+                     (  
+					  P_PERSON_NUMBER IN VARCHAR2,  
+					  P_DISABILITY_CODE IN VARCHAR2  
+					 )                
+  
+  
+						     
+    AS  
+    l_user_name                VARCHAR2 (100);  
+    l_password                 VARCHAR2 (100);  
+    l_ws_url                   VARCHAR2 (500);  
+    l_ws_action                VARCHAR2 (500) :=   
+	'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar  
+    l_ws_response_clob         CLOB;  
+    l_ws_envelope              CLOB;  
+    l_ws_resp_xml              XMLTYPE;  
+    l_ws_resp_xml2             XMLTYPE;  
+    v_cdata                    CLOB;  
+    l_clob                     CLOB;  
+    v_val                      PLS_INTEGER;  
+    v_count                    NUMBER;  
+    v_existe                   NUMBER;  
+	l_disability_id            NUMBER;  
+BEGIN  
+    --DBMS_OUTPUT.put_line ('entra');  
+            l_ws_envelope :=  
+                '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">  
+                <soap:Body>  
+                    <pub:runReport>  
+                        <pub:reportRequest>  
+                            <pub:parameterNameValues>  
+                                <pub:item>  
+                                    <pub:name>p_person_number</pub:name>  
+                                    <pub:values>  
+                                      <pub:item>' || p_person_number || '</pub:item>  
+                                    </pub:values>  
+                                </pub:item>  
+                                  
+                                <pub:item>  
+                                    <pub:name>p_disability_code</pub:name>  
+                                    <pub:values>  
+                                      <pub:item>' || p_disability_code || '</pub:item>  
+                                    </pub:values>  
+                                  </pub:item>  
+                            </pub:parameterNameValues>  
+                            <pub:reportAbsolutePath>/Reportes Custom/PAY/VISTA_TOKS_AE_ORACLE_V/GRG Integracion AE Ausentismos/Integracion AE Ausentismos RP.xdo</pub:reportAbsolutePath>  
+                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>  
+                        </pub:reportRequest>  
+                    </pub:runReport>  
+                </soap:Body>  
+                </soap:Envelope>';                   --Este es el XML que se manda al servicio  
+  
+  
+			  
+		GRG_COMMON_CONNECTIONS.get_otbi_report(  
+                  l_ws_envelope  => l_ws_envelope  
+                , l_user_token   => NULL  
+                , x_ws_response  => l_clob   
+        );			  
+              		  
+  l_ws_resp_xml2 := xmltype.createxml (l_clob);   
+          
+     SELECT COUNT(XML_DATA.PERSON_NUMBER) valid_person  
+           INTO v_existe  
+    FROM XMLTABLE(  
+                '/DATA_DS/G_1'  
+                PASSING XMLTYPE.createXML(l_clob)  
+                COLUMNS   
+  
+                        DISABILITY_ID                    VARCHAR2(250) PATH 'DISABILITY_ID',  
+                        DISABILITY_CODE                   VARCHAR2(250) PATH 'DISABILITY_CODE',  
+                        PERSON_NUMBER                   VARCHAR2(250) PATH 'PERSON_NUMBER'  
+                      ) XML_DATA;     
+    FOR i in(SELECT  
+         
+	   XML_DATA.DISABILITY_ID ,  
+       XML_DATA.DISABILITY_CODE,     
+       XML_DATA.PERSON_NUMBER   
+          
+		FROM XMLTABLE(  
+                '/DATA_DS/G_1'  
+                PASSING XMLTYPE.createXML(l_clob)  
+                COLUMNS   
+  
+                        DISABILITY_ID                    VARCHAR2(250) PATH 'DISABILITY_ID',  
+                        DISABILITY_CODE                   VARCHAR2(250) PATH 'DISABILITY_CODE',  
+                        PERSON_NUMBER                   VARCHAR2(250) PATH 'PERSON_NUMBER'  
+                      ) XML_DATA)   
+                         
+       LOOP   
+	     
+	   l_disability_id := i.DISABILITY_ID;  
+	     
+	   END LOOP;  
+         
+  IF v_existe > 0 THEN   
+     
+   apex_json.open_object;  
+   apex_json.write ('PERSON_NUMBER',  p_person_number);  
+   apex_json.write ('DISABILITY_CODE',  p_disability_code);  
+   apex_json.write ('DISABILITY_ID',  l_disability_id);  
+   --apex_json.write ('STATUS',  200);  
+  -- apex_json.write ('STATUS_DESC',  'CORRECTO');  
+   apex_json.close_object;  
+     
+   ELSE   
+     
+   apex_json.open_object;  
+  -- apex_json.write ('DISABILITY_ID',  404);  
+   apex_json.write ('PERSON_NUMBER',  p_person_number);  
+   apex_json.write ('DISABILITY_CODE',  p_disability_code);  
+   apex_json.write ('ERROR',  404);  
+   apex_json.write ('ERROR_MESSAGE',  'NO SE ENCONTRO EL REGISTRO');  
+   apex_json.close_object;  
+end if;  
+  	EXCEPTION  
+	WHEN OTHERS THEN  
+		DBMS_OUTPUT.put_line ('Se ha producido una excepción.'|| SQLERRM);  
+         
+          apex_json.open_object;  
+           apex_json.write('exception',SQLERRM);  
+           apex_json.close_object;        
+             
+  
+END GET_DISABILITY_ID;   
+  
+PROCEDURE get_information_thread (x_salida OUT VARCHAR2)  
+IS   
+  
+    pragma  autonomous_transaction;  
+    vjobNum BINARY_INTEGER;  
+    pJob    VARCHAR2(250) := '';  
+  
+l_user_name                VARCHAR2 (100);  
+    l_password                 VARCHAR2 (100);  
+    l_ws_url                   VARCHAR2 (500);  
+    l_ws_action                VARCHAR2 (500):= 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar  
+     
+    l_ws_response_clob         CLOB;  
+    l_ws_envelope              CLOB;  
+    l_ws_resp_xml              XMLTYPE;  
+    l_ws_resp_xml2             XMLTYPE;  
+    v_cdata                    CLOB;  
+    l_clob                     CLOB;  
+    v_val                      PLS_INTEGER;  
+    v_insert                   number;  
+    v_update                   number;  
+
+    v_hora                     varchar2(10);
+    vCadena                    varchar2(100);
+
+  
+BEGIN  
+  
+    l_ws_envelope :=  
+        '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">  
+            <soap:Body>  
+                <pub:runReport>  
+                    <pub:reportRequest>  
+                        <pub:reportAbsolutePath>/Reportes Custom/PAY/VISTA_TOKS_AE_ORACLE_V/TOKS_AE_LEG_EMP_RP.xdo</pub:reportAbsolutePath>  
+                        <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>  
+                    </pub:reportRequest>  
+                </pub:runReport>  
+            </soap:Body>  
+        </soap:Envelope>';  
+  
+    --------------------TOKEN----------------------  
+      
+    GRG_COMMON_CONNECTIONS.get_otbi_report(  
+            l_ws_envelope => l_ws_envelope,  
+            l_user_token  => null,  
+            x_ws_response => l_clob  
+        );  
+  
+    l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);  
+  
+    FOR i IN    (  
+                    SELECT  XML_DATA.*  
+                    FROM    XMLTABLE(  
+                                '/DATA_DS/G_1'  
+                                PASSING XMLTYPE.createXML(l_clob)  
+                                COLUMNS NAME                VARCHAR2(250) PATH 'NAME',  
+                                        ORGANIZATION_ID     VARCHAR2(250) PATH 'ORGANIZATION_ID'  
+                                    ) XML_DATA  
+                )                      
+    LOOP   
+  
+        pJob := 'BEGIN XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG.get_information_ae('||i.ORGANIZATION_ID||'); END;';  
+        DBMS_JOB.SUBMIT(vjobNum, pJob);  
+        COMMIT;   
+  
+    END LOOP;  
+  
+    x_salida := 'S';  
+
+    v_hora := to_char(sysdate -5/24, 'HH24');
+    
+    if v_hora = '03' then  
+        vCadena := 'XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG.run_imagen_ae;';  
+        XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG.EXECUTE_JOB(vCadena);  
+    end if; 
+     
+    commit;
+
+      
+    EXCEPTION WHEN OTHERS  
+    THEN   
+        x_salida := 'error ' || SQLERRM;  
+  
+END get_information_thread;  
+  
+END XXTOKS_PAY_TOKS_AE_ORACLE_V_PKG; 
+
+/
+
