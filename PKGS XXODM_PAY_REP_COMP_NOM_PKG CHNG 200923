@@ -1,0 +1,45 @@
+--PKGS XXODM_PAY_REP_COMP_NOM_PKG CHNG 200923
+create or replace PACKAGE     XXODM_PAY_REP_COMP_NOM_PKG AS      
+    --
+    PROCEDURE ac_data (
+        contenido   CLOB, 
+        id_exec     IN NUMBER
+    );   
+    --
+    PROCEDURE ac_clob ( 
+        p_id_exec               IN NUMBER,
+        p_fechainicio           IN VARCHAR2,
+        p_fechafin              IN VARCHAR2,
+        p_juegoconsolidacion_n  IN VARCHAR2 DEFAULT NULL,
+        p_nomina_n              IN VARCHAR2 DEFAULT NULL,
+        p_emp_legal_n           IN VARCHAR2 DEFAULT NULL,
+        p_a_totales             IN VARCHAR2
+    );
+    --   
+    PROCEDURE main(  
+        p_periodo1              IN VARCHAR2,    
+        p_periodo2              IN VARCHAR2,    
+        p_periodo1_n            IN VARCHAR2,    
+        p_periodo2_n            IN VARCHAR2,    
+        p_juegoconsolidacion    IN VARCHAR2,    
+        p_juegoconsolidacion_n  IN VARCHAR2,    
+        p_nomina                IN VARCHAR2,    
+        p_nomina_n              IN VARCHAR2,    
+        p_emp_legal             IN VARCHAR2,   
+        p_emp_legal_n           IN VARCHAR2,   
+        p_user_token            IN VARCHAR2,    
+		p_process_id            IN NUMBER,   
+		p_user_name             IN VARCHAR2
+    );   
+    --   
+    PROCEDURE get_period_info (
+        p_period_id     IN NUMBER,
+        p_payroll_id    IN NUMBER,
+        p_process_id    IN NUMBER,
+        p_period_seq    IN NUMBER,
+        x_period_i      OUT VARCHAR2,   
+        x_period_f      OUT VARCHAR2   
+    );
+    --
+END XXODM_PAY_REP_COMP_NOM_PKG;
+/
