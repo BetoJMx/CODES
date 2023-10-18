@@ -1,0 +1,28 @@
+--QRY REST GET VALID GRG_PROCESO_PTU 020623
+SELECT  NVL(
+            (
+                SELECT  '1'
+                FROM    GRG_PTU_V3_LOG
+                WHERE   STATUS = 'PROCESADO'
+                        AND LEGAL_EMPLOYER_ID = :p_legal_employeer_id
+                        AND PROCESS_YEAR = :p_process_year
+                        AND LOG = 'TERMINADO'
+                        AND TYPE = 'CALCULO PTU'
+                        AND ROWNUM = 1
+            ), NULL 
+        ) AS VALID_C,
+        NVL(
+            (
+                SELECT  '1'
+                FROM    GRG_PTU_V3_LOG
+                WHERE   STATUS = 'GENERADO'
+                        AND LEGAL_EMPLOYER_ID = :p_legal_employeer_id
+                        AND PROCESS_YEAR = :p_process_year
+                        AND LOG IS NOT NULL
+                        AND TYPE = 'CARGA HDL'
+                        AND HDL_TYPE = 'H'
+                        AND HDL_A_B = 'A'
+                        AND ROWNUM = 1
+            ), NULL
+        ) AS VALID_H
+FROM    DUAL
