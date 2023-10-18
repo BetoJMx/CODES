@@ -1,0 +1,1174 @@
+-- OK BKP PTUV3
+create or replace PACKAGE BODY  GRG_PROCESO_PTU_V3
+as
+    PROCEDURE get_information_employee  (
+                                            p_start_id NUMBER,
+                                            p_end_id NUMBER
+                                        )
+                            
+        AS
+        l_ws_response_clob         CLOB;
+        l_ws_envelope              CLOB;
+        l_ws_resp_xml              XMLTYPE;
+        l_ws_resp_xml2             XMLTYPE;
+        v_cdata                    CLOB;
+        l_clob                     CLOB;
+        v_val                      PLS_INTEGER;
+        --+
+        v_error_msg                VARCHAR(512);
+        --+
+        CURSOR c_unit IS
+            SELECT    ID_UNIDAD
+                    , PROCESS_YEAR
+                    , ID_EMP_LEGAL
+            FROM    GRG_PTU_V3_UNITS
+            WHERE   1 = 1
+            AND     ID_UNITS BETWEEN p_start_id AND p_end_id;
+
+    BEGIN
+        dbms_output.put_line ('ENTRO');
+        
+        FOR v_unit IN c_unit LOOP
+
+            l_ws_envelope :=
+                '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                    <soap:Body>
+                    <pub:runReport>
+                        <pub:reportRequest>
+                            <pub:parameterNameValues>
+                                <pub:item>
+                                    <pub:name>p_process_year</pub:name>
+                                        <pub:values>
+                                            <pub:item>'||v_unit.PROCESS_YEAR||'</pub:item>
+                                        </pub:values>
+                                </pub:item>
+                                <pub:item>
+                                    <pub:name>p_legal_employeer_id</pub:name>
+                                        <pub:values>
+                                            <pub:item>'||v_unit.ID_EMP_LEGAL||'</pub:item>
+                                        </pub:values>
+                                </pub:item>
+                                <pub:item>
+                                    <pub:name>p_unidad_proceso</pub:name>
+                                        <pub:values>
+                                            <pub:item>'||v_unit.ID_UNIDAD||'</pub:item>
+                                        </pub:values>
+                                </pub:item>
+                            </pub:parameterNameValues>
+                            <pub:attributeFormat>xml</pub:attributeFormat>
+                            <pub:reportAbsolutePath>/Reportes Custom/PAY/GRG Proceso PTU/GRG Informacion PTU.xdo</pub:reportAbsolutePath>
+                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+                        </pub:reportRequest>
+                    </pub:runReport>
+                    </soap:Body>
+                </soap:Envelope>'; 
+
+            BEGIN 
+            --Esto es el XML que vas a mandar al servicio
+                GRG_COMMON_CONNECTIONS.get_otbi_report(
+                    l_ws_envelope => l_ws_envelope,
+                    l_user_token  => null,
+                    x_ws_response => l_clob,
+                    p_instance_name => 'DEV2'); 
+                --+
+                l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+            --Y aquí recuperas la información del paso anterior y se deja lista para pasarse a tabla.
+            EXCEPTION WHEN OTHERS THEN 
+            v_error_msg := SQLERRM;
+            INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES ('ERROR EN EXTRACCION EMPLOYEE: '||v_error_msg);
+
+            END;
+        
+            dbms_output.put_line ('LEYENDO INFO');
+            
+            --DELETE FROM GRG_PTU_V3_HEADER
+            --where  LEGAL_EMPLOYER_ID  = p_legal_employeer_id;
+            --COMMIT;
+
+            FOR i in(
+                        SELECT  *
+                        FROM    XMLTABLE(
+                                            '/DATA_DS/G_1'
+                                            PASSING XMLTYPE.createXML(l_clob)
+                                            COLUMNS 
+                                                            EE_NOMBRE                   VARCHAR2(250) path 'EE_NOMBRE',
+                                                            EE_ESTAFETA                 VARCHAR2(250) path 'EE_ESTAFETA',
+                                                            EE_EMPLEADOR_LEGAL          VARCHAR2(250) path 'EE_EMPLEADOR_LEGAL',
+                                                            EE_PUESTO                   VARCHAR2(250) path 'EE_PUESTO',
+                                                            EE_FECHA_CONTRATACION       VARCHAR2(250) path 'EE_FECHA_CONTRATACION',
+                                                            EE_FECHA_BAJA               VARCHAR2(250) path 'EE_FECHA_BAJA',
+                                                            EE_FECHA_CAMBIO_COMP        VARCHAR2(250) path 'EE_FECHA_CAMBIO_COMP',
+                                                            EE_UNIDAD                   VARCHAR2(250) path 'EE_UNIDAD',
+                                                            EE_ORGANIZACION             VARCHAR2(250) path 'EE_ORGANIZACION',
+                                                            EE_RFC                      VARCHAR2(250) path 'EE_RFC',
+                                                            EE_NSS                      VARCHAR2(250) path 'EE_NSS',
+                                                            EE_CURP                     VARCHAR2(250) path 'EE_CURP',
+                                                            EE_CATEGORIA                VARCHAR2(250) path 'EE_CATEGORIA',
+                                                            EE_UNIDAD_ACT               VARCHAR2(250) path 'EE_UNIDAD_ACT',
+                                                            EE_ORGANIZACION_ACT         VARCHAR2(250) path 'EE_ORGANIZACION_ACT',
+                                                            EE_ASSIGNMENT_NUMBER        VARCHAR2(250) path 'EE_ASSIGNMENT_NUMBER',
+                                                            EE_PAYROLL_REL_ACTION_ID    VARCHAR2(250) path 'EE_PAYROLL_REL_ACTION_ID',
+                                                            EE_PERSON_ID                VARCHAR2(250) path 'EE_PERSON_ID',
+                                                            EE_ASSIGNMENT_ID            VARCHAR2(250) path 'EE_ASSIGNMENT_ID',
+                                                            EE_LEGAL_EMPLOYER_ID        VARCHAR2(250) path 'EE_LEGAL_EMPLOYER_ID',
+                                                            --nomina y secuencias
+                                                            EE_NOMINA                   VARCHAR2(250) path 'NOMINA',
+                                                            EE_NOMINA_ID                VARCHAR2(250) path 'NOMINA_ID',
+                                                            SECUENCIA_NP021             VARCHAR2(250) path 'SECUENCIA_NP021',
+                                                            SECUENCIA_NP022             VARCHAR2(250) path 'SECUENCIA_NP022'
+
+                                        ) XML_DATA,
+                                XMLTABLE(
+                                            '/DATA_DS/G_1/G_3'
+                                            PASSING XMLTYPE.createXML(l_clob)
+                                            COLUMNS 
+                                                            PAYROLL_REL_ACTION_ID   VARCHAR2(250) path 'PAYROLL_REL_ACTION_ID',
+                                                            EE_DIAS_BASE            VARCHAR2(250) path 'EE_DIAS_BASE',
+                                                            EE_COMPENSACION_BASE    VARCHAR2(250) path 'EE_COMPENSACION_BASE'
+                                        ) XML_DATA_LIM
+                        WHERE   1 = 1
+                                AND XML_DATA.EE_PAYROLL_REL_ACTION_ID = XML_DATA_LIM.PAYROLL_REL_ACTION_ID
+
+                    )  -- Aquí se crea el XML de respuesta por nodos, es como formatear. 
+            LOOP 
+
+                --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX.
+                BEGIN 
+                    INSERT INTO GRG_PTU_V3_HEADER(
+                                                NOMBRE,
+                                                ESTAFETA,
+                                                EMPLEADOR_LEGAL,
+                                                PUESTO,
+                                                FECHA_CONTRATACION,
+                                                FECHA_BAJA,
+                                                FECHA_CAMBIO_COMP,
+                                                UNIDAD,
+                                                --+
+                                                UNIDAD_ID,
+                                                --+
+                                                ORGANIZACION,
+                                                RFC,
+                                                NSS,
+                                                CURP,
+                                                CATEGORIA,
+                                                UNIDAD_ACT,
+                                                ORGANIZACION_ACT,
+                                                DIAS_BASE,
+                                                COMPENSACION_BASE,
+                                                ASSIGNMENT_NUMBER,
+                                                PAYROLL_REL_ACTION_ID,
+                                                PERSON_ID,
+                                                ASSIGNMENT_ID,
+                                                LEGAL_EMPLOYER_ID,
+                                                --nomina
+                                                NOMINA,
+                                                NOMINA_ID,
+                                                SECUENCIA_NP021,
+                                                SECUENCIA_NP022
+                    )
+                        VALUES  (
+                                                i.EE_NOMBRE,
+                                                i.EE_ESTAFETA,
+                                                i.EE_EMPLEADOR_LEGAL,
+                                                i.EE_PUESTO,
+                                                i.EE_FECHA_CONTRATACION,
+                                                i.EE_FECHA_BAJA,
+                                                i.EE_FECHA_CAMBIO_COMP,
+                                                i.EE_UNIDAD,
+                                                v_unit.ID_UNIDAD,
+                                                i.EE_ORGANIZACION,
+                                                i.EE_RFC,
+                                                i.EE_NSS,
+                                                i.EE_CURP,
+                                                i.EE_CATEGORIA,
+                                                i.EE_UNIDAD_ACT,
+                                                i.EE_ORGANIZACION_ACT,
+                                                i.EE_DIAS_BASE,
+                                                i.EE_COMPENSACION_BASE,
+                                                i.EE_ASSIGNMENT_NUMBER,
+                                                i.EE_PAYROLL_REL_ACTION_ID,
+                                                i.EE_PERSON_ID,
+                                                i.EE_ASSIGNMENT_ID,
+                                                i.EE_LEGAL_EMPLOYER_ID,
+                                                --nomina
+                                                i.EE_NOMINA,
+                                                i.EE_NOMINA_ID,
+                                                i.SECUENCIA_NP021,
+                                                i.SECUENCIA_NP022
+                                                );
+                COMMIT;
+        
+                EXCEPTION WHEN OTHERS THEN 
+                v_error_msg := SQLERRM;
+                INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES ('ERROR EN INSERCION EMPLOYEE: '||v_error_msg);
+
+                END;
+            END LOOP;
+
+        END LOOP;
+    END get_information_employee;
+
+    PROCEDURE get_information_units  (
+                                        p_process_year IN NUMBER,
+                                        p_legal_employeer_id IN NUMBER DEFAULT NULL
+                                    )
+                        
+     AS
+        l_ws_response_clob         CLOB;
+        l_ws_envelope              CLOB;
+        l_ws_resp_xml              XMLTYPE;
+        l_ws_resp_xml2             XMLTYPE;
+        v_cdata                    CLOB;
+        l_clob                     CLOB;
+        v_val                      PLS_INTEGER;
+        --+
+        v_error_msg                VARCHAR(512);
+    BEGIN
+        dbms_output.put_line ('ENTRO');
+
+        DELETE FROM GRG_PTU_V3_HEADER WHERE LEGAL_EMPLOYER_ID = p_legal_employeer_id;
+        COMMIT;
+        DELETE FROM GRG_PTU_V3_UNITS WHERE ID_EMP_LEGAL = p_legal_employeer_id;
+        COMMIT;
+        
+        l_ws_envelope :=
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                <soap:Body>
+                <pub:runReport>
+                    <pub:reportRequest>
+                        <pub:parameterNameValues>
+                            <pub:item>
+                                <pub:name>p_process_year</pub:name>
+                                    <pub:values>
+                                        <pub:item>'||p_process_year||'</pub:item>
+                                    </pub:values>
+                            </pub:item>
+                            <pub:item>
+                                <pub:name>p_legal_employeer_id</pub:name>
+                                    <pub:values>
+                                        <pub:item>'||p_legal_employeer_id||'</pub:item>
+                                    </pub:values>
+                            </pub:item>
+                        </pub:parameterNameValues>
+                        <pub:attributeFormat>xml</pub:attributeFormat>
+                        <pub:reportAbsolutePath>/Reportes Custom/PAY/GRG Proceso PTU/GRG Informacion PTU Unidades.xdo</pub:reportAbsolutePath>
+                        <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+                    </pub:reportRequest>
+                </pub:runReport>
+                </soap:Body>
+            </soap:Envelope>'; 
+
+        BEGIN 
+        --Esto es el XML que vas a mandar al servicio
+            GRG_COMMON_CONNECTIONS.get_otbi_report(
+                l_ws_envelope => l_ws_envelope,
+                l_user_token  => null,
+                x_ws_response => l_clob,
+                p_instance_name => 'DEV2'); 
+            --+
+            l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+        --Y aquí recuperas la información del paso anterior y se deja lista para pasarse a tabla.
+        EXCEPTION WHEN OTHERS THEN 
+        v_error_msg := SQLERRM;
+        INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES ('ERROR EN EXTRACCION UNITS: '||v_error_msg);
+
+        END;
+    
+        dbms_output.put_line ('LEYENDO INFO');
+        --DELETE FROM GRG_PTU_V3_HEADER; 
+        --  COMMIT;
+        FOR i in(
+                    SELECT  *
+                    FROM    XMLTABLE(
+                                        '/DATA_DS/G_1'
+                                        PASSING XMLTYPE.createXML(l_clob)
+                                        COLUMNS 
+                                                        EE_EMPLEADOR_LEGAL          VARCHAR2(250) path 'EE_EMPLEADOR_LEGAL',
+                                                        EE_EMPLEADOR_LEGAL_ID       VARCHAR2(250) path 'EE_EMPLEADOR_LEGAL_ID',
+                                                        EE_UNIDAD                   VARCHAR2(250) path 'EE_UNIDAD',
+                                                        EE_UNIDAD_ID                VARCHAR2(250) path 'EE_UNIDAD_ID'
+                                                        
+                                    ) XML_DATA
+
+                )  -- Aquí se crea el XML de respuesta por nodos, es como formatear. 
+        LOOP 
+
+            --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX.
+            BEGIN 
+                INSERT INTO GRG_PTU_V3_UNITS(
+                                            NOMBRE_UNIDAD,
+                                            ID_UNIDAD,
+                                            NOMBRE_EMP_LEGAL,
+                                            ID_EMP_LEGAL,
+                                            PROCESS_YEAR
+                )
+                    VALUES  (
+                                            i.EE_UNIDAD,
+                                            i.EE_UNIDAD_ID,
+                                            i.EE_EMPLEADOR_LEGAL,
+                                            i.EE_EMPLEADOR_LEGAL_ID,
+                                            p_process_year
+                                            );
+                COMMIT;
+            
+            EXCEPTION WHEN OTHERS THEN 
+            v_error_msg := SQLERRM;
+            INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES ('ERROR EN INSERCION UNITS: '||v_error_msg);
+
+            END;
+        end loop;
+
+    END get_information_units;
+
+    PROCEDURE parallel_execution    (  
+                                        p_legal_employeer_id NUMBER
+                                    ) 
+    IS
+        --
+        v_task_name         VARCHAR2(240);
+        v_plsql_block       VARCHAR2(32767);
+        --
+        v_sql_stmt_filtro   VARCHAR2(32767);
+        v_sql_stmt          VARCHAR2(32767);
+        --
+        v_intentos          NUMBER := 0;
+        --
+		v_error_msg          VARCHAR2(512);
+
+    BEGIN
+        --
+        v_task_name := dbms_parallel_execute.generate_task_name(  prefix   => 'GRG_PTU_V3$_'
+                                                                );
+        --
+        dbms_parallel_execute.create_task(  task_name   => v_task_name
+                                            );
+        --
+        v_sql_stmt_filtro := '  SELECT    MIN(ID_UNITS) start_id
+                                        , MAX(ID_UNITS) end_id
+                                FROM      (
+                                            SELECT    ID_UNITS
+                                                    , NTILE(20) OVER( ORDER BY ID_UNITS asc ) grupo 
+                                            FROM      GRG_PTU_V3_UNITS
+                                            WHERE     1 = 1
+                                            AND       ID_EMP_LEGAL = '||p_legal_employeer_id||'
+                                            )
+                                GROUP BY  grupo
+                                ';
+
+        dbms_parallel_execute.create_chunks_by_sql(  task_name  => v_task_name
+                                                    , sql_stmt   => v_sql_stmt_filtro
+                                                    , by_rowid   => FALSE
+                                                    );
+        --
+        v_sql_stmt := q'[
+                        BEGIN 
+                            pay.GRG_PROCESO_PTU_V3.get_information_employee(  :start_id , :end_id);
+                        END;
+                        ]';
+        --
+        dbms_parallel_execute.run_task(  task_name      => v_task_name
+                                        , sql_stmt       => v_sql_stmt
+                                        , language_flag  => DBMS_SQL.native
+                                        , parallel_level => 20
+                                        );
+        --
+        LOOP
+            --
+            EXIT
+                WHEN
+                    --
+                    dbms_parallel_execute.task_status(v_task_name) = dbms_parallel_execute.finished OR v_intentos > 120;
+                    --
+            v_intentos := v_intentos + 1;
+            dbms_lock.sleep(10);
+            --
+        END LOOP;
+        --
+        dbms_parallel_execute.drop_task(v_task_name);
+        --
+    EXCEPTION
+    WHEN OTHERS THEN 
+       
+        v_error_msg := SQLERRM;
+        INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES ('ERROR EN PARALLEL: '||v_error_msg);
+
+    END parallel_execution;
+
+    PROCEDURE main  (
+                        p_process_year IN NUMBER,
+                        p_legal_employeer_id IN NUMBER DEFAULT NULL,
+                        p_status OUT NUMBER
+                    )
+    as
+
+        v_error_msg VARCHAR2(512);
+
+    BEGIN
+
+        --+ inicia proceso
+        GRG_PROCESO_PTU_V3.get_information_units(
+                                                    p_process_year,
+                                                    p_legal_employeer_id
+                                                );
+        
+        --+ procesos en paralelo
+        GRG_PROCESO_PTU_V3.parallel_execution   (
+                                                    p_legal_employeer_id
+                                                );
+
+        --+ calculo de ptu
+        -- GRG_PROCESO_PTU_V3.calculo_ptu  (
+        --                                     p_legal_employeer_id,
+        --                                     null,
+        --                                     null
+        --                                 );
+
+        --+ limpia objetos
+        -- GRG_PROCESO_PTU_V3.clean(
+        --                             p_legal_employeer_id
+        --                         );
+        
+        EXCEPTION WHEN OTHERS THEN 
+        v_error_msg := SQLERRM;
+        INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES ('ERROR EN MAIN: '||v_error_msg);
+    
+    END main;
+
+---------+
+    PROCEDURE calculo_ptu   (
+                                p_legal_employeer_id    IN NUMBER
+                                ,p_unidad_id            IN NUMBER
+                                ,p_nomina_id            IN NUMBER
+                                ,p_effective_date       IN VARCHAR2
+                                ,p_process_year         IN NUMBER DEFAULT 2021
+                                ,p_id                   IN NUMBER
+                                ,p_status               OUT NUMBER
+                            )
+
+    AS
+    --dato para el procedure
+    --p_legal_employeer_id     number := 300000009681083;
+    -----variables
+    v_name_legal_emple      varchar2(250);
+    v_name_nomina           varchar2(250) := null;
+    v_name_unidad           varchar2(250) := null;
+    v_date                  varchar2(250) := null;
+    v_porcentaje_day        number;
+    v_porcentaje_salaty     number;
+    v_total_amount          number;
+    v_total_average_salary  number;
+    v_total_worked_days     number;
+    v_cont                  number := 0;
+
+    l_archivo                CLOB := '';
+    l_archivo_l              CLOB := '';
+
+    BEGIN
+        v_date := TO_CHAR(sysdate,'DD/MM/YYYY hh24:mi:ss');
+
+        DBMS_OUTPUT.PUT_LINE('INICIO PROCESO '||p_id);
+
+        INSERT INTO GRG_PTU_V3_LOG (
+                                        ID, 
+                                        STATUS,
+                                        TYPE
+                                    ) VALUES (
+                                        p_id,
+                                        'SIN COMPLETAR',
+                                        'CALCULO_PTU'
+                                    );
+
+        -- variable de nombre empleado legal
+        SELECT DISTINCT UPPER(EMPLEADOR_LEGAL)
+        INTO   v_name_legal_emple
+        FROM   GRG_PTU_V3_HEADER
+        where  LEGAL_EMPLOYER_ID = p_legal_employeer_id;
+
+        IF p_nomina_id IS NOT NULL THEN 
+            SELECT DISTINCT UPPER(NOMINA)
+            INTO   v_name_nomina
+            FROM   GRG_PTU_V3_HEADER
+            where  NOMINA_ID = p_nomina_id;
+        ELSE 
+            v_name_nomina := NULL;
+        END IF;
+
+        IF p_unidad_id IS NOT NULL THEN 
+            SELECT DISTINCT UPPER(ORGANIZACION)
+            INTO   v_name_unidad
+            FROM   GRG_PTU_V3_HEADER
+            where  UNIDAD_ID = p_unidad_id;
+        ELSE 
+            v_name_unidad := NULL;
+        END IF;
+
+        DBMS_OUTPUT.PUT_LINE('OBTUVO VALORES '||p_id);
+        DBMS_OUTPUT.PUT_LINE(v_name_legal_emple || '|' || p_legal_employeer_id);
+
+        --delete--
+
+        delete from GRG_PTU_V3_PROCESS
+        where EMPLEADOR_LEGAL = v_name_legal_emple;
+        COMMIT;
+
+        DBMS_OUTPUT.PUT_LINE('BORRO TABLA '||p_id);
+
+        --+ CALCULA E INSERTA AVRGE_DAILY_SALARY Y CAPPED_AVRGE_SALARY
+        UPDATE  GRG_PTU_V3_HEADER
+        SET     AVERAGE_DAILY_SALARY = TRUNC(COMPENSACION_BASE / DIAS_BASE, 2),
+                CAPPED_AVERAGE_SALARY = LEAST( TRUNC(COMPENSACION_BASE / DIAS_BASE, 2), ( select  EE_MAX_AV_SALARY 
+                                                                                        from    GRG_PTU_V3_INFO 
+                                                                                        where   EE_LEGAL_EMPLOYER_ID = p_legal_employeer_id) )
+        WHERE   LEGAL_EMPLOYER_ID = p_legal_employeer_id
+                AND DIAS_BASE > 0;   
+        COMMIT;
+
+        DBMS_OUTPUT.PUT_LINE('ACTUALIZO VALORES HEADER '||p_id);
+
+        --insert--
+
+        INSERT INTO GRG_PTU_V3_PROCESS (
+                                        EMPLEADOR_LEGAL,
+                                        UNIDAD,
+                                        ORGANIZACION,
+                                        UNIDAD_ACTUAL,
+                                        ORGANIZACION_ACTUAL,
+                                        ESTAFETA,
+                                        NOMBRE,
+                                        PUESTO,
+                                        RFC,
+                                        NSS,
+                                        CURP,
+                                        CATEGORIA,
+                                        FECHA_INGRESO,
+                                        FECHA_SEPARACION,
+                                        FECHA_CAMBIO_COMPANIA,
+                                        ANNUAL_SALARY,
+                                        WORKED_DAYS,
+                                        --+
+                                        AVERAGE_DAILY_SALARY,
+                                        CAPPED_AVERAGE_SALARY,
+                                        --+
+                                        PTU_2018,
+                                        PTU_2019,
+                                        PTU_2020
+                                    )
+        SELECT  H.EMPLEADOR_LEGAL,
+                H.UNIDAD,
+                H.ORGANIZACION,
+                H.UNIDAD_ACT,
+                H.ORGANIZACION_ACT,
+                H.ESTAFETA,
+                H.NOMBRE,
+                H.PUESTO,
+                H.RFC,
+                H.NSS,
+                H.CURP,
+                H.CATEGORIA,
+                H.FECHA_CONTRATACION,
+                H.FECHA_BAJA,
+                H.FECHA_CAMBIO_COMP,
+                H.COMPENSACION_BASE,
+                H.DIAS_BASE,
+                --+
+                H.AVERAGE_DAILY_SALARY,
+                H.CAPPED_AVERAGE_SALARY,
+                --+
+                NVL((
+                select NVL(T.MONTO,0)
+                from GRG_PTU_V3_CARGAS T
+                where T.ANIO = 2018  and H.ESTAFETA  =  T.ESTAFETA
+                ),0) as "2018",
+                NVL((
+                select NVL(T.MONTO,0)
+                from GRG_PTU_V3_CARGAS T
+                where T.ANIO = 2019  and H.ESTAFETA  =  T.ESTAFETA
+                ),0) as "2019",
+                NVL((
+                select NVL(T.MONTO,0)
+                from GRG_PTU_V3_CARGAS T
+                where T.ANIO = 2020  and H.ESTAFETA  =  T.ESTAFETA
+                ),0) as "2020"
+        FROM    GRG_PTU_V3_HEADER H 
+        WHERE   DIAS_BASE > 0
+                AND LEGAL_EMPLOYER_ID = p_legal_employeer_id
+                AND UNIDAD_ID = NVL(p_unidad_id, UNIDAD_ID)
+                AND NOMINA_ID = NVL(p_nomina_id, NOMINA_ID);
+        COMMIT;
+
+        DBMS_OUTPUT.PUT_LINE('INSERTO BASE PROCESS '||p_id);
+        --updates--
+
+        --+ CALCULA E INSERTA AVRGE_DAILY_SALARY Y CAPPED_AVRGE_SALARY
+        -- UPDATE  GRG_PTU_V3_PROCESS
+        -- SET     AVERAGE_DAILY_SALARY = TRUNC(ANNUAL_SALARY / WORKED_DAYS, 2),
+        --         CAPPED_AVERAGE_SALARY = LEAST( TRUNC(ANNUAL_SALARY / WORKED_DAYS, 2), ( select  EE_MAX_AV_SALARY 
+        --                                                                                 from    GRG_PTU_V3_INFO 
+        --                                                                                 where   EE_LEGAL_EMPLOYER_ID = p_legal_employeer_id) )
+        -- WHERE   EMPLEADOR_LEGAL = v_name_legal_emple;   
+        -- COMMIT;
+
+        --+ SE CALCULAN LAS SUMAS DE TODO
+        SELECT  (EE_TOTAL_AMOUNT / 2 )
+        INTO    v_total_amount
+        FROM    GRG_PTU_V3_INFO 
+        WHERE   EE_LEGAL_EMPLOYER_ID = p_legal_employeer_id;
+
+        -- SELECT  SUM(WORKED_DAYS), SUM(CAPPED_AVERAGE_SALARY)
+        -- INTO    v_total_worked_days, v_total_average_salary
+        -- FROM    GRG_PTU_V3_PROCESS
+        -- WHERE   EMPLEADOR_LEGAL = v_name_legal_emple;
+
+        SELECT  SUM(DIAS_BASE), SUM(CAPPED_AVERAGE_SALARY)
+        INTO    v_total_worked_days, v_total_average_salary
+        FROM    GRG_PTU_V3_HEADER
+        WHERE   LEGAL_EMPLOYER_ID = p_legal_employeer_id
+                AND DIAS_BASE > 0;
+
+        --+ CALCULA E INSERTA PTU_WORKED_DAYS Y PTU_AVRGE_SALARY
+        UPDATE  GRG_PTU_V3_PROCESS
+        SET     PTU_WORKED_DAYS = TRUNC(((WORKED_DAYS / v_total_worked_days) * v_total_amount) ,2),
+                PTU_AVERAGE_SALARY = TRUNC((CAPPED_AVERAGE_SALARY / v_total_average_salary) * v_total_amount ,2)
+        WHERE   EMPLEADOR_LEGAL = v_name_legal_emple;
+        COMMIT;
+
+        --+ CALCULA E INSERTA TOTAL_PTU
+        UPDATE  GRG_PTU_V3_PROCESS
+        SET     TOTAL_PTU =  PTU_WORKED_DAYS + PTU_AVERAGE_SALARY
+        WHERE   EMPLEADOR_LEGAL = v_name_legal_emple;
+        COMMIT;
+
+        --+ CALCULA E INSERTA CAP1_AVERAGE_PTU_PAYMENT
+        UPDATE  GRG_PTU_V3_PROCESS
+        SET     CAP1_AVERAGE_PTU_PAYMENT = TRUNC(((NVL(PTU_2018,0) + NVL(PTU_2019,0)) + NVL(PTU_2020,0)) / 3 ,2),
+                CAP2_MAX_SALARY = TRUNC(CAPPED_AVERAGE_SALARY * 90 ,2)
+        WHERE   EMPLEADOR_LEGAL = v_name_legal_emple;
+        COMMIT;
+
+        --+ CALCULA E INSERTA BEST_CAP
+        UPDATE  GRG_PTU_V3_PROCESS
+        SET     BEST_CAP = TRUNC(GREATEST(CAP1_AVERAGE_PTU_PAYMENT, CAP2_MAX_SALARY),2)
+        WHERE   EMPLEADOR_LEGAL = v_name_legal_emple;
+        COMMIT;
+
+        --+ CALCULA E INSERTA TOTAL_PTU_PAYMENT_CAPPED
+        UPDATE  GRG_PTU_V3_PROCESS
+        SET     TOTAL_PTU_PAYMENT_CAPPED = LEAST (TOTAL_PTU, BEST_CAP)
+        WHERE   EMPLEADOR_LEGAL = v_name_legal_emple;
+        COMMIT;
+
+        --+ CLACULA E INSERTA PERCENTAGE_DAYS Y PERCENTAGE_SALARY
+        UPDATE  GRG_PTU_V3_PROCESS
+        SET     PERCENTAGE_DAYS = TRUNC((PTU_WORKED_DAYS  / TOTAL_PTU) * 100 ,2) || '%',
+                PERCENTAGE_SALARY = TRUNC((PTU_AVERAGE_SALARY / TOTAL_PTU) * 100 ,2) || '%'
+        WHERE   EMPLEADOR_LEGAL = v_name_legal_emple;
+        COMMIT;
+
+        --+ CALCULA E INSERTA DAYS_PTU_PAYMENT Y SALARY_PTU_PAYMENT
+        UPDATE  GRG_PTU_V3_PROCESS
+        SET     DAYS_PTU_PAYMENT = TRUNC(TOTAL_PTU_PAYMENT_CAPPED  * (PTU_WORKED_DAYS / TOTAL_PTU) ,2),
+                SALARY_PTU_PAYMENT = TRUNC(TOTAL_PTU_PAYMENT_CAPPED  * (PTU_AVERAGE_SALARY / TOTAL_PTU) ,2)
+        WHERE   EMPLEADOR_LEGAL = v_name_legal_emple;
+        COMMIT;
+    
+        DBMS_OUTPUT.PUT_LINE('ACABO CALCULOS E INICIO DE ARCHIVO '||p_id);
+
+        --+ GENERACION DE ARCHIVO
+        l_archivo := 'Proceso de PTU.' || CHR(13);
+        l_archivo := l_archivo || CHR(13);
+        l_archivo := l_archivo || 'Ejecutado        : ' || v_date || CHR(13);
+        l_archivo := l_archivo || 'Empleador Legal  : ' || v_name_legal_emple || CHR(13);
+        l_archivo := l_archivo || 'Nomina           : ' || NVL(v_name_nomina,'TODAS') || CHR(13);
+        l_archivo := l_archivo || 'Unidad de Proceso: ' || NVL(v_name_unidad,'TODAS') || CHR(13);
+        l_archivo := l_archivo || 'Año de Proceso   : ' || p_process_year || CHR(13) || CHR(13);
+        l_archivo := l_archivo || 'EMPLEADOR_LEGAL|UNIDAD|ORGANIZACION|UNIDAD_ACTUAL|ORGANIZACION_ACTUAL|ESTAFETA|NOMBRE|PUESTO|CURP|RFC|NSS|CATEGORIA|FECHA_INGRESO|FECHA_SEPARACION|FECHA_CAMBIO_COMPANIA|ANNUAL_SALARY|WORKED_DAYS|AVERAGE_DAILY_SALARY|CAPPED_AVERAGE_SALARY|PTU_WORKED_DAYS|PTU_AVERAGE_SALARY|TOTAL_PTU|PTU_2018|PTU_2019|PTU_2020|CAP1_AVERAGE_PTU_PAYMENT|CAP2_MAX_SALARY|BEST_CAP|TOTAL_PTU_PAYMENT_CAPPED|PERCENTAGE_DAYS|PERCENTAGE_SALARY|DAYS_PTU_PAYMENT|SALARY_PTU_PAYMENT'||CHR(13);
+
+        DBMS_OUTPUT.PUT_LINE('ACABO CABECERO '||p_id);
+
+        -- INSERT INTO GRG_PTU_V3_LOG (
+        --                                 ID, 
+        --                                 LOG,
+        --                                 TYPE
+        --                             ) VALUES (
+        --                                 p_id,
+        --                                 l_archivo,
+        --                                 'CALCULO_PTU'
+        --                             );
+
+        FOR line IN (
+            SELECT  EMPLEADOR_LEGAL
+                    ,UNIDAD
+                    ,ORGANIZACION
+                    ,UNIDAD_ACTUAL
+                    ,ORGANIZACION_ACTUAL
+                    ,ESTAFETA
+                    ,NOMBRE
+                    ,PUESTO
+                    ,CURP
+                    ,RFC
+                    ,NSS
+                    ,CATEGORIA
+                    ,FECHA_INGRESO
+                    ,FECHA_SEPARACION
+                    ,FECHA_CAMBIO_COMPANIA
+                    ,TO_CHAR(ANNUAL_SALARY,'999999.99') AS ANNUAL_SALARY
+                    ,TO_CHAR(WORKED_DAYS,'999999.99') AS WORKED_DAYS
+                    ,TO_CHAR(AVERAGE_DAILY_SALARY,'999999.99') AS AVERAGE_DAILY_SALARY
+                    ,TO_CHAR(CAPPED_AVERAGE_SALARY,'999999.99') AS CAPPED_AVERAGE_SALARY
+                    ,TO_CHAR(PTU_WORKED_DAYS,'999999.99') AS PTU_WORKED_DAYS
+                    ,TO_CHAR(PTU_AVERAGE_SALARY,'999999.99') AS PTU_AVERAGE_SALARY
+                    ,TO_CHAR(TOTAL_PTU,'999999.99') AS TOTAL_PTU
+                    ,TO_CHAR(PTU_2018,'999999.99') AS PTU_2018
+                    ,TO_CHAR(PTU_2019,'999999.99') AS PTU_2019
+                    ,TO_CHAR(PTU_2020,'999999.99') AS PTU_2020
+                    ,TO_CHAR(CAP1_AVERAGE_PTU_PAYMENT,'999999.99') AS CAP1_AVERAGE_PTU_PAYMENT
+                    ,TO_CHAR(CAP2_MAX_SALARY,'999999.99') AS CAP2_MAX_SALARY
+                    ,TO_CHAR(BEST_CAP,'999999.99') AS BEST_CAP
+                    ,TO_CHAR(TOTAL_PTU_PAYMENT_CAPPED,'999999.99') AS TOTAL_PTU_PAYMENT_CAPPED
+                    ,PERCENTAGE_DAYS
+                    ,PERCENTAGE_SALARY
+                    ,TO_CHAR(DAYS_PTU_PAYMENT,'999999.99') AS DAYS_PTU_PAYMENT
+                    ,TO_CHAR(SALARY_PTU_PAYMENT,'999999.99') AS SALARY_PTU_PAYMENT
+            FROM    GRG_PTU_V3_PROCESS
+            WHERE   EMPLEADOR_LEGAL = v_name_legal_emple
+            ORDER BY ESTAFETA
+        ) LOOP
+            BEGIN
+            --l_archivo_l :=  l_archivo_l||
+            l_archivo :=    l_archivo||
+                            line.EMPLEADOR_LEGAL||'|'||
+                            line.UNIDAD||'|'||
+                            line.ORGANIZACION||'|'||
+                            line.UNIDAD_ACTUAL||'|'||
+                            line.ORGANIZACION_ACTUAL||'|'||
+                            line.ESTAFETA||'|'||
+                            line.NOMBRE||'|'||
+                            line.PUESTO||'|'||
+                            line.CURP||'|'||
+                            line.RFC||'|'||
+                            line.NSS||'|'||
+                            line.CATEGORIA||'|'||
+                            line.FECHA_INGRESO||'|'||
+                            line.FECHA_SEPARACION||'|'||
+                            line.FECHA_CAMBIO_COMPANIA||'|'||
+                            line.ANNUAL_SALARY||'|'||
+                            line.WORKED_DAYS||'|'||
+                            line.AVERAGE_DAILY_SALARY||'|'||
+                            line.CAPPED_AVERAGE_SALARY||'|'||
+                            line.PTU_WORKED_DAYS||'|'||
+                            line.PTU_AVERAGE_SALARY||'|'||
+                            line.TOTAL_PTU||'|'||
+                            line.PTU_2018||'|'||
+                            line.PTU_2019||'|'||
+                            line.PTU_2020||'|'||
+                            line.CAP1_AVERAGE_PTU_PAYMENT||'|'||
+                            line.CAP2_MAX_SALARY||'|'||
+                            line.BEST_CAP||'|'||
+                            line.TOTAL_PTU_PAYMENT_CAPPED||'|'||
+                            line.PERCENTAGE_DAYS||'|'||
+                            line.PERCENTAGE_SALARY||'|'||
+                            line.DAYS_PTU_PAYMENT||'|'||
+                            line.SALARY_PTU_PAYMENT||CHR(13);
+            v_cont := v_cont + 1;
+            DBMS_OUTPUT.PUT_LINE(line.estafeta||' LINEA: '||v_cont);
+
+            -- IF v_cont = 50 THEN
+            -- UPDATE GRG_PTU_V3_LOG SET LOG = LOG || l_archivo_l WHERE ID = p_id;
+            -- COMMIT;
+            
+            -- l_archivo := '';
+            -- v_cont := 0;
+            -- END IF;
+
+            EXCEPTION WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE(line.estafeta||' LINEA: '||v_cont||' :: '||SQLERRM);
+            END;
+
+        END LOOP;
+
+        UPDATE GRG_PTU_V3_LOG SET LOG = l_archivo, STATUS = 'PROCESADO' WHERE ID = p_id;
+        COMMIT;
+
+        -- INSERT INTO GRG_PTU_V3_LOG (
+        --                                 ID, 
+        --                                 LOG,
+        --                                 TYPE
+        --                             ) VALUES (
+        --                                 p_id,
+        --                                 l_archivo,
+        --                                 'CALCULO_PTU'
+        --                             );
+
+        DBMS_OUTPUT.PUT_LINE('ACABO LINEAS ARCHIVO LOOP '||p_id);
+        --+GUARDA ARCHIVO
+        
+        DBMS_OUTPUT.PUT_LINE('INSERTO INFO '||p_id);
+
+end calculo_ptu;
+------------------------------------------------------------------------------------------------------------
+PROCEDURE get_information_limits                        
+     AS
+        l_ws_response_clob         CLOB;
+        l_ws_envelope              CLOB;
+        l_ws_resp_xml              XMLTYPE;
+        l_ws_resp_xml2             XMLTYPE;
+        v_cdata                    CLOB;
+        l_clob                     CLOB;
+        v_val                      PLS_INTEGER;
+        --+
+        v_error_msg                VARCHAR(512);
+    BEGIN 
+        dbms_output.put_line ('TABLE TRUNCATE');
+
+         EXECUTE IMMEDIATE 'TRUNCATE TABLE GRG_PTU_V3_INFO';
+
+        dbms_output.put_line ('ENTRO');
+        
+        l_ws_envelope :=
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                <soap:Body>
+                <pub:runReport>
+                    <pub:reportRequest>
+                        <pub:attributeFormat>xml</pub:attributeFormat>
+                        <pub:reportAbsolutePath>/Reportes Custom/PAY/GRG Proceso PTU/GRG Informacion PTU Limites.xdo</pub:reportAbsolutePath>
+                        <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+                    </pub:reportRequest>
+                </pub:runReport>
+                </soap:Body>
+            </soap:Envelope>'; 
+
+        BEGIN 
+        --Esto es el XML que vas a mandar al servicio
+            GRG_COMMON_CONNECTIONS.get_otbi_report(
+                l_ws_envelope => l_ws_envelope,
+                l_user_token  => null,
+                x_ws_response => l_clob,
+                p_instance_name => 'DEV2'); 
+            --+
+            l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+        --Y aquí recuperas la información del paso anterior y se deja lista para pasarse a tabla.
+        EXCEPTION WHEN OTHERS THEN 
+        v_error_msg := SQLERRM;
+        INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES ('ERROR EN EXTRACCION: '||v_error_msg);
+
+        END;
+    
+        dbms_output.put_line ('LEYENDO INFO');
+        --DELETE FROM GRG_PTU_V3_HEADER; 
+        --  COMMIT;
+        FOR i in(
+                    SELECT  *
+                    FROM    XMLTABLE(
+                                        '/DATA_DS/G_1'
+                                        PASSING XMLTYPE.createXML(l_clob)
+                                        COLUMNS 
+                                                        LEGAL_ENTITY          VARCHAR2(250) path 'LEGAL_ENTITY',
+                                                        LEGAL_ENTITY_ID       VARCHAR2(250) path 'LEGAL_ENTITY_ID',
+                                                        MAX_AVERAGE_SALARY    VARCHAR2(250) path 'MAX_AVERAGE_SALARY',
+                                                        MIN_DAYS_WORKED       VARCHAR2(250) path 'MIN_DAYS_WORKED',
+                                                        TOTAL_AMOUNT          VARCHAR2(250) path 'TOTAL_AMOUNT'
+                                                        
+                                    ) XML_DATA
+
+                )  -- Aquí se crea el XML de respuesta por nodos, es como formatear. 
+        LOOP 
+
+            --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX.
+            BEGIN 
+                INSERT INTO GRG_PTU_V3_INFO(
+                                            EE_LEGAL_EMPLOYER,
+                                            EE_LEGAL_EMPLOYER_ID,
+                                            EE_MAX_AV_SALARY,
+                                            EE_MIN_DAYS_WRKD,
+                                            EE_TOTAL_AMOUNT
+                )
+                    VALUES  (
+                                            i.LEGAL_ENTITY,
+                                            i.LEGAL_ENTITY_ID,
+                                            i.MAX_AVERAGE_SALARY,
+                                            i.MIN_DAYS_WORKED,
+                                            i.TOTAL_AMOUNT
+                                            );
+                COMMIT;
+            
+            EXCEPTION WHEN OTHERS THEN 
+            v_error_msg := SQLERRM;
+            INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES ('ERROR EN INSERCION: '||v_error_msg);
+
+            END;
+        end loop;
+
+    END get_information_limits;
+    ----------------------------------------------------------------------------------------------------------------------
+    PROCEDURE hdl_files (
+                            p_fecha_efectiva      IN VARCHAR2
+                            ,p_ptu_type           IN VARCHAR2 DEFAULT NULL
+                            ,p_process_year       IN VARCHAR2
+                            ,p_process_type       IN VARCHAR2 DEFAULT NULL
+                            ,p_legal_employeer_id IN VARCHAR2
+                            ,x_tempname          OUT CLOB
+                            ,x_tempnamezip       OUT CLOB
+                            ,x_base64encode      OUT CLOB
+                            ,x_tempname2         OUT CLOB
+                            ,x_tempnamezip2      OUT CLOB
+                            ,x_base64encode2     OUT CLOB
+                            -- ,x_tempname3         OUT CLOB
+                            -- ,x_tempnamezip3      OUT CLOB
+                            -- ,x_base64encode3     OUT CLOB
+                        ) 
+    IS
+
+        --VARIABLES  
+        l_metadata_h        CLOB;
+        l_metadata_l        CLOB;
+        l_all_metadatas_h   CLOB;
+        l_all_metadatas_l   CLOB;
+        l_template          CLOB;
+        l_tempname          CLOB;
+        --
+        l_zipped_blob       BLOB;
+        l_zipped_blob2      BLOB;
+        l_zipped_blob3      BLOB;
+        l_base64enconde     CLOB;
+        ---
+        l_metadata_h2       CLOB;
+        l_metadata_l2       CLOB;
+        l_all_metadatas_h2  CLOB;
+        l_all_metadatas_l2  CLOB;
+        l_template2         CLOB;
+        l_tempname2         CLOB;
+        l_base64enconde2    CLOB;
+        ---
+        l_metadata_h3       CLOB;
+        l_metadata_l3       CLOB;
+        l_all_metadatas_h3  CLOB;
+        l_all_metadatas_l3  CLOB;
+        l_template3         CLOB;
+        l_tempname3         CLOB;
+        l_base64enconde3    CLOB;
+
+        BEGIN
+        
+            FOR registro IN (
+                SELECT  gpvh.ASSIGNMENT_NUMBER,
+                        gpvh.secuencia_np021,
+                        gpvh.secuencia_np022,
+                        gpvh.secuencia_np024,
+                        CONVERT (gpvh.EMPLEADOR_LEGAL, 'us7ascii', 'al32utf8') ee_empleador_legal,
+                        gpvp.DAYS_PTU_PAYMENT total_dias,
+                        gpvp.SALARY_PTU_PAYMENT total_compensacion
+                FROM    GRG_PTU_V3_HEADER gpvh,
+                        GRG_PTU_V3_PROCESS gpvp
+                WHERE   1 = 1
+                        AND gpvh.ESTAFETA = gpvp.ESTAFETA
+                        AND gpvh.EMPLEADOR_LEGAL = gpvp.EMPLEADOR_LEGAL
+                        AND gpvh.LEGAL_EMPLOYER_ID = p_legal_employeer_id
+                        AND gpvh.DIAS_BASE > 0
+                        --+ SOLO PARA PRUEBAS
+                        AND ROWNUM BETWEEN 1 AND 50
+            ) LOOP
+
+                --+ NP021
+                --* CABECERO
+                l_metadata_h := 'MERGE|ElementEntry|F|'
+                                || p_fecha_efectiva
+                                || '|4712/12/31|'
+                                || 'NP021'
+                                || '|MX Legislative Data Group|E|' 
+                                || registro.ASSIGNMENT_NUMBER
+                                || '|'
+                                || registro.secuencia_np021;
+                
+                l_all_metadatas_h := l_all_metadatas_h || l_metadata_h || CHR (10);
+
+                --* LINEA 1
+                l_metadata_l := 'MERGE|ElementEntryValue|'
+                                || p_fecha_efectiva
+                                || '|4712/12/31|Amount|'
+                                || registro.total_dias||'|'
+                                || registro.ASSIGNMENT_NUMBER ||'|'
+                                || 'NP021|'
+                                || 'MX Legislative Data Group|MX|'
+                                || registro.secuencia_np021
+                                || '|E';
+
+                l_all_metadatas_l := l_all_metadatas_l || l_metadata_l || CHR (10);
+
+                --* LINEA 2
+                l_metadata_l := 'MERGE|ElementEntryValue|'
+                                || p_fecha_efectiva
+                                || '|4712/12/31|Periodicity|PRD|'
+                                || registro.ASSIGNMENT_NUMBER ||'|'
+                                || 'NP021|'
+                                || 'MX Legislative Data Group|MX|'
+                                || registro.secuencia_np021
+                                || '|E';
+
+                l_all_metadatas_l := l_all_metadatas_l || l_metadata_l || CHR (10);
+                --+ NP021
+                -----------
+                --+ NP022
+                --* CABECERO
+                l_metadata_h2 :=    'MERGE|ElementEntry|F|'
+                                    || p_fecha_efectiva
+                                    || '|4712/12/31|'
+                                    || 'NP022'
+                                    || '|MX Legislative Data Group|E|' 
+                                    || registro.ASSIGNMENT_NUMBER
+                                    || '|'
+                                    || registro.secuencia_np022;
+
+                l_all_metadatas_h2 := l_all_metadatas_h2 || l_metadata_h2 || CHR (10);
+                
+                --* LINEA 1
+                l_metadata_l2 :=    'MERGE|ElementEntryValue|'
+                                    || p_fecha_efectiva
+                                    || '|4712/12/31|Amount|'
+                                    || registro.total_compensacion ||'|'
+                                    || registro.ASSIGNMENT_NUMBER ||'|'
+                                    || 'NP022|'
+                                    || 'MX Legislative Data Group|MX|'
+                                    || registro.secuencia_np022
+                                    || '|E';
+
+                l_all_metadatas_l2 := l_all_metadatas_l2 || l_metadata_l2 || CHR (10);
+
+                --* LINEA 2
+                l_metadata_l2 :=    'MERGE|ElementEntryValue|'
+                                    || p_fecha_efectiva
+                                    || '|4712/12/31|Periodicity|PRD|'
+                                    || registro.ASSIGNMENT_NUMBER ||'|'
+                                    || 'NP022|'
+                                    || 'MX Legislative Data Group|MX|'
+                                    || registro.secuencia_np022
+                                    || '|E';
+
+                l_all_metadatas_l2 := l_all_metadatas_l2 || l_metadata_l2 || CHR (10);
+
+                --+ NP022
+
+            END LOOP;
+
+            --+ CONCATENACION DE TEXTOS
+
+            --+ NP021
+            l_template :=
+                'METADATA|ElementEntry|CreatorType|EffectiveStartDate|EffectiveEndDate|ElementName|LegislativeDataGroupName|EntryType|AssignmentNumber|MultipleEntryCount'
+                    || CHR (10)
+                    || l_all_metadatas_h
+                    || CHR (10)||
+                'METADATA|ElementEntryValue|EffectiveStartDate|EffectiveEndDate|InputValueName|ScreenEntryValue|AssignmentNumber|ElementName|LegislativeDataGroupName|LegislationCode|MultipleEntryCount|EntryType'
+                    || CHR (10)
+                    || l_all_metadatas_l;
+            --+ NP021
+            ----------
+            --+ NP022
+            l_template2 :=
+                'METADATA|ElementEntry|CreatorType|EffectiveStartDate|EffectiveEndDate|ElementName|LegislativeDataGroupName|EntryType|AssignmentNumber|MultipleEntryCount'
+                    || CHR (10)
+                    || l_all_metadatas_h2
+                    || CHR (10)||
+                'METADATA|ElementEntryValue|EffectiveStartDate|EffectiveEndDate|InputValueName|ScreenEntryValue|AssignmentNumber|ElementName|LegislativeDataGroupName|LegislationCode|MultipleEntryCount|EntryType'
+                    || CHR (10)
+                    || l_all_metadatas_l2;
+            --+ NP022
+
+            dbms_output.put_line('lemp: '||' '|| p_legal_employeer_id);
+            --dbms_output.put_line('l_template: '||' '|| l_template);
+            --dbms_output.put_line('l_template2: '||' '|| l_template2);
+            insert into HDL_FILES_ERROR (NP021,NP022) values(l_template,l_template2);
+            COMMIT;
+
+            --* ZIP's
+            --+ NP021
+            as_zip.add1file (
+                                l_zipped_blob,
+                                'ElementEntry.dat',
+                                UTL_RAW.cast_to_raw (l_template)
+                            );
+            as_zip.finish_zip (
+                                l_zipped_blob
+                              );
+            AS_ZIP.SAVE_ZIP (
+                                l_zipped_blob,
+                                'XXTOKS_OUTGOING',
+                                'HDLDiasPTU.zip'
+                            );
+            --+ NP021
+            ---------
+            --+ NP022
+            as_zip.add1file (
+                                l_zipped_blob2,
+                                'ElementEntry.dat',
+                                UTL_RAW.cast_to_raw (l_template2)
+                            );
+            as_zip.finish_zip (
+                                l_zipped_blob2
+                              );
+            AS_ZIP.SAVE_ZIP (
+                                l_zipped_blob2,
+                                'XXTOKS_OUTGOING',
+                                'HDLPercepPTU.zip'
+                            );
+            --+ NP022
+            --* ZIP's
+
+            --* LOG's Y ENDODE ZIP's
+            --+ NP021
+            l_tempname :='HDLDiasPTU' || TO_CHAR (SYSDATE, 'YYYYMMDDHHMISS');
+            x_tempname := l_tempname;
+            x_tempnamezip := 'HDLDiasPTU' || TO_CHAR (SYSDATE, 'YYYYMMDDHHMISS') || '.zip';
+                            
+            dbms_output.put_line('x_tempname: ' ||' '|| x_tempname);   
+            dbms_output.put_line('x_tempnamezip: ' ||' '|| x_tempnamezip);
+            
+            l_base64enconde := BASE64_ENCODE_F (l_zipped_blob);
+            x_base64encode := l_base64enconde;
+            dbms_output.put_line('x_base64encode: ' ||' '|| x_base64encode);
+            --+ NP021
+            ---------
+            --+ NP022
+            l_tempname2 :='HDLPercepPTU' || TO_CHAR (SYSDATE, 'YYYYMMDDHHMISS');
+            x_tempname2 := l_tempname2;
+            x_tempnamezip2 := 'HDLPercepPTU' || TO_CHAR (SYSDATE, 'YYYYMMDDHHMISS') || '.zip';
+                            
+            dbms_output.put_line('x_tempname2: ' ||' '|| x_tempname2);   
+            dbms_output.put_line('x_tempnamezip2: ' ||' '|| x_tempnamezip2);
+            
+            l_base64enconde2 := BASE64_ENCODE_F (l_zipped_blob2);
+            x_base64encode2 := l_base64enconde2;
+            dbms_output.put_line('x_base64encode2: ' ||' '|| x_base64encode2);
+            --+ NP022
+            --* LOG's Y ENDODE ZIP's
+
+            EXCEPTION WHEN OTHERS THEN
+            dbms_output.put_line('Error ocurrido TEMPLATE: ' || SQLERRM);
+
+        END hdl_files;
+
+        FUNCTION BASE64_ENCODE_F (p_blob IN BLOB)
+        RETURN CLOB
+        IS
+            l_clob   CLOB;
+            l_step   PLS_INTEGER := 12000;
+            err_num    NUMBER;
+            err_msg    VARCHAR2(255);
+        BEGIN
+            FOR i IN 0 .. TRUNC ((DBMS_LOB.getlength (p_blob) - 1) / l_step)
+            LOOP
+                BEGIN
+                    l_clob :=
+                        l_clob
+                        || UTL_RAW.cast_to_varchar2 (
+                            UTL_ENCODE.base64_encode (
+                                DBMS_LOB.SUBSTR (p_blob, l_step, i * l_step + 1)));
+                EXCEPTION
+                    WHEN OTHERS THEN
+                    dbms_output.put_line('Error ocurrido en Base64: ' || SQLERRM);
+                END;
+            END LOOP;
+
+            RETURN l_clob;
+        END BASE64_ENCODE_F;
+        
+END GRG_PROCESO_PTU_V3;
