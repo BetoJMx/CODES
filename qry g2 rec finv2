@@ -1,0 +1,205 @@
+--qryg2 rec finv2
+WITH 
+    cat_elements as (
+        SELECT  /*+ materialize */
+                meaning as element_name
+              , description as element_name_reporte
+        FROM    fnd_lookup_values
+        WHERE   1 = 1
+        AND     lookup_type = 'XXGRG_PERCEP_RECIBO_FIN_CFDI'
+        AND     language = 'US'
+        AND     enabled_flag = 'Y'
+    ),
+    cantidad_dias_w_h as (
+        SELECT /*+ INDEX (ppa pay_payroll_actions_n5)
+                 INDEX (ppra pay_payroll_rel_actions_n4) */ 
+                payroll_rel_action_id,
+                run_result_id,
+                reporting_name,
+                element_name,
+                SUM(TRUNC(cantidad,2)) cantidad,
+                SUM(TRUNC(cantidadw,2)) cantidadw,
+                SUM(TRUNC(cantidadh,2)) cantidadh
+        FROM (
+            SELECT  prr.payroll_rel_action_id,
+                    prr.run_result_id,
+                    REPLACE(pettl.reporting_name,'Results','') reporting_name,
+                    pettl.element_name,
+                    DECODE(pivtl.name,'Dias',ABS(prrv.result_value)) cantidad,
+                    DECODE(pivtl.name,'Days Worked',ABS(prrv.result_value)) cantidadw,        
+                    DECODE(pivtl.name,'Hours',ABS(prrv.result_value),'Horas',ABS(prrv.result_value)) cantidadh
+            FROM 
+                    --pay_payroll_actions             ppa
+                    pay_payroll_rel_actions         ppra
+                  , pay_run_types_f                 prtf
+                  , pay_run_results                 prr
+                  , pay_run_result_values           prrv
+                  , pay_element_types_f             pet
+                  , pay_element_types_tl            pettl
+                  , fusion.pay_input_values_f       piv
+                  , pay_input_values_tl             pivtl
+            WHERE   1 = 1 
+                --AND ppa.payroll_action_id = ppra.payroll_action_id
+                --AND ppa.payroll_id = :p_payroll_id
+                --AND ppa.consolidation_set_id = :p_consolidation_set_id
+                --AND ppa.earn_time_period_id = :p_time_period_id
+                --AND ppa.assignment_set_id = NVL(:p_object_group_id, ppa.assignment_set_id)
+                AND ppra.run_type_id  = prtf.run_type_id
+                AND ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+                AND prr.status              IN ('P', 'PA')
+                AND prrv.run_result_id      = prr.run_result_id
+                AND pet.element_type_id     = prr.element_type_id
+                AND SYSDATE BETWEEN pet.effective_start_date AND pet.effective_end_date
+                AND pettl.element_type_id   = pet.element_type_id
+                AND pettl.language          = 'US' --sys_context('USERENV','LANG')
+                AND piv.element_type_id     = pettl.element_type_id
+                AND piv.input_value_id      = prrv.input_value_id
+                AND sysdate between piv.effective_start_date AND piv.effective_end_date
+                AND pivtl.input_value_id    = piv.input_value_id
+                AND pivtl.language          = 'US' --sys_context('USERENV','LANG')
+                AND TRIM(pivtl.name)        IN ('Dias', 'Days Worked', 'Horas', 'Hours')
+                AND prrv.result_value       IS NOT NULL
+        )
+        GROUP BY 
+                payroll_rel_action_id,
+                run_result_id,
+                reporting_name,
+                element_name
+    )
+SELECT  payroll_rel_action_id
+      , element_name
+      , description clave
+      , CASE
+        WHEN importeexento = 0 AND importegravado = 0 THEN 
+            trim(to_char(importe, '999,999,990.00' ))
+        WHEN ((importeexento + importegravado) > importe) OR ((importeexento + importegravado) < importe) THEN
+            trim(to_char((importe - importegravado), '999,999,990.00' ))
+        ELSE
+            trim(to_char(importeexento, '999,999,990.00' ))
+        END importeexento
+      , trim(to_char( importegravado, '999,999,990.00' )) as importegravado
+      , trim(to_char( importe, '999,999,990.00' )) as total_percep
+      , trim(to_char( cantidad, '990.00' )) as cantidad
+      , action_status
+FROM (
+    SELECT payroll_rel_action_id
+         , element_name
+         , description
+         , SUM(importeexento) as importeexento
+         , SUM(importegravado) as importegravado
+         , SUM(importe) as importe
+         , cantidad
+         , action_status
+    FROM(
+        SELECT payroll_rel_action_id
+            , element_name
+            , description
+            , CASE
+              WHEN input_name = 'ISR EXEMPT' THEN
+                    result_value
+              ELSE
+                    0
+              END importeexento
+            , CASE
+              WHEN input_name = 'ISR SUBJECT' THEN
+                    result_value
+              ELSE
+                    0
+              END importegravado
+            , CASE
+              WHEN input_name <> 'ISR EXEMPT' AND input_name <> 'ISR SUBJECT' THEN
+                    result_value
+              ELSE
+                    0
+              END importe
+            , cantidad
+            , element_name_or
+            , action_status
+        --FROM  tks_element_results_v
+        FROM  (
+            SELECT  ppra.payroll_rel_action_id
+                  , UPPER(elem.element_name_reporte) as element_name
+                  , pettl.reporting_name as description
+                  , pettl.element_name as element_name_or   
+                  , UPPER(pivtl.name) as input_name
+                  , ABS(prrv.result_value) as result_value
+                  , ( select  case 
+                              when cantidadh is not null
+                              then cantidadh
+                              when cantidad is not null
+                              then cantidad
+                              else cantidadw
+                              end  
+                      from    cantidad_dias_w_h cd
+                      where   cd.payroll_rel_action_id  = ppra.payroll_rel_action_id
+                          and pettl.reporting_name  = cd.element_name
+                    ) as cantidad
+                  , ppra.action_status            
+            FROM    
+                    pay_payroll_actions             ppa
+                  , pay_payroll_rel_actions         ppra
+                  , pay_run_types_f                 prtf
+                  , pay_run_results                 prr
+                  , pay_run_result_values           prrv
+                  , pay_element_types_f             pet
+                  , pay_element_types_tl            pettl
+                  , fusion.pay_input_values_f       piv
+                  , pay_input_values_tl             pivtl
+                  , cat_elements                    elem
+            WHERE   1 = 1
+                AND ppa.payroll_action_id = ppra.payroll_action_id
+                AND ppa.payroll_id = :p_payroll_id
+                AND ppa.consolidation_set_id = :p_consolidation_set_id
+                AND ppa.earn_time_period_id = :p_time_period_id
+                AND ppa.assignment_set_id = NVL(:p_object_group_id, ppa.assignment_set_id)
+                AND ppra.run_type_id  = prtf.run_type_id
+                AND ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+                AND prr.run_result_id = prrv.run_result_id
+                AND prr.status IN ('P', 'PA')
+                AND ppra.action_status = 'C'
+                AND ppra.retro_component_id IS NULL   
+                --+
+                And Not Exists(
+                    Select 1
+                    From pay_object_groups  pog
+                        ,pay_object_group_types pogt
+                    Where 1 = 1
+                        And pog.BASE_OBJECT_GROUP_NAME = 'NOMINA ALTAS FINIQUITOS'
+                        And pogt.object_group_type_id = pog.object_group_type_id
+                        And name_code = 'ELEGRP'
+                        And pog.object_group_id = ppa.element_set_id
+                )
+                --+  
+                AND prr.element_type_id = pet.element_type_id
+                AND pet.element_type_id = pettl.element_type_id
+                AND pet.element_type_id = piv.element_type_id
+                AND prrv.input_value_id = piv.input_value_id
+                AND piv.input_value_id = pivtl.input_value_id
+                AND piv.user_display_flag = 'Y'
+                AND pettl.element_name = elem.element_name
+                AND UPPER(pivtl.name) IN (  'PAY VALUE'
+                                          , 'VALOR PAGO'
+                                          , 'NET PAY'
+                                          , 'EARNINGS CALCULATED'
+                                          , 'ISR WITHHELD'
+                                          , 'ISR SUBSIDY FOR EMPLOYMENT PAID'
+                                          , 'ISR SUBJECT'
+                                          , 'ISR EXEMPT'
+                                          , 'EMPLOYER SOCIAL SECURITY QUOTA'
+                                          )
+                AND TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+                AND TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+                AND pettl.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                AND pivtl.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+        )
+    )
+    GROUP BY  
+            payroll_rel_action_id
+          , element_name
+          , description
+          , element_name_or
+          , cantidad
+          , action_status
+)
+WHERE     importe > 0
+ORDER BY  description
