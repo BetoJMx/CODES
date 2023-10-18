@@ -1,0 +1,76 @@
+--QRY ATI G8 CHNG 311022 PERF
+SELECT  /*+FIRST_ROWS*/
+        ppra.payroll_rel_action_id,
+        --+alegaspi 08/08/2022 : Intereses de Fondo de Ahorro no debe mostrar el Salario Diario Integrado
+	    CASE
+			WHEN :p_tipo_nomina = 'FONDO AHORRO' THEN 
+				0
+			WHEN :p_tipo_nomina = 'VALES DE DESPENSA' THEN 
+                                0
+			ELSE
+                COALESCE(
+	                (
+                        SELECT    SUM(sdi) sdi
+                        FROM      (
+                                    SELECT    CASE
+                                                WHEN prtf.shortname <> 'REGNOR' THEN
+                                                    0
+                                                ELSE        
+                                                    TO_NUMBER(prrv.result_value)
+                                            END sdi
+                                            , ppra.payroll_rel_action_id
+                                    FROM      pay_payroll_rel_actions   ppra
+                                            , pay_run_types_f           prtf
+                                            , pay_run_result_values     prrv
+                                            , pay_run_results           prr
+                                            , pay_element_types_f       pet
+                                            , pay_element_types_tl      pettl
+                                            , pay_ele_classifications   pec
+                                            , pay_input_values_f        piv
+                                            , pay_input_values_tl       pivtl
+                                    WHERE     1 = 1
+                                    AND       ppra.run_type_id = prtf.run_type_id
+                                    AND       ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+                                    AND       prrv.run_result_id = prr.run_result_id
+                                    AND       prr.status IN ('P', 'PA')
+                                    AND       prr.element_type_id = pet.element_type_id
+                                    AND       pet.element_type_id = pettl.element_type_id
+                                    AND       pet.classification_id = pec.classification_id
+                                    AND       pet.element_type_id = piv.element_type_id
+                                    AND       prrv.input_value_id = piv.input_value_id
+                                    AND       piv.input_value_id = pivtl.input_value_id
+                                    AND       pet.base_element_name = 'MX_SOCIAL_SECURITY'
+                                    AND       UPPER (pec.base_classification_name) = 'SOCIAL INSURANCE DEDUCTIONS'
+                                    AND       UPPER (TRIM (piv.base_name)) = 'SDI'
+                                    AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+                                    AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+                                    AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                                    AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                                )
+                        WHERE 1=1
+                        AND payroll_rel_action_id = ppra.payroll_rel_action_id
+                ), 
+			   (
+				SELECT CEIL((prv.value) * 100)/100 AS value
+				FROM	pay_rate_values         prv,
+						pay_rate_definitions_f	prdf
+				WHERE 1=1 
+				AND prv.rate_definition_id = prdf.rate_definition_id
+				AND prdf.base_name = 'ORA_HRX_MX_SDI_TOTAL_VALUE'
+				AND prv.start_date BETWEEN prdf.effective_start_date AND prdf.effective_end_date
+				AND prv.payroll_relationship_id = ppra.payroll_relationship_id
+				AND ppa.date_earned BETWEEN prv.start_date AND prv.end_date
+				)
+	    )
+        END  sdi
+	   
+FROM pay_payroll_actions       ppa,
+	 pay_payroll_rel_actions   ppra,
+	 pay_run_types_f           prtf
+
+WHERE 1=1
+AND ppa.action_type IN ('R', 'Q')
+AND ppa.payroll_action_id = ppra.payroll_action_id
+AND ppra.action_status = 'C'
+AND ppra.retro_component_id IS NULL
+AND ppra.run_type_id = prtf.run_type_id
