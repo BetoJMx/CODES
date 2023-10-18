@@ -1,0 +1,54 @@
+--QRY PTU HDL VALID 250523
+WITH custom_people_t AS (
+    SELECT /*+ materialize */  
+        REGEXP_SUBSTR (:p_estafetas, '[^|]+', 1, level) person_number
+    FROM dual
+    CONNECT BY LEVEL <= LENGTH (REGEXP_REPLACE (:p_estafetas, '[^|]+')) + 1
+)
+
+SELECT
+    papf.PERSON_NUMBER AS ESTAFETA
+FROM
+    PER_ALL_PEOPLE_F            papf,
+    PER_ALL_ASSIGNMENTS_F       paaf,
+    PAY_PAY_RELATIONSHIPS_DN    pprd,
+    PAY_PAYROLL_REL_ACTIONS     ppra,
+    PAY_RUN_RESULTS             prr,
+    PAY_RUN_RESULT_VALUES       prrv,
+    PAY_ELEMENT_TYPES_F         pet,
+    PAY_ELEMENT_TYPES_TL        pettl,
+    PAY_ELE_CLASSIFICATIONS     pec,
+    PAY_INPUT_VALUES_F          piv,
+    PAY_INPUT_VALUES_TL         pivtl,
+    PAY_PAYROLL_ACTIONS         ppa,
+    custom_people_t             cpt
+WHERE   papf.person_number                  = cpt.person_number
+        AND paaf.person_id                  = papf.person_id
+        AND paaf.assignment_status_type     = 'ACTIVE'
+        AND paaf.effective_latest_change    = 'Y'
+        AND paaf.assignment_type            = 'E'
+        AND paaf.legal_entity_id            = :p_legal_employeer_id
+        AND paaf.location_id                = :p_unidad_proceso
+        AND papf.person_id                  = pprd.person_id
+        AND pprd.payroll_relationship_id    = ppra.payroll_relationship_id
+        AND ppra.payroll_rel_action_id      = prr.payroll_rel_action_id
+        AND ppa.payroll_action_id           = ppra.payroll_action_id
+        AND ppa.action_status               = 'C'
+        AND ppa.effective_date              BETWEEN TO_DATE(:p_process_year||'-05-01', 'YYYY-MM-DD') 
+                                            AND TO_DATE(:p_process_year||'06-30','YYYY-MM-DD')
+        AND prr.status                      IN ('P', 'PA')
+        AND pet.element_type_id             = prr.element_type_id
+        AND pettl.element_type_id           = pet.element_type_id
+        AND pettl.language                  = SYS_CONTEXT('USERENV','LANG')
+        AND piv.element_type_id             = pettl.element_type_id
+        AND piv.input_value_id              = prrv.input_value_id
+        AND prrv.run_result_id              = prr.run_result_id
+        AND prrv.result_value               IS NOT NULL
+        AND pivtl.input_value_id            = piv.input_value_id
+        AND pivtl.language                  = SYS_CONTEXT('USERENV','LANG')
+        AND pec.classification_id           = pet.classification_id
+        AND UPPER(TRIM(pivtl.NAME))         = 'AMOUNT'
+        AND UPPER(pettl.element_name)       IN ('NP021','NP022')
+        AND TRUNC(SYSDATE)                  BETWEEN pet.effective_start_date 
+                                            AND pet.effective_end_date
+GROUP BY papf.person_number
