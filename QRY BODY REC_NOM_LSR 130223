@@ -1,0 +1,859 @@
+--QRY BODY REC_NOM_LSR 130223
+--------++ body ++-------------
+WITH tks_run_result_values_v As (
+    Select 
+         prg.assignment_id
+        ,flvl.tag                       clave
+        ,flvl.description               elemento
+        ,substr(flvl.description,1,12)  elemento_r
+        ,pettl.element_name
+        ,upper(trim(pec.base_classification_name)) clasificacion
+        ,pay.payroll_name               nomina
+        ,pay.payroll_id                 nomina_id
+        ,pcs.consolidation_set_name     consolidation
+        ,ppa.payroll_action_id          action_id
+        ,trim(pivtl.name)               input_name
+        ,prrv.result_value
+        ,piv.uom
+        --+
+        ,ppa.effective_date
+        ,flvl.lookup_type
+        ,flvl.meaning
+        ,prr.source_id
+        ,ppra.payroll_rel_action_id
+        ,flvl.enabled_flag
+    From pay_rel_groups_dn              prg,
+        pay_payroll_rel_actions         ppra,
+        pay_payroll_actions             ppa,
+        pay_consolidation_sets          pcs,
+        pay_all_payrolls_f             pay,
+        --*pay_payroll_secured_list_v      pay,
+        pay_time_periods                ptp,
+        --+
+        pay_run_results                 prr,
+        pay_run_result_values           prrv,
+        pay_element_types_f             pet,
+        pay_element_types_tl            pettl,
+        pay_ele_classifications         pec,
+        pay_input_values_f              piv,
+        pay_input_values_tl             pivtl,
+        --+
+        fnd_lookup_values_vl            flvl
+    Where 1 = 1
+        And ppra.payroll_relationship_id = prg.payroll_relationship_id
+        And prg.group_type = 'A'
+        And ppra.chunk_number is not null
+        And ppra.retro_component_id is null
+        And ppra.source_action_id is not null
+        And ppra.action_status = 'C'
+        And ppa.payroll_action_id = ppra.payroll_action_id
+        And ppa.action_type IN ('R', 'B', 'Q')
+        And pcs.consolidation_set_id = ppa.consolidation_set_id
+        And pay.payroll_id = ppa.payroll_id
+        And ptp.time_period_id = ppa.earn_time_period_id
+        And ptp.payroll_id = ppa.payroll_id
+		And ptp.period_name = :p_periodo
+        And ( :p_nomina is null
+            Or pay.payroll_id = :p_nomina )
+        And pcs.consolidation_set_id = :p_consolidation_id
+        --+
+        And prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+        And prr.status IN ('P', 'PA')
+        And prrv.run_result_id = prr.run_result_id
+        And piv.input_value_id = prrv.input_value_id
+        And prrv.result_value IS NOT NULL
+        And pet.element_type_id = prr.element_type_id
+        And pettl.element_type_id = pet.element_type_id
+        And pettl.language =  'US' --SYS_CONTEXT ('USERENV', 'LANG')
+        And pivtl.input_value_id = piv.input_value_id
+        And pivtl.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+        And pec.classification_id = pet.classification_id
+        --+
+        And flvl.lookup_code  = pettl.element_name
+        And flvl.lookup_type in( 'XXGRG_PERCEPCIONES_REC_NOM_LAS' , 'XXGRG_DEDUCCIONES_REC_NOM_LAS')
+        --+
+        And not exists(
+            Select 1
+            From pay_object_groups  pog
+                ,pay_object_group_types pogt
+            Where 1 = 1
+                And pog.BASE_OBJECT_GROUP_NAME = 'NOMINA ALTAS'
+                And pogt.object_group_type_id = pog.object_group_type_id
+                And name_code = 'ELEGRP'
+                And pog.object_group_id = ppa.element_set_id
+        )
+        --+
+        And ppa.effective_date 
+            Between prg.start_date 
+                And prg.end_date
+        And ppa.effective_date
+            Between ptp.start_date
+                And ptp.end_date
+        And ppa.effective_date 
+            Between piv.effective_start_date
+                And piv.effective_end_date
+        And ppa.effective_date 
+            Between pet.effective_start_date
+                And pet.effective_end_date
+        And ppa.effective_date 
+            Between pay.effective_start_date
+                And pay.effective_end_date
+) 
+,xxtoks_percepciones_vt AS (
+    SELECT  /*+ FIRST_ROWS */
+        paaf.assignment_id  assigment,
+        trv.clave,
+        trv.elemento,
+        trv.elemento_r,
+        trim(to_char(sum(abs(trv.result_value)), '9,999,990.00'))  result_value,
+        trim(to_char(sum(abs(trv.result_value)), '9,999,990.00'))  impor,
+        trv.clasificacion,
+        trv.nomina,
+        trv.nomina_id,  
+        trv.input_name,
+        trv.consolidation,
+        pap.person_number no_emp,
+        trv.action_id,
+        sum(abs(trv.result_value)) cs_cantidad_per,
+        1 tipo_orden
+    FROM    per_person_names_f             ppn, 
+            per_all_people_f                pap,
+            --*per_person_secured_list_v       pap,
+            per_all_assignments_f           paaf,
+            --*per_assignment_secured_list_v   paaf,
+            --+
+            tks_run_result_values_v         trv
+    WHERE 1 = 1
+        And pap.person_id = ppn.person_id
+        And ppn.name_type = 'MX'
+        And pap.person_number = COALESCE ( :p_estafeta, pap.person_number)
+        And paaf.person_id = pap.person_id
+        And paaf.primary_flag = 'Y'
+        And paaf.assignment_type = 'E'
+        --+
+        And trv.assignment_id = paaf.assignment_id
+        --+
+        And trv.uom = 'M'
+        And trv.lookup_type = 'XXGRG_PERCEPCIONES_REC_NOM_LAS'
+        And trv.clasificacion IN (
+            'STANDARD EARNINGS', 
+            'SUPPLEMENTAL EARNINGS', 
+            'EARNINGS', 
+            'ANUAL BONUS',
+            'TAXABLE BENEFITS', 
+            'INFORMATION' 
+        )
+        And upper(trv.input_name) IN (
+            'PAY VALUE', 
+            'EARNINGS CALCULATED', 
+            'VALOR PAGO'
+        )
+        --+
+        And trv.enabled_flag = 'Y'
+        --+
+        And trv.effective_date BETWEEN pap.effective_start_date
+                                          AND pap.effective_end_date
+        And trv.effective_date BETWEEN ppn.effective_start_date
+                                          AND ppn.effective_end_date
+        And trv.effective_date BETWEEN paaf.effective_start_date
+                                          AND paaf.effective_end_date
+    GROUP BY paaf.assignment_id,
+        trv.clave,
+        trv.elemento,
+        trv.elemento_r,
+        trv.clasificacion,
+        trv.nomina,
+        trv.nomina_id,  
+        trv.input_name,
+        trv.consolidation,
+        pap.person_number,
+        trv.action_id
+)
+,xxtoks_deducciones_vt AS (
+    SELECT /*+ FIRST_ROWS */
+        paaf.assignment_id                          assigment,
+        case 
+            when trv.meaning like 'ND515%'
+            then 'ND515 COSTEO' 
+            else trv.meaning
+        end                                         meaning,     
+        max(trv.clave)                              clave,
+        trv.elemento,
+        trv.elemento_r,    
+        trim(to_char(sum(
+            case 
+                when trv.meaning = 'ND515 AJUSTE'
+                then to_number(trv.result_value)
+                else abs(trv.result_value)
+            end ), '9,999,990.00'))                 result_value,
+        trim(to_char(sum(
+            case 
+                when trv.meaning = 'ND515 AJUSTE'
+                then to_number(trv.result_value)
+                else abs(trv.result_value)
+            end ), '9,999,990.00'))                 impor,
+        case 
+            when trv.meaning = 'ND515 AJUSTE'
+            then 'Information' 
+            else trv.clasificacion
+        end                                         clasificacion,
+        trv.nomina,
+        trv.nomina_id,  
+        trv.input_name,
+        trv.consolidation,
+        pap.person_number                           no_emp,
+        trv.action_id,
+        trv.payroll_rel_action_id,
+        max(trv.source_id)                          source_id,
+        case 
+            when trv.element_name like 'ND515%'
+            then 'ND515 COSTEO' 
+            else trv.element_name
+        end                                         element_name,
+        sum(abs(trv.result_value) * -1)             cs_cantidad_ded,
+        2 tipo_orden
+    FROM    per_person_names_f              ppn, 
+            per_all_people_f                pap,
+            --*per_person_secured_list_v       pap,
+            per_all_assignments_f           paaf,
+            --*per_assignment_secured_list_v   paaf,
+            --+
+            tks_run_result_values_v         trv
+    WHERE 1 = 1
+        And pap.person_id = ppn.person_id
+        And ppn.name_type = 'MX'
+        And pap.person_number = COALESCE ( :p_estafeta, pap.person_number)
+        And paaf.person_id = pap.person_id
+        And paaf.primary_flag = 'Y'
+        And paaf.assignment_type = 'E'
+        --+
+        And trv.assignment_id = paaf.assignment_id
+        And trv.uom = 'M' 
+        AND trv.lookup_type = 'XXGRG_DEDUCCIONES_REC_NOM_LAS'
+        AND trv.clasificacion IN (
+            'TAX DEDUCTIONS',
+            'EMPLOYER TAXES', 
+            'SOCIAL INSURANCE DEDUCTIONS', 
+            'SUPPLEMENTAL EARNINGS',
+            'STANDARD EARNINGS', 
+            'VOLUNTARY DEDUCTIONS', 
+            'ABSENCES', 
+            'INVOLUNTARY DEDUCTIONS', 
+            'INFORMATION'
+            )
+        AND upper(trv.input_name) IN (
+            'EMPLOYEE SOCIAL SECURITY QUOTA',
+            'ISR WITHHELD',
+            'ISR SUBSIDY FOR EMPLOYMENT PAID', 
+            'NET PAY',
+            'EARNINGS CALCULATED', 
+            'PAY VALUE',
+            'VALOR PAGO'
+            )
+        And trv.element_name not like 'ND527%'
+        And trv.enabled_flag = 'Y'
+        --+
+        AND trv.effective_date BETWEEN pap.effective_start_date
+                                          AND pap.effective_end_date
+        AND trv.effective_date BETWEEN ppn.effective_start_date
+                                          AND ppn.effective_end_date
+        AND trv.effective_date BETWEEN paaf.effective_start_date
+                                          AND paaf.effective_end_date
+    GROUP BY paaf.assignment_id 
+        ,trv.payroll_rel_action_id
+        ,case 
+            when trv.element_name like 'ND515%'
+            then 'ND515 COSTEO' 
+            else trv.element_name
+         end --pettl.element_name
+        ,trv.elemento  
+        ,trv.elemento_r
+        ,case 
+            when trv.meaning like 'ND515%'
+            then 'ND515 COSTEO'
+            else  trv.meaning
+         end --flvl.meaning
+        ,case 
+            when trv.meaning = 'ND515 AJUSTE'
+            then 'Information' 
+            else trv.clasificacion
+         end --pec.base_classification_name
+        ,trv.nomina 
+        ,trv.nomina_id
+        ,trv.input_name 
+        ,trv.consolidation
+        ,pap.person_number 
+        ,trv.action_id  
+) 
+,xxtoks_cred_fonacot_vt AS (
+    SELECT  /*+ FIRST_ROWS */
+        paaf.assignment_id                              assigment,
+        trv.clave,
+        trv.elemento,
+        trv.elemento_r,
+        sum( decode( trv.input_name, 'Amount',
+                abs( trv.result_value ) ) )            amount,
+        sum( decode( trv.input_name, 'Total Owed',
+                abs( trv.result_value ) ) )            total_owed,
+        sum( decode( trv.input_name, 'Futuro1',
+                abs( trv.result_value ) ) )            adeudo_ebs,
+        sum( decode( trv.input_name, 'Futuro5',
+                abs( trv.result_value ) ) )            abono_ebs,
+        max( decode( trv.input_name, 'Numero Credito',
+                trv.result_value ) )                   credito,
+        trv.clasificacion,
+        trv.nomina,
+        trv.nomina_id,  
+        trv.consolidation,
+        pap.person_number                               no_emp,
+        trv.action_id,
+        trv.payroll_rel_action_id,
+        trv.source_id,
+        trv.element_name, --pettl.element_name,
+        2 tipo_orden
+    FROM    per_person_names_f             ppn,
+            per_all_people_f                pap,
+            --*per_person_secured_list_v       pap,
+            per_all_assignments_f           paaf,
+            --*per_assignment_secured_list_v   paaf,
+            --+
+            tks_run_result_values_v         trv
+    WHERE 1 = 1
+        And pap.person_id = ppn.person_id
+        And ppn.name_type = 'MX'
+        And pap.person_number = COALESCE ( :p_estafeta, pap.person_number)
+        And paaf.person_id = pap.person_id
+        And paaf.primary_flag = 'Y'
+        And paaf.assignment_type = 'E'
+        --+
+        And trv.assignment_id = paaf.assignment_id
+        --*
+        AND trv.input_name IN (
+            'Amount',
+            'Total Owed',
+            'Numero Credito',
+            'Futuro1',
+            'Futuro5'
+            )
+        AND trv.element_name in ( 
+            'ND527', 'ND527_2', 'ND534', 'ND543', 'ND544', 'ND545' )
+        AND trv.lookup_type = 'XXGRG_DEDUCCIONES_REC_NOM_LAS'
+        --+
+        AND trv.effective_date BETWEEN pap.effective_start_date
+                                   AND pap.effective_end_date
+        AND trv.effective_date BETWEEN ppn.effective_start_date
+                                   AND ppn.effective_end_date
+        AND trv.effective_date BETWEEN paaf.effective_start_date
+                                   AND paaf.effective_end_date
+    Group By paaf.assignment_id
+        ,trv.payroll_rel_action_id
+        ,trv.source_id
+        ,trv.element_name
+        ,trv.clave --.tag
+        ,trv.elemento --.description
+        ,trv.elemento_r
+        ,trv.clasificacion --base_classification_name
+        ,trv.nomina --payroll_name
+        ,trv.nomina_id --payroll_id
+        ,trv.consolidation --consolidation_set_name
+        ,pap.person_number
+        ,trv.action_id --payroll_action_id
+        ,trv.meaning
+    ) 
+,per_dec_elements_body as (
+        SELECT  /*+ FIRST_ROWS */
+            row_number() over(
+                PARTITION BY NO_EMP
+                ORDER BY tipo_orden, clave_orden ASC
+            ) row_num,
+            assigment,
+            clave,
+            elemento,
+            elemento_r,
+            result_value,
+            impor,
+            clasificacion,
+            nomina,
+            nomina_id,  
+            input_name,
+            consolidation,
+            no_emp,
+            action_id,
+            case 
+            when clave <> 'ND567' and  adeudo_ebs > 0 then 
+                trim(to_char( adeudo_ebs, '9,999,990.00'))
+            when clave <> 'ND567' and adeudo > 0 then 
+                trim(to_char( adeudo, '9,999,990.00'))
+            end adeudo,
+            case 
+            when clave = 'ND567' and (abono > 0 or adeudo > 0) then 
+                trim(to_char( (abono + adeudo), '9,999,990.00'))
+            when clave <> 'ND567' and (abono_ebs > 0 or abono > 0 ) then 
+                trim(to_char( (abono_ebs + abono), '9,999,990.00'))
+            end abono,
+            case 
+            when clave = 'ND567' then 
+                null
+            when adeudo_ebs > 0 and 
+                 (abono_ebs > 0 or abono > 0) then 
+                trim(to_char( (adeudo_ebs - (abono_ebs + abono)), '9,999,990.00'))
+            when adeudo > 0 and 
+                 (abono_ebs > 0 or abono > 0) then 
+                trim(to_char( (adeudo - (abono_ebs + abono)), '9,999,990.00'))
+            end saldo,
+            cs_monto,
+            clave_orden,
+            tipo_orden
+        FROM (
+            Select   
+                assigment,
+                clave,     
+                elemento,
+                elemento_r,
+                result_value,
+                impor,
+                clasificacion,
+                nomina,
+                nomina_id,  
+                input_name,
+                consolidation,
+                no_emp,
+                action_id,
+                0  adeudo,
+                0  abono,
+                0  adeudo_ebs,
+                0  abono_ebs,
+                cs_cantidad_per as cs_monto,
+                REPLACE( clave, 'NP', '1' ) clave_orden,
+                tipo_orden 
+            from xxtoks_percepciones_vt  
+            Union All
+            Select assigment,
+                clave,
+                elemento,
+                elemento_r,
+                result_value,
+                impor,
+                clasificacion,
+                nomina,
+                nomina_id,  
+                input_name,
+                consolidation,
+                no_emp,
+                action_id,
+                --+
+                COALESCE( (
+                  select to_number( sum( prrv2.result_value ) )
+                  from 
+                      pay_run_results                prr2,
+                      pay_run_result_values          prrv2,
+                      pay_element_types_f            pet2,
+                      pay_element_types_tl           pettl2,
+                      pay_input_values_f             piv2,
+                      pay_input_values_tl            pivtl2
+                  WHERE 1 = 1
+                    And prr2.payroll_rel_action_id = xdvt.payroll_rel_action_id
+                    And prr2.status IN ('P', 'PA')
+                    And prrv2.run_result_id = prr2.run_result_id
+                    And piv2.input_value_id = prrv2.input_value_id
+                    And piv2.uom = 'M' 
+                    And prrv2.result_value IS NOT NULL
+                    And pet2.element_type_id = prr2.element_type_id
+                    And pettl2.element_type_id = pet2.element_type_id
+                    And pettl2.language =  'US'--SYS_CONTEXT ('USERENV', 'LANG')
+                    AND pettl2.element_name = flvl2.meaning
+                    And pivtl2.input_value_id = piv2.input_value_id
+                    And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                    And pivtl2.name in ( 'Total Owed', 'Importe pagado' )
+                ), 0)   adeudo,
+                --+
+                case when flvl2.lookup_code is not null then 
+                    COALESCE( (
+                        SELECT sum(abs(prrv.result_value))
+                        FROM    --+
+                                pay_rel_groups_dn               prg,
+                                pay_payroll_rel_actions         ppra,
+                                pay_payroll_actions             ppa,
+                                pay_consolidation_sets          pcs,
+                                pay_all_payrolls_f              pay,
+                                --*pay_payroll_secured_list_v      pay,
+                                pay_time_periods                ptp,
+                                --+
+                                pay_run_results                 prr,
+                                pay_run_result_values           prrv,
+                                pay_element_types_f             pet,
+                                pay_element_types_tl            pettl,
+                                pay_ele_classifications         pec,
+                                pay_input_values_f              piv,
+                                pay_input_values_tl             pivtl
+                        WHERE   1 = 1
+                         And prg.assignment_id = xdvt.assigment --> Hereda del query de empleados
+                         And prg.group_type = 'A'
+                         And ppra.payroll_relationship_id = prg.payroll_relationship_id
+                         And ppra.chunk_number is not null
+                         And ppra.action_status = 'C'
+                         And ppra.retro_component_id is null
+                         --+
+                         And ppa.payroll_action_id = ppra.payroll_action_id
+                         And ppa.action_type IN ('R', 'B', 'Q')
+                         And pcs.consolidation_set_id = ppa.consolidation_set_id
+                         And pay.payroll_id = ppa.payroll_id
+                         And ptp.time_period_id = ppa.earn_time_period_id
+                         And ptp.payroll_id = ppa.payroll_id 
+                         And pay.payroll_id = NVL(:p_nomina, pay.payroll_id)
+                         And pcs.consolidation_set_id = :p_consolidation_id 
+                         --+
+                         And prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+                         And prr.status IN ('P', 'PA')
+                         And prr.SOURCE_ID = xdvt.SOURCE_ID
+                         And prrv.run_result_id = prr.run_result_id
+                         And piv.input_value_id = prrv.input_value_id
+                         And piv.uom = 'M' 
+                         And prrv.result_value IS NOT NULL
+                         And pet.element_type_id = prr.element_type_id
+                         And pettl.element_type_id = pet.element_type_id
+                         And pettl.language =  'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                         And pettl.element_name = xdvt.element_name
+                         And pivtl.input_value_id(+) = piv.input_value_id
+                         And pivtl.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                         And pec.classification_id = pet.classification_id
+                         And UPPER(TRIM(pivtl.name)) IN (
+                            'EMPLOYEE SOCIAL SECURITY QUOTA',
+                            'PAY VALUE',
+                            'NET PAY',
+                            'ISR WITHHELD',
+                            'ISR SUBSIDY FOR EMPLOYMENT PAID', 
+                            'EARNINGS CALCULATED', 
+                            'VALOR PAGO'
+                            ) 
+                        --+
+                        AND ppa.effective_date <= (
+                            select max(ptp2.end_date) 
+                              from pay_time_periods ptp2
+                             where ptp2.period_name = :p_periodo
+                        )
+                        AND ppa.effective_date BETWEEN ptp.start_date AND ptp.end_date
+                        AND ppa.effective_date BETWEEN prg.start_date AND prg.end_date
+                        AND ppa.effective_date BETWEEN piv.effective_start_date
+                                                   AND piv.effective_end_date
+                        AND ppa.effective_date BETWEEN pet.effective_start_date
+                                                   AND pet.effective_end_date
+                        AND ppa.effective_date BETWEEN pay.effective_start_date
+                                                   AND pay.effective_end_date
+                    ), 0)
+                end     abono,
+                --+
+                case when flvl2.lookup_code is not null then 
+                COALESCE( (
+                  select to_number( sum( prrv2.result_value ) )
+                  from 
+                      pay_run_results                prr2,
+                      pay_run_result_values          prrv2,
+                      pay_element_types_f            pet2,
+                      pay_element_types_tl           pettl2,
+                      pay_input_values_f             piv2,
+                      pay_input_values_tl            pivtl2
+                  WHERE 1 = 1
+                    And prr2.payroll_rel_action_id = xdvt.payroll_rel_action_id
+                    And prr2.status IN ('P', 'PA')
+                    And prr2.SOURCE_ID = xdvt.SOURCE_ID
+                    And prrv2.run_result_id = prr2.run_result_id
+                    And piv2.input_value_id = prrv2.input_value_id
+                    And prrv2.result_value IS NOT NULL
+                    And pet2.element_type_id = prr2.element_type_id
+                    And pettl2.element_type_id = pet2.element_type_id
+                    And pettl2.language =  'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                    AND pettl2.element_name = flvl2.meaning
+                    And pivtl2.input_value_id = piv2.input_value_id
+                    And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                    And pivtl2.name in ( 'Futuro1' )
+                ), 0)   
+                end     adeudo_ebs,
+                --+
+                case when flvl2.lookup_code is not null then 
+                COALESCE( (
+                  select to_number( sum( prrv2.result_value ) )
+                  from 
+                      pay_run_results                prr2,
+                      pay_run_result_values          prrv2,
+                      pay_element_types_f            pet2,
+                      pay_element_types_tl           pettl2,
+                      pay_input_values_f             piv2,
+                      pay_input_values_tl            pivtl2
+                  WHERE 1 = 1
+                    And prr2.payroll_rel_action_id = xdvt.payroll_rel_action_id
+                    And prr2.status IN ('P', 'PA')
+                    And prrv2.run_result_id = prr2.run_result_id
+                    And piv2.input_value_id = prrv2.input_value_id
+                    And prrv2.result_value IS NOT NULL
+                    And pet2.element_type_id = prr2.element_type_id
+                    And pettl2.element_type_id = pet2.element_type_id
+                    And pettl2.language =  'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                    AND pettl2.element_name = flvl2.meaning
+                    And pivtl2.input_value_id = piv2.input_value_id
+                    And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                    And pivtl2.name in ( 'Futuro5' )
+                ), 0)   
+                end     saldo_ebs,
+                --+
+                cs_cantidad_ded as cs_monto,
+                --+
+                REPLACE( clave, 'ND', '2' ) clave_orden,
+                tipo_orden
+            From xxtoks_deducciones_vt xdvt
+            Left Outer Join fnd_lookup_values_vl flvl2
+                 ON  flvl2.lookup_code  = xdvt.element_name
+                 AND flvl2.lookup_type = 'XXGRG_PRESTAMOS_REC_NOM_LAS' 
+                 AND flvl2.enabled_flag = 'Y'
+            Union All
+            Select assigment,
+                clave,     
+                elemento,
+                elemento_r,
+                trim(to_char( importe, '9,999,990.00'))   result_value, --check
+                trim(to_char( importe, '9,999,990.00'))   impor, --check
+                clasificacion,
+                nomina,
+                nomina_id,  
+                input_name,
+                consolidation,
+                no_emp,
+                action_id,
+                adeudo, 
+                abono,
+                adeudo_ebs,
+                abono_ebs,
+                cs_monto,
+                clave_orden, 
+                tipo_orden 
+            From (
+                Select assigment,
+                    clave,     
+                    elemento,
+                    elemento_r,
+                    clasificacion,
+                    nomina,
+                    nomina_id,  
+                    'Pay Value' input_name,
+                    consolidation,
+                    no_emp,
+                    action_id,
+                    total_owed as adeudo, --check
+                    --+
+                    ( select to_number( sum( prrv2.result_value ) )
+                      from 
+                          pay_run_results                prr2,
+                          pay_run_result_values          prrv2,
+                          pay_element_types_f            pet2,
+                          pay_element_types_tl           pettl2,
+                          pay_input_values_f             piv2,
+                          pay_input_values_tl            pivtl2,
+                          fnd_lookup_values_vl           flvl2
+                      WHERE 1 = 1
+                        And flvl2.meaning = xcfv.element_name
+                        And flvl2.lookup_type = 'XXGRG_PRESTAMOS_REC_NOM_LAS' 
+                        And flvl2.enabled_flag = 'Y'
+                        And prr2.payroll_rel_action_id = xcfv.payroll_rel_action_id
+                        And prr2.status IN ('P', 'PA')
+                        And prrv2.run_result_id = prr2.run_result_id
+                        And piv2.input_value_id = prrv2.input_value_id
+                        And piv2.uom = 'M' 
+                        And prrv2.result_value IS NOT NULL
+                        And pet2.element_type_id = prr2.element_type_id
+                        And pettl2.element_type_id = pet2.element_type_id
+                        And pettl2.language =  'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                        AND pettl2.element_name = flvl2.lookup_code
+                        And pivtl2.input_value_id = piv2.input_value_id
+                        And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                        And UPPER( pivtl2.name ) IN (
+                            'PAY VALUE',
+                            'VALOR PAGO'
+                            ) 
+                        And prr2.SOURCE_ID = xcfv.SOURCE_ID
+                    )   importe,
+                    --+
+                    COALESCE(( 
+                        SELECT sum( abs( prrv.result_value ) ) 
+                        FROM --+
+                             pay_rel_groups_dn               prg,
+                             pay_payroll_rel_actions         ppra,
+                             pay_payroll_actions             ppa,
+                             pay_consolidation_sets          pcs,
+                             pay_time_periods                ptp,
+                             --+
+                             pay_run_results                 prr,
+                             pay_run_result_values           prrv,
+                             pay_element_types_f             pet,
+                             pay_element_types_tl            pettl,
+                             pay_input_values_f              piv,
+                             pay_input_values_tl             pivtl,
+                             fnd_lookup_values_vl            flvl2
+                       WHERE 1 = 1
+                         And flvl2.meaning = xcfv.element_name
+                         And flvl2.lookup_type = 'XXGRG_PRESTAMOS_REC_NOM_LAS' 
+                         And flvl2.enabled_flag = 'Y'
+                         And prg.assignment_id = xcfv.assigment --> Hereda del query de empleados
+                         And prg.group_type = 'A'
+                         And ppra.payroll_relationship_id = prg.payroll_relationship_id
+                         And ppra.chunk_number is not null
+                         And ppra.action_status = 'C'
+                         And ppra.retro_component_id is null
+                         --+
+                         And ppa.payroll_action_id = ppra.payroll_action_id
+                         And ppa.action_type IN ('R', 'B', 'Q')
+                         And pcs.consolidation_set_id = ppa.consolidation_set_id
+                         And ptp.time_period_id = ppa.earn_time_period_id
+                         And ptp.payroll_id = ppa.payroll_id 
+                         --+
+                         And prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+                         And prr.status IN ('P', 'PA')
+                         And prrv.run_result_id = prr.run_result_id
+                         And piv.input_value_id = prrv.input_value_id
+                         And prrv.result_value IS NOT NULL
+                         And pet.element_type_id = prr.element_type_id
+                         And pettl.element_type_id = pet.element_type_id
+                         And pettl.language =  'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                         AND pettl.element_name = flvl2.lookup_code
+                         And pivtl.input_value_id(+) = piv.input_value_id
+                         And pivtl.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                         And UPPER(TRIM(pivtl.name)) IN (
+                             'PAY VALUE',
+                             'VALOR PAGO'
+                             ) 
+                         --+
+                         And not exists(
+                             Select 1
+                             From pay_object_groups  pog
+                                 ,pay_object_group_types pogt
+                             Where 1 = 1
+                                 And pog.BASE_OBJECT_GROUP_NAME = 'NOMINA ALTAS'
+                                 And pogt.object_group_type_id = pog.object_group_type_id
+                                 And name_code = 'ELEGRP'
+                                 And pog.object_group_id = ppa.element_set_id
+                         ) 
+                         --+
+                         AND ppa.effective_date <= (
+                             select max(ptp2.end_date) 
+                               from pay_time_periods ptp2
+                              where ptp2.period_name = :p_periodo
+                         )
+                         AND ppa.effective_date BETWEEN ptp.start_date AND ptp.end_date
+                         AND ppa.effective_date BETWEEN prg.start_date AND prg.end_date
+                         AND ppa.effective_date BETWEEN piv.effective_start_date
+                                                    AND piv.effective_end_date
+                         AND ppa.effective_date BETWEEN pet.effective_start_date
+                                                    AND pet.effective_end_date
+                         And prr.SOURCE_ID = xcfv.SOURCE_ID
+                    ), 0)    abono,
+                    --+
+                    COALESCE( adeudo_ebs, 0 ) adeudo_ebs,
+                    COALESCE( abono_ebs, 0 ) abono_ebs,
+                    amount as cs_monto,
+                    REPLACE( clave, 'ND', '2' ) || xcfv.SOURCE_ID as clave_orden,
+                    tipo_orden 
+                From xxtoks_cred_fonacot_vt xcfv
+            )
+			where importe > 0
+        )
+    )
+   , xxtoks_balance_horas_labor as(
+        Select 
+            prb.balance_value valor,
+            paf.assignment_id           assigment,
+            ppa.payroll_id               nomina_id,  
+            ppa.payroll_action_id        action_id,
+            ppf.person_number
+        From pay_balance_types        pbt
+            ,pay_balance_types_tl     pbttl
+            ,pay_defined_balances     pdb
+            ,pay_balance_dimensions   pbd
+            ,pay_run_balances         prb
+            --+
+            ,pay_payroll_rel_actions     ppra
+            ,pay_payroll_actions         ppa
+            ,pay_rel_groups_dn           prg
+            ,Per_All_People_F            ppf
+            --*,per_person_secured_list_v      ppf
+            ,Per_All_Assignments_m       paf
+            --*,per_assignment_secured_list_v  paf
+            ,pay_time_periods            ptp
+        Where 1 = 1
+        And pbt.balance_type_id = pbttl.balance_type_id
+        And pbttl.language = 'E' --sys_context('USERENV','LANG')
+        And pdb.balance_type_id = pbttl.balance_type_id
+        And pbd.balance_dimension_id = pdb.balance_dimension_id
+        And pbd.base_db_item_suffix = '_CORE_ASG_RUN'
+        And pbt.base_balance_name = 'FESTIVOS LABORADOS TOTALES'
+        And prb.defined_balance_id = pdb.defined_balance_id
+        And prb.payroll_relationship_id = prg.payroll_relationship_id
+        And prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+        --+
+        And paf.person_id = ppf.person_id
+        And paf.primary_flag = 'Y'
+        And paf.assignment_type = 'E'
+        And paf.assignment_status_type = 'ACTIVE'
+        AND ppf.person_number = COALESCE(:p_estafeta, ppf.person_number)
+         And ptp.period_name = COALESCE(:p_periodo ,ptp.period_name)
+		--+
+        And ppa.payroll_action_id = ppra.payroll_action_id
+        And ppa.action_type IN ('R', 'B', 'Q')
+        AND ppra.payroll_relationship_id = prg.payroll_relationship_id
+        And ppra.action_status = 'C'
+        And ppra.chunk_number is not null
+        And ppra.retro_component_id is null
+        And ppra.run_type_id is not null
+        AND prg.assignment_id = paf.assignment_id
+        AND prg.group_type = 'A'
+        AND ppra.payroll_relationship_id = prg.payroll_relationship_id
+        And ptp.time_period_id = ppa.earn_time_period_id
+        And ptp.payroll_id = ppa.payroll_id 
+        --+
+        And not exists(
+            Select 1
+            From pay_object_groups  pog
+                ,pay_object_group_types pogt
+            Where 1 = 1
+                And pog.BASE_OBJECT_GROUP_NAME = 'NOMINA ALTAS'
+                And pogt.object_group_type_id = pog.object_group_type_id
+                And name_code = 'ELEGRP'
+                And pog.object_group_id = ppa.element_set_id
+        )
+        --+
+        AND ppa.effective_date BETWEEN ppf.effective_start_date AND ppf.effective_end_date
+        AND ppa.effective_date BETWEEN paf.effective_start_date AND paf.effective_end_date
+        And ppa.effective_date Between ptp.start_date  And ptp.end_date
+    ) 
+SELECT /*+ FIRST_ROWS */
+    trunc( (row_num - 1) / 8 ) numero_recibo,
+    assigment,
+    clave,
+    case 
+    when clave = 'NP008' then
+        elemento || ' ' || (
+          select max(bhl.valor)
+          from   xxtoks_balance_horas_labor bhl
+          where  bhl.assigment = deb.assigment
+            and  bhl.nomina_id = deb.nomina_id
+            and  bhl.action_id = deb.action_id
+        ) || ' HRS'
+    else
+        elemento
+    end elemento,
+    elemento_r,
+    result_value,
+    impor,
+    clasificacion,
+    nomina,
+    nomina_id,  
+    input_name,
+    consolidation,
+    no_emp,
+    action_id,
+    adeudo,
+    abono,
+    saldo,
+    cs_monto,
+    tipo_orden,
+    clave_orden
+FROM per_dec_elements_body deb
+ORDER BY numero_recibo ASC ,tipo_orden ASC, clave_orden ASC --clave ASC
