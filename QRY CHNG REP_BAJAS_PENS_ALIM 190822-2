@@ -1,0 +1,29 @@
+--QRY CHNG REP_BAJAS_PENS_ALIM 190822
+SELECT   pap.person_number                      AS ESTAFETA
+        ,pap.person_id
+
+FROM     per_all_people_f           pap --per_person_secured_list_v pap
+        ,pay_element_entries_f      peef
+        ,pay_element_entry_values_f peev
+        ,pay_element_types_tl       pettl
+        ,pay_input_values_tl        pivtl
+        ,pay_input_values_f         pivf
+
+WHERE   1 = 1
+        --+ PENSION -> ELEMENT_ENTRY / INPUT
+        AND pap.person_id = peef.person_id
+        AND peef.element_type_id = pettl.element_type_id
+        AND pettl.element_name = 'ND516'
+        AND pettl.language = SYS_CONTEXT('USERENV', 'LANG')
+        AND peev.input_value_id = pivtl.input_value_id
+        AND pivtl.input_value_id = pivf.input_value_id
+        AND pivf.value_set_code = 'TOKS_PY_THIRD_PARTY_PAYMENT_NAME'
+        AND pivtl.name = 'Beneficiario'
+        AND pivtl.language = SYS_CONTEXT('USERENV', 'LANG')
+        --+ PENSION -> BENEFICIARIO
+        AND peef.element_entry_id = peev.element_entry_id
+        AND TRIM(peev.screen_entry_value) IS NOT NULL
+        AND TRIM(peev.screen_entry_value) = :PARTY_ID
+GROUP BY pap.person_number
+        ,pap.person_id
+ORDER BY pap.person_number ASC
