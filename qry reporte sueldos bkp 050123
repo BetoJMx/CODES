@@ -1,0 +1,228 @@
+--qry reporte sueldos bkp 050123
+with toks_salary_history_v as (
+select paaf.PERSON_ID
+      ,cs.salary_amount
+      ,min(cs.date_from) as date_from
+      ,max(cs.date_to) as date_to
+  from per_all_assignments_f               paaf,
+       cmp_salary                          cs
+ where 1=1
+   And paaf.ASSIGNMENT_STATUS_TYPE 	    = 'ACTIVE'
+   And paaf.PRIMARY_FLAG 				= 'Y'
+   And paaf.ASSIGNMENT_TYPE 			= 'E'
+   --+
+   And cs.assignment_id 				= paaf.assignment_id
+   And cs.salary_approved 			    = 'Y'
+group by 
+	   paaf.PERSON_ID
+      ,cs.salary_amount
+)
+-- REPORTE DE SUELDOS
+SELECT hoif.org_information1 as codigo_unidad
+    ,pldft.location_name as unidad
+    ,papf.person_id
+    ,REPLACE(UPPER ((ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)),'  ',' ') as nombre 
+    ,papf.person_number as no_empleado 
+    ,pni2.national_identifier_number as rfc
+    ,to_char(pps.date_of_birth, 'YYYY-MM-DD') as fecha_nacimiento
+    ,trunc(months_between(sysdate, pps.date_of_birth) / 12) as edad
+    ,paaf.assignment_name puesto, pg.name as categoria
+	/*,(Select TO_CHAR (min(date_start), 'YYYY-MM-DD')
+        From per_periods_of_service pps2
+        Where 1 = 1
+            And pps2.person_id = paaf.person_id
+            And pps2.period_type = 'E'
+    ) as fecha_ingreso */   
+   ,TO_CHAR(
+            NVL( 
+               (SELECT MIN(ppei.pei_information_date1) 
+                FROM   per_people_extra_info_f ppei 
+                WHERE  ppei.person_id = ppn.person_id
+                AND    ppei.information_type = 'Cambio de Empleador Legal'
+                AND    ppei.PEI_INFORMATION1 = 'Fecha de Inicio de Base Salarial'
+                AND    TRUNC(SYSDATE) BETWEEN ppei.effective_start_date AND ppei.effective_end_date
+               ),
+               psdf.seniority_date ), 'YYYY-MM-DD') as fecha_ingreso
+			   
+    ,imms.national_identifier_number as imss
+    ,(cs.salary_amount * 30 ) as salario_nuevo
+    ,to_char(cs.date_from, 'YYYY-MM-DD') fecha_aumento
+    ,(csh.salary_amount * 30) as salario_anterior
+    ,to_char(csh.date_from, 'YYYY-MM-DD') as fecha_salario_anterior
+    ,(salarios_t.minimo * 30) as minimo
+    ,(salarios_t.q1 * 30) as q1
+    ,(salarios_t.medio * 30) as medio
+    ,(salarios_t.q3 * 30) as q3
+    ,(salarios_t.maximo * 30) as maximo
+    ,decode(pplf.sex, 'M', 2, 'F', 1) as m_h
+    ,(case 
+        when (pplf.sex = 'M') then
+            '1'  
+        else
+            '0'
+        end
+    ) hombres
+    ,(case 
+        when (pplf.sex = 'F') then
+            '1'  
+        else
+            '0'
+    end) mujeres
+    ,(case 
+        when upper(hl.meaning) = 'SINDICALIZADO' then
+            1
+        else
+            0 
+    end) sindicalizado
+    ,(case 
+        when upper(hl.meaning) = 'EMPLEADO DE CONFIANZA' then
+            1
+        else
+            0 
+    end) confianza
+    ,(case 
+        when upper(hl.meaning) = 'EMPLEADO EJECUTIVO' then
+            1
+        else
+            0 
+    end) ejecutivo
+    ,decode(  upper(hl.meaning)
+        , 'SINDICALIZADO', 'S'
+        , 'EMPLEADO DE CONFIANZA', 'C'
+        , 'EMPLEADO EJECUTIVO','E'
+    ) as e_c_s
+    ,(case 
+        when (nvl(cs.salary_amount, 0) * 30) < (nvl(salarios_t.minimo,0) * 30) then
+             'DEBAJO DEL MINIMO'
+		 when ((nvl(cs.salary_amount, 0) * 30) >= (nvl(salarios_t.minimo,0) * 30)) and (nvl(cs.salary_amount, 0) * 30) < (nvl(salarios_t.q1,0) * 30) then
+             'MINIMO'
+		 when ((nvl(cs.salary_amount, 0) * 30) >= (nvl(salarios_t.q1,0) * 30)) and (nvl(cs.salary_amount, 0) * 30) <(nvl(salarios_t.medio,0) * 30) then
+             'CUARTIL 1' 
+	    when ((nvl(cs.salary_amount, 0) * 30) >= (nvl(salarios_t.medio,0) * 30)) and (nvl(cs.salary_amount, 0) * 30) <(nvl(salarios_t.q3,0) * 30) then
+             'MEDIO'
+		 when ((nvl(cs.salary_amount, 0) * 30) >=(nvl(salarios_t.q3,0) * 30)) and (nvl(cs.salary_amount, 0) * 30) < (nvl(salarios_t.maximo,0) * 30) then
+             'CUARTIL 3'
+        when (nvl(cs.salary_amount, 0) * 30) = (nvl(salarios_t.maximo,0) * 30) then
+            'MAXIMO'
+        when (nvl(cs.salary_amount, 0) * 30) > (nvl(salarios_t.maximo,0) * 30) then
+            'ARRIBA DEL MAXIMO'
+        end
+    ) as penetracion_al_tabulador,
+    dept.name as area,
+    to_char(psdf.seniority_date, 'YYYY-MM-DD') seniority_date,
+	(SELECT emp.NAME 
+	   FROM HR_ORGANIZATION_V emp
+      WHERE emp.CLASSIFICATION_CODE = 'HCM_LEMP' 
+	    AND emp.ORGANIZATION_ID = paaf.legal_entity_id
+        AND TRUNC(SYSDATE)  BETWEEN TRUNC(emp.EFFECTIVE_START_DATE) 
+		                        AND TRUNC(emp.EFFECTIVE_END_DATE)
+	) AS EMPRESA
+FROM per_person_secured_list_v          papf, 
+    per_person_names_f                  ppn,
+    per_national_identifiers            pni2, 
+    per_persons                         pps, 
+    per_people_legislative_f            pplf, 
+    per_grades                          pg,
+    per_all_assignments_f               paaf, 
+    hr_lookups                          hl,
+    hr_all_organization_units           haou, 
+    hr_organization_information_f       hoif,
+    per_location_details_f_tl           pldft, 
+    per_location_details_f              pldf,
+    per_location_secured_list_v         pl,--per_locations pl, 
+    toks_salary_history_v               cs, 
+    toks_salary_history_v               csh,
+    per_department_secured_list_v       pdslv,--Vista
+    per_departments                     dept,
+    --+
+    per_seniority_dates_f               psdf, -- Seniority Date
+    per_seniority_dates_setup           psds,
+    (SELECT person_id
+        ,national_identifier_number 
+    FROM per_national_identifiers
+    WHERE 1 = 1 
+        And national_identifier_type = 'IMSS'
+    ) imms,
+    (SELECT * FROM (
+        SELECT 
+            pg.grade_id,
+            pg.name as gradename,
+            PGSFT.NAME AS STEPNAME,
+            TO_CHAR(PRVF.VALUE, '999999D99') AS VALUE,
+            to_char (SYSDATE, 'DD-MM-YYYY HH24:MI:SS') FECHA
+        FROM per_grades PG
+            INNER JOIN PER_GRADE_STEPS_F PGSF ON PGSF.GRADE_ID = PG.GRADE_ID
+            INNER JOIN PER_GRADE_STEPS_F_TL PGSFT ON PGSF.GRADE_STEP_ID = PGSFT.GRADE_STEP_ID
+            INNER JOIN PER_RATE_VALUES_F PRVF ON PRVF.RATE_OBJECT_ID = PGSFT.GRADE_STEP_ID
+        WHERE 1=1
+            And trunc(sysdate) between PG.effective_start_date and PG.effective_end_date
+            And trunc(sysdate) between PGSF.effective_start_date and PGSF.effective_end_date
+            And trunc(sysdate) between PGSFT.effective_start_date and PGSFT.effective_end_date
+            And PGSFT.LANGUAGE = 'E'
+        Order by pg.name
+	) 
+		PIVOT (
+		max(VALUE)
+		FOR (STEPNAME) IN ('MINIMO' AS MINIMO,'Q1' AS Q1,'MEDIO' AS MEDIO, 'Q3' AS Q3,'MAXIMO' AS MAXIMO)
+		)
+		ORDER BY GRADENAME
+	) salarios_t
+	
+WHERE 1 = 1
+    --AND papf.PERSON_NUMBER = '87894'
+    And papf.PERSON_ID 					= ppn.PERSON_ID
+    And papf.PERSON_ID 					= pplf.PERSON_ID
+    And ppn.NAME_TYPE 					= 'MX'
+    And papf.PERSON_ID 					= pni2.PERSON_ID
+    And pni2.NATIONAL_IDENTIFIER_TYPE 	= 'RFC'
+    And papf.PERSON_ID 					= pps.PERSON_ID
+    And papf.PERSON_ID 					= paaf.PERSON_ID
+    And paaf.ASSIGNMENT_STATUS_TYPE 	= 'ACTIVE'
+    And paaf.PRIMARY_FLAG 				= 'Y'
+    And paaf.ASSIGNMENT_TYPE 			= 'E'
+    And hl.LOOKUP_CODE 					= paaf.EMPLOYEE_CATEGORY
+    And hl.LOOKUP_TYPE 					= 'EMPLOYEE_CATG'
+    And haou.ORGANIZATION_ID 			= paaf.ORGANIZATION_ID
+    And pdslv.organization_id 			= paaf.organization_id
+    And dept.organization_id 			= pdslv.organization_id
+    And dept.status 					= 'A'
+    And haou.ORGANIZATION_ID 			= hoif.ORGANIZATION_ID
+    And hoif.ORG_INFORMATION_CONTEXT(+) = 'PER_GL_COST_CENTER_INFO'
+    And pldft.location_details_id 		= pldf.location_details_id
+    And pldft.LANGUAGE 					= 'E'
+    And pldf.location_id 				= pl.location_id
+    And pl.location_id 					= haou.location_id
+    And (pl.location_id                  = :organizacion or :organizacion  is null)
+    And imms.PERSON_ID (+) 				= papf.PERSON_ID
+    And cs.PERSON_ID 				    = paaf.PERSON_ID
+    And csh.PERSON_ID(+)	 			= paaf.PERSON_ID
+    And csh.date_to(+)				    = cs.date_from - 1
+    And SALARIOS_T.GRADE_ID (+) 		= paaf.GRADE_ID
+    And pg.GRADE_ID (+) 				= paaf.GRADE_ID
+    --+
+    -- Seniority Date
+    And psdf.person_id                  = paaf.person_id
+    And psdf.seniority_field            = 'ORA_ENT'
+    And psds.seniority_date_code        = psdf.seniority_date_code
+    And psds.active_flag                 = 'Y'
+    --+ PARAMS
+    And (paaf.JOB_ID 					= :PUESTO or :PUESTO is null) 
+	--+
+    --And (paaf.legal_entity_id 			= :emp_legal or :emp_legal is null)
+	And paaf.legal_entity_id 			= NVL(:emp_legal, paaf.legal_entity_id)
+	--+
+    --And paaf.location_id			= NVL(:ORGANIZACION, paaf.ORGANIZATION_ID)
+    --And DEPT.NAME 						LIKE ('%'|| NVL(:AREA, DEPT.NAME) || '%')
+    And (dept.organization_id 			= :area or :area is null)
+    And TRUNC(SYSDATE) 					BETWEEN papf.EFFECTIVE_START_DATE 	AND papf.EFFECTIVE_END_DATE
+    And TRUNC(SYSDATE) 					BETWEEN ppn.EFFECTIVE_START_DATE 	AND ppn.EFFECTIVE_END_DATE
+    And TRUNC(SYSDATE) 					BETWEEN pplf.EFFECTIVE_START_DATE 	AND pplf.EFFECTIVE_END_DATE
+    And TRUNC(SYSDATE) 					BETWEEN dept.EFFECTIVE_START_DATE 	AND dept.EFFECTIVE_END_DATE
+    And TRUNC(SYSDATE) 					BETWEEN pdslv.EFFECTIVE_START_DATE 	AND pdslv.EFFECTIVE_END_DATE
+    And TRUNC(SYSDATE) 					BETWEEN paaf.EFFECTIVE_START_DATE 	AND paaf.EFFECTIVE_END_DATE
+    And TRUNC(SYSDATE) 					BETWEEN hoif.EFFECTIVE_START_DATE 	AND hoif.EFFECTIVE_END_DATE
+    And TRUNC(SYSDATE) 					BETWEEN pldf.EFFECTIVE_START_DATE 	AND pldf.EFFECTIVE_END_DATE
+    And TRUNC(SYSDATE)					BETWEEN cs.DATE_FROM 				AND cs.DATE_TO
+    And TRUNC(SYSDATE) 					BETWEEN pldft.EFFECTIVE_START_DATE 	AND pldft.EFFECTIVE_END_DATE
+    And TRUNC(SYSDATE) 					BETWEEN psdf.EFFECTIVE_START_DATE 	AND psdf.EFFECTIVE_END_DATE
+ORDER BY AREA
