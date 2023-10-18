@@ -1,0 +1,49 @@
+WITH PARENT_QUERY as (
+select main.*, rownum SEQUENCE_NBR from (
+select distinct papf.person_number,
+paam.assignment_number,
+to_char(paam.effective_start_date,'MM/DD/YYYY') effective_start_date,
+to_char(paam.last_update_date,'MM/DD/YYYY HH24:MI:SS') asg_last_update_date,
+paam.last_update_date paam_last_update_date,
+paam.last_updated_by asg_last_updated_by,
+cs.last_updated_by sal_last_updated_by,
+to_char(cs.last_update_date,'MM/DD/YYYY HH24:MI:SS') sal_last_update_date,
+cs.last_update_date cs_last_update_date,
+PJ.NAME JOB,
+PD.NAME Department,
+HLAF.LOCATION_NAME LOCATION,
+HAP.NAME POSITION,
+PLE.NAME Legal_Employer,
+paam.employment_category,
+paam.FULL_PART_TIME,
+paam.hourly_salaried_code,
+cs.SALARY_AMOUNT
+FROM per_all_assignments_m paam, per_all_people_f papf, cmp_salary cs, PER_LEGAL_EMPLOYERS PLE, HR_ALL_POSITIONS HAP, HR_LOCATIONS_ALL_VL HLAF, PER_JOBS PJ, PER_DEPARTMENTS PD
+WHERE 1 = 1
+AND PJ.JOB_ID(+) = PAAM.JOB_ID
+AND PAAM.ORGANIZATION_ID = PD.ORGANIZATION_ID(+)
+AND PAAM.LOCATION_ID = HLAF.LOCATION_ID(+)
+AND paam.assignment_type = 'E'
+AND paam.primary_flag = 'Y'
+AND papf.person_id = paam.person_id
+AND sysdate BETWEEN papf.effective_start_date AND papf.effective_end_date
+AND cs.assignment_id(+) = paam.assignment_id
+AND sysdate BETWEEN PLE.effective_start_date(+) AND PLE.effective_end_date(+)
+AND SYSDATE BETWEEN HAP.EFFECTIVE_START_DATE(+) AND HAP.EFFECTIVE_END_DATE(+)
+AND SYSDATE BETWEEN PJ.EFFECTIVE_START_DATE(+) AND PJ.EFFECTIVE_END_DATE(+)
+AND SYSDATE BETWEEN PD.EFFECTIVE_START_DATE(+) AND PD.EFFECTIVE_END_DATE(+)
+AND PLE.ORGANIZATION_ID(+) = PAAM.LEGAL_ENTITY_ID
+AND HAP.POSITION_ID(+) = PAAM.POSITION_ID
+AND sysdate BETWEEN paam.effective_start_date AND paam.effective_end_date
+AND sysdate BETWEEN cs.date_from(+) AND nvl(cs.date_to(+),sysdate)
+order by papf.person_number) main),
+GET_THREAD_COUNTS AS
+(SELECT ROWNUM Thread_Number,
+TOT_COUNT.SEQ,
+((ROWNUM - 1) *round(TOT_COUNT.SEQ/:Input_parallel_Threads) + 1) Start_Seq,
+(ROWNUM * round(TOT_COUNT.SEQ/:Input_parallel_Threads)) End_Seq
+FROM DUAL, (select max(SEQUENCE_NBR) SEQ from PARENT_QUERY) TOT_COUNT
+CONNECT BY LEVEL <= :Input_parallel_Threads)
+select PQ., GTC. from PARENT_QUERY PQ, GET_THREAD_COUNTS GTC
+where (:Input_parallel_Threads = :Input_Thread_Number and :Input_parallel_Threads = 1 and GTC.Thread_Number = 1)
+OR (:Input_Thread_Number = GTC.Thread_Number AND PQ.SEQUENCE_NBR between GTC.Start_Seq and GTC.End_Seq)
