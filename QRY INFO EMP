@@ -1,0 +1,19 @@
+--QRY INFO EMP
+SELECT  pap.person_number,
+        pap.person_id,
+        cs.salary_amount,
+        cs.date_from,
+        cs.date_to,
+        paa.assignment_id,
+        paa.assignment_number,
+        paa.effective_start_date,
+        paa.effective_end_date
+
+FROM    per_all_people_f pap,
+        per_all_assignment_f paa,
+        cmp_salary cs
+
+WHERE   pap.person_id = paa.person_id
+        AND paa.assignment_status_type = 'E'
+        AND paa.assignment_id = cs.assignment_id
+        AND pap.person_number = :ESTAFETA
