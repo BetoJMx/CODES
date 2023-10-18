@@ -1,0 +1,206 @@
+--QRY AUSENCIAS 
+with toks_base_empleado as (
+    SELECT  
+            UPPER ( ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names )
+                AS EE_Nombre,
+            pap.person_number 
+                AS EE_Estafeta,
+            greatest( ppos.date_start, to_date('01/01/'||:p_process_year,'dd/mm/yyyy') )
+                AS EE_START_DATE,
+            least( nvl(ppos.actual_termination_date,sysdate), to_date('31/12/'||:p_process_year,'dd/mm/yyyy') )
+                AS EE_END_DATE,
+            --+
+            (   SELECT  sum( case when aatvl.NAME like '%Hrs' 
+                                  then 1
+                                  when aatvl.NAME like '%HrsF' 
+                                  then 1
+                                  when apae.end_date > to_date('31/12/'||:p_process_year,'dd/mm/yyyy') 
+                                  then (to_date('31/12/'||:p_process_year,'dd/mm/yyyy') - apae.start_date) + 1
+                                  when apae.start_date < to_date('01/01/'||:p_process_year,'dd/mm/yyyy') 
+                                  then (apae.end_date - to_date('01/01/'||:p_process_year,'dd/mm/yyyy')) + 1
+                             else trunc( apae.duration ) end )
+                FROM    ANC_PER_ABS_ENTRIES          apae,
+                        ANC_ABSENCE_TYPES_VL         aatvl
+                WHERE   1 = 1
+                AND     apae.period_of_service_id    = ppos.period_of_service_id
+                AND     apae.ABSENCE_STATUS_CD       = 'SUBMITTED'
+                AND     aatvl.absence_type_id        = apae.absence_type_id
+                AND     UPPER(aatvl.NAME)            IN (
+                                                            'ACCIDENTETRABAJO',
+                                                            'ACCIDENTETRABAJOHRS',
+                                                            'ACCIDENTETRAYECTO',
+                                                            'ACCIDENTETRAYECTOHRS',
+                                                            'ENFERMEDADGENERAL',
+                                                            'ENFERMEDADGENERALHRS',
+                                                            'FALTA',
+                                                            'FALTAHRS',
+                                                            'MATERNIDAD',
+                                                            'MATERNIDADHRS',
+                                                            'PERMISOSINSUELDO',
+                                                            'PERMISOSINSUELDOHRS',
+                                                            'SUSPENCIÓN',
+                                                            'SUSPENCIÓNHRS'
+                                                        )
+                AND     sysdate between aatvl.effective_start_date 
+                                    and aatvl.effective_end_Date
+--                AND     to_char( apae.start_date, 'YYYY' ) = :p_process_year 
+                AND     to_char( apae.start_date, 'YYYY' ) <= :p_process_year 
+                AND     to_char( apae.end_date, 'YYYY' )   >= :p_process_year 
+            )   AS EE_DIAS_AUSENTISMO,
+            --+
+            ( SELECT sum(abs(prrv.result_value))
+                FROM pay_payroll_rel_actions         ppra,
+                    pay_payroll_actions             ppa,
+                    pay_consolidation_sets          pcs,
+                    pay_all_payrolls_f              pay,
+                    pay_time_periods                ptp,
+                    --+
+                    pay_run_results                 prr,
+                    pay_run_result_values           prrv,
+                    pay_element_types_f             pet,
+                    pay_element_types_tl            pettl,
+                    pay_input_values_f              piv,
+                    pay_input_values_tl             pivtl
+                WHERE 1 = 1
+                    And ppra.payroll_relationship_id = prg.payroll_relationship_id
+                    And ppra.chunk_number is not null
+                    And ppra.action_status = 'C'
+                    --+
+                    And ppa.payroll_action_id = ppra.payroll_action_id
+                    AND (   ppa.action_type = 'R'
+                        AND ppra.retro_component_id IS NULL
+                        AND ppra.run_type_id IS NOT NULL
+                        )
+                    And pcs.consolidation_set_id = ppa.consolidation_set_id
+                    And pay.payroll_id = ppa.payroll_id
+                    And ptp.time_period_id = ppa.earn_time_period_id
+                    And ptp.payroll_id = ppa.payroll_id 
+                    --+
+                    And prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+                    And prr.status IN ('P', 'PA')
+                    And prrv.run_result_id = prr.run_result_id
+                    And piv.input_value_id = prrv.input_value_id
+                    And prrv.result_value IS NOT NULL
+                    And pet.element_type_id = prr.element_type_id
+                    And pettl.element_type_id = pet.element_type_id
+                    And pettl.language =  'US'--SYS_CONTEXT ('USERENV', 'LANG')
+                    And pettl.element_name = 'NP033'
+                    And pivtl.input_value_id(+) = piv.input_value_id
+                    And pivtl.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                    And UPPER(TRIM(pivtl.name)) IN ('DIAS') 
+                    And EXTRACT (YEAR FROM ppa.effective_date) = :p_process_year
+                    And ppa.effective_date BETWEEN ptp.start_date And ptp.end_date
+                    And ppa.effective_date BETWEEN prg.start_date And prg.end_date
+                    And ppa.effective_date 
+                        BETWEEN piv.effective_start_date
+                            And    piv.effective_end_date
+                    And ppa.effective_date 
+                        BETWEEN pet.effective_start_date
+                            And pet.effective_end_date
+                    And ppa.effective_date 
+                        BETWEEN pay.effective_start_date
+                            And pay.effective_end_date
+                
+            )   AS EE_DIAS_NP033,
+            --+
+            ( SELECT sum(abs(prrv.result_value))
+                FROM pay_payroll_rel_actions         ppra,
+                     pay_payroll_actions             ppa,
+                     pay_consolidation_sets          pcs,
+                     pay_all_payrolls_f              pay,
+                     pay_time_periods                ptp,
+                     --+
+                     pay_run_results                 prr,
+                     pay_run_result_values           prrv,
+                     pay_element_types_f             pet,
+                     pay_element_types_tl            pettl,
+                     pay_input_values_f              piv,
+                     pay_input_values_tl             pivtl
+               WHERE 1 = 1
+                 And ppra.payroll_relationship_id = prg.payroll_relationship_id
+                 And ppra.chunk_number is not null
+                 And ppra.action_status = 'C'
+                 --+
+                 And ppa.payroll_action_id = ppra.payroll_action_id
+                 AND (   ppa.action_type = 'R'
+                     AND ppra.retro_component_id IS NULL
+                     AND ppra.run_type_id IS NOT NULL
+                     )
+                 And pcs.consolidation_set_id = ppa.consolidation_set_id
+                 And pay.payroll_id = ppa.payroll_id
+                 And ptp.time_period_id = ppa.earn_time_period_id
+                 And ptp.payroll_id = ppa.payroll_id 
+                 --+
+                 And prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+                 And prr.status IN ('P', 'PA')
+                 And prrv.run_result_id = prr.run_result_id
+                 And piv.input_value_id = prrv.input_value_id
+                 And prrv.result_value IS NOT NULL
+                 And pet.element_type_id = prr.element_type_id
+                 And pettl.element_type_id = pet.element_type_id
+                 And pettl.language =  'US'--SYS_CONTEXT ('USERENV', 'LANG')
+                 And pettl.element_name = 'NP033_H'
+                 And pivtl.input_value_id(+) = piv.input_value_id
+                 And pivtl.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+                 And UPPER(TRIM(pivtl.name)) IN ('DAYS') 
+                 AND EXTRACT (YEAR FROM ppa.effective_date) = :p_process_year
+                
+                 AND ppa.effective_date BETWEEN ptp.start_date AND ptp.end_date
+                 AND ppa.effective_date BETWEEN prg.start_date AND prg.end_date
+                 AND ppa.effective_date BETWEEN piv.effective_start_date
+                                           AND piv.effective_end_date
+                 AND ppa.effective_date BETWEEN pet.effective_start_date
+                                           AND pet.effective_end_date
+                 AND ppa.effective_date BETWEEN pay.effective_start_date
+                                           AND pay.effective_end_date
+        
+            ) EE_DAYS_NP033_H
+            --+
+       FROM per_all_people_f                pap,
+            per_person_names_f              ppn,
+            per_all_assignments_f           paa,
+            per_periods_of_service          ppos,
+            --+
+            pay_pay_relationships_dn        pprd, 
+            pay_rel_groups_dn               prg
+            --+
+      WHERE 1 = 1
+        AND pap.person_number = nvl( :p_person_number, pap.person_number ) 
+        AND pap.person_id = ppn.person_id
+        AND ppn.name_type = 'MX'
+        --+ASS
+        AND paa.person_id = pap.person_id
+        AND paa.assignment_type = 'E'
+        AND paa.effective_latest_change = 'Y'
+        AND paa.legal_entity_id = NVL (:p_legal_employeer_id, paa.legal_entity_id)
+        --+PERIOD_SERVICE
+        AND paa.period_of_service_id = ppos.period_of_service_id
+        AND paa.legal_entity_id = ppos.legal_entity_id
+        AND pap.person_id = ppos.person_id
+        AND to_char( ppos.date_start, 'YYYY' ) <= :p_process_year
+        AND nvl( to_char( ppos.actual_termination_date, 'YYYY' ), :p_process_year ) >= :p_process_year 
+        --+ PAYROLL
+        AND pprd.person_id = pap.person_id
+        AND prg.payroll_relationship_id = pprd.payroll_relationship_id 
+        AND prg.assignment_id = paa.assignment_id
+        AND prg.group_type = 'A'
+        --+ DATES
+        AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+            BETWEEN pap.effective_start_date
+                AND pap.effective_end_date
+        AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+            BETWEEN ppn.effective_start_date
+                AND ppn.effective_end_date
+        AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+            BETWEEN paa.effective_start_date
+                AND paa.effective_end_date
+        AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+            BETWEEN prg.start_date 
+                AND prg.end_date
+)
+SELECT
+        EE_Estafeta,
+        ( EE_END_DATE - EE_START_DATE ) + 1 as EE_DIAS_LABORADOS,
+        NVL( EE_DIAS_AUSENTISMO, 0 ) as EE_DIAS_AUSENTISMO,
+        NVL( EE_DIAS_NP033, 0 ) + nvl( EE_DAYS_NP033_H, 0 ) as EE_DIAS_EXTRA
+FROM    toks_base_empleado
