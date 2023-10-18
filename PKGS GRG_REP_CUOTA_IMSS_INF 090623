@@ -1,0 +1,50 @@
+--PKGS GRG_REP_CUOTA_IMSS_INF 090623
+create or replace PACKAGE GRG_REP_CUOTA_IMSS_INF AS 
+    v_process_id NUMBER; 
+    -- 
+    PROCEDURE limpiar   (
+                            p_process_id NUMBER
+                        ); 
+    -- 
+    PROCEDURE get_organizations (  
+                                    p_fechainicio         IN VARCHAR2,
+                                    p_fechafin            IN VARCHAR2,
+                                    p_juegoconsolidacion  IN VARCHAR2, 
+                                    p_nomina              IN VARCHAR2,
+                                    p_process_id          IN NUMBER,
+                                    p_emp_legal           IN VARCHAR2
+                               ); 
+    -- 
+    PROCEDURE get_result_values (  
+                                    p_start_id      NUMBER,
+                                    p_end_id        NUMBER 
+                                ); 
+    -- 
+    PROCEDURE generar_procesos_paralelo (  
+                                            p_process_id NUMBER
+                                        ); 
+    -- 
+    PROCEDURE ac_data   ( 
+                            contenido CLOB,
+                            p_process_id IN NUMBER
+                        ); 
+    -- 
+    PROCEDURE ac_clob   ( 
+                            p_process_id    IN NUMBER,
+                            p_fechainicio   IN VARCHAR2,
+                            p_fechafin      IN VARCHAR2
+                        ); 
+    -- 
+    PROCEDURE init_exe  (  
+                            p_fechainicio          IN VARCHAR2,
+                            p_fechafin             IN VARCHAR2,
+                            p_juegoconsolidacion   IN VARCHAR2,
+                            p_nomina               IN VARCHAR2,
+                            p_emp_legal            IN VARCHAR2,
+                            p_process_id           IN NUMBER,
+                            p_user_name            IN VARCHAR2,
+                            p_status               OUT NUMBER  
+                      ); 
+    -- 
+END GRG_REP_CUOTA_IMSS_INF;
+/
