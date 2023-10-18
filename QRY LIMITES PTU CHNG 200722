@@ -1,0 +1,90 @@
+-- QRY LIMITES PTU CHNG 200722
+Select /*+ materialize */ 
+ppsu.name            as legal_entity
+, ppsu.organization_id as legal_entity_id
+--, pcdtl.display_name   as calculation_card
+--, pccdtl.component_name
+--, pvdtl.name           as display_name
+--, prif.value1          as custom_value
+--, pvgtl.name           as calc_comp
+, max( decode( pvdtl.name, 'Highest Average Salary', 
+      to_number( prif.value1 ) * 1.2  ) )
+  as Max_Average_salary
+, max( decode( pvdtl.name, 'Permanent Employee Minimum Days Worked', 
+      to_number( prif.value1 ) ) )
+  as Min_Days_Worked
+, max( decode( pvdtl.name, 'Total Amount', 
+      to_number( prif.value1 ) ) )
+  as Total_Amount
+, max( decode( pvdtl.name, 'Number of employee salary days to cap payment', 
+      to_number( prif.value1 ) ) )
+  as Max_Days_Worked
+, (
+    SELECT  TO_NUMBER(description)
+    FROM    fnd_lookup_values
+    WHERE   1 = 1
+            AND TRIM(lookup_type) = 'GRG_PTU_DAYS'
+            AND language = SYS_CONTEXT('USERENV','LANG')
+            AND enabled_flag = 'Y'
+            AND UPPER(TRIM(ppsu.name)) = TRIM(MEANING)
+) as Days_Mult
+From   per_payroll_statutory_units        ppsu
+, pay_dir_cards_f                    pdcf
+--+
+, pay_dir_card_definitions           pcd
+, pay_dir_card_definitions_tl        pcdtl
+, pay_dir_card_comp_defs_f           pccdf
+, pay_dir_card_comp_defs_tl          pccdtl
+, pay_dir_card_components_f          pdcc
+--+
+, fusion.pay_value_definitions_f     pvdf
+, fusion.pay_value_definitions_tl    pvdtl
+, fusion.pay_range_items_f           prif
+, fusion.pay_value_groups_tl         pvgtl
+Where  1 = 1
+And pdcf.source_id = ppsu.organization_id
+--AND ppsu.organization_id = :p_legal_employeer_id
+And pdcf.source_type = 'PSU'
+And pcd.dir_card_definition_id = pdcf.dir_card_definition_id
+--+
+And pcdtl.dir_card_definition_id = pcd.dir_card_definition_id
+And pcdtl.display_name = 'Organization Card'
+And pccdf.dir_card_definition_id = pcdtl.dir_card_definition_id 
+And pccdtl.dir_card_comp_def_id = pccdf.dir_card_comp_def_id
+And pccdtl.component_name = 'PSU Profit Sharing'
+And pdcc.dir_card_comp_def_id = pccdtl.dir_card_comp_def_id
+And pdcc.dir_card_id = pdcf.dir_card_id
+--+
+And pvdf.source_id = pdcc.dir_card_comp_id
+And pvdtl.value_defn_id = pvdf.value_defn_id
+And pvdtl.name in( 
+'Highest Average Salary', 
+'Permanent Employee Minimum Days Worked', 
+'Total Amount' ,
+'Number of employee salary days to cap payment')
+--           'Calculation Method', 
+--           'Include Temporary Employees', 
+--           'Temporary Employee Minimum Days Worked', 
+And pvdtl.language = 'US'
+And prif.value_defn_id = pvdf.value_defn_id
+--And prif.source_type = 'PDCC'
+And pvgtl.value_group_id = pvdf.value_group_id
+And pvgtl.language = 'US'
+And trunc(sysdate)
+Between pccdf.effective_start_date
+    And pccdf.effective_end_date
+And trunc(sysdate)
+Between pdcc.effective_start_date
+    And pdcc.effective_end_date
+And trunc(sysdate)
+Between pvdf.effective_start_date
+    And pvdf.effective_end_date
+And trunc(sysdate)
+Between prif.effective_start_date
+    And prif.effective_end_date
+And trunc(sysdate)
+Between pdcf.effective_start_date
+    And pdcf.effective_end_date
+Group by
+ppsu.name
+, ppsu.organization_id
