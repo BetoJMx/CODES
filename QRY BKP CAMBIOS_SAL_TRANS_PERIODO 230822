@@ -1,0 +1,193 @@
+--QRY BKP CAMBIOS_SAL_TRANS_PERIODO 230822
+--QRY2 REP MOVXPER SALARY CHNG 1105
+WITH GENERAL AS (
+    SELECT  pap.person_number AS ESTAFETA
+            ,CONVERT(ppn.list_name,'UTF8') AS NOMBRE
+            ,NVL(
+                (SELECT UPPER(flv.description)
+                    FROM fnd_lookup_values flv
+                    WHERE 1 = 1
+                        AND flv.lookup_code = CAST(pap.person_number AS VARCHAR2(30))
+                        AND flv.lookup_type = 'GRG_EMP_INGRESO'
+                        AND flv.LANGUAGE = USERENV('LANG')
+                )
+                ,(SELECT TO_CHAR(MIN(ppos.date_start),'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=SPANISH')
+                    FROM per_periods_of_service ppos
+                    WHERE 1=1
+                        AND ppos.person_id = pap.person_id
+                        AND ppos.period_type = 'E'
+                )
+            ) AS FECHA_INGRESO 
+            --,pay.payroll_name AS NOMINA
+            ,(
+                SELECT  nomina
+                FROM    (
+                            SELECT
+                                    PAPF.PAYROLL_NAME AS NOMINA
+                            FROM
+                                    PER_ALL_ASSIGNMENTS_F    PAA
+                                    , PAY_ALL_PAYROLLS_F       PAPF
+                                    , PAY_ASSIGNED_PAYROLLS_DN PAPD
+                                    , PAY_PAYROLL_TERMS        PPT
+                                    , PAY_REL_GROUPS_DN        PRGD
+                                    --, PER_PERIODS_OF_SERVICE   PPOS
+                                    , PAY_DIR_CARDS_F          PDCF
+                                    , PAY_DIR_REP_CARDS_F      PDRC
+                                    , PER_TAX_REPORTING_UNITS  PTRU
+                                    --, PER_ALL_PEOPLE_F         PAPFP
+                            WHERE
+                                    1                                  = 1
+                                    AND PPT.PAYROLL_TERM_ID            = PAPD.PAYROLL_TERM_ID
+                                    AND PAPF.PAYROLL_ID                = PAPD.PAYROLL_ID
+                                    --AND PPOS.PERIOD_OF_SERVICE_ID      = PAAM.PERIOD_OF_SERVICE_ID
+                                    --AND PPOS.PERIOD_TYPE               = 'E'
+                                    AND PAA.ASSIGNMENT_ID             = PRGD.ASSIGNMENT_ID
+                                    AND PPT.HR_TERM_ID                 = PRGD.TERM_ID
+                                    AND PAA.PRIMARY_FLAG              = 'Y'
+                                    AND PAA.ASSIGNMENT_STATUS_TYPE_ID = 1
+                                    AND PAA.ASSIGNMENT_TYPE           = 'E'
+                                    AND PRGD.GROUP_TYPE                = 'A'
+                                    AND PAP.PERSON_ID                  = PAA.PERSON_ID
+                                    AND PRGD.PAYROLL_RELATIONSHIP_ID   = PDCF.PAYROLL_RELATIONSHIP_ID
+                                    AND PDCF.DIR_CARD_ID               = PDRC.DIR_CARD_ID
+                                    AND PTRU.ORGANIZATION_ID           = PDRC.TAX_UNIT_ID
+                                    --AND PAPFP.PERSON_NUMBER = :ESTAFETA
+                                    --AND PAPD.LSED                IS NULL
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PDRC.EFFECTIVE_START_DATE AND PDRC.EFFECTIVE_END_DATE
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PDCF.EFFECTIVE_START_DATE AND PDCF.EFFECTIVE_END_DATE
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PAPD.FSED AND NVL(PAPD.LSED,SYSDATE)
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PAPF.EFFECTIVE_START_DATE AND PAPF.EFFECTIVE_END_DATe
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PAA.EFFECTIVE_START_DATE AND PAA.EFFECTIVE_END_DATE
+                        )
+                WHERE   rownum = 1
+            ) AS nomina
+            ,(  SELECT  s.org_information1 
+                FROM    hr_organization_information_f  s
+                WHERE   1=1 
+                        AND paam.organization_id = s.organization_id
+                        AND s.org_information_context = 'PER_GL_COST_CENTER_INFO'
+                        AND cs.date_from BETWEEN s.effective_start_date AND s.effective_end_date
+            ) AS COD_UNIDAD
+            ,hou.name AS UNIDAD
+            ,CONVERT(hle.name,'UTF8') AS LEMP
+            ,CONVERT(pjft.name, 'UTF8') AS PUESTO
+            ,HR_GENERAL.DECODE_LOOKUP ('EMPLOYEE_CATG', paam.employee_category) AS CAT_EMP
+            ,TO_CHAR(cs.date_from, 'DD-MM-YYYY') AS FECHA_MOVIMIENTO
+            ,cs.date_from AS FECHA_MOVIMIENTO_OR
+			,(TRIM (TO_CHAR (cs.salary_amount, '999,999,999,999.99'))) AS SALARIO_ACTUAL
+            ,(TRIM (TO_CHAR (csh.salary_amount, '999,999,999,999.99'))) AS SALARIO_ANTERIOR
+
+    FROM    per_person_secured_list_v       pap
+            ,per_assignment_secured_list_v  paam
+            --,per_assignment_secured_list_v  paam_ant
+            ,per_person_names_f         	ppn
+            ,per_periods_of_service     	pps
+            ,hr_organization_units         	hou
+            ,per_jobs_f_tl                	pjft
+            ,cmp_salary 			        cs
+            ,cmp_salary                     csh
+            ,hr_legal_entities              hle
+            ,per_action_occurrences         pao
+            ,per_actions_vl                 pav
+            --+
+            ,pay_assigned_payrolls_dn       papd
+            ,pay_payroll_assignments        ppa
+            ,pay_payroll_secured_list_v     pay
+
+    WHERE   1= 1
+            AND pap.person_number               = NVL(:estafeta, pap.person_number)
+            --AND pap.person_number               IN ('163104','164142','164706')
+            AND pjft.job_id                     = paam.job_id
+            AND paam.person_id                  = pps.person_id   
+            AND pap.person_id                   = paam.person_id
+            AND pap.person_id                   = ppn.person_id
+            AND paam.organization_id 	        = hou.organization_id
+            AND pps.period_of_service_id        = paam.period_of_service_id
+            AND cs.assignment_id                = paam.assignment_id
+            AND paam.person_id                  = cs.person_id
+            AND cs.salary_approved              = 'Y'
+            AND paam.assignment_status_type_id  = 1
+            AND ppn.name_type 		            = 'GLOBAL'
+            AND paam.assignment_type 	        = 'E'
+            AND paam.assignment_status_type     = 'ACTIVE'
+            AND paam.primary_assignment_flag 	= 'Y'
+            AND paam.effective_latest_change 	= 'Y'
+            AND pps.primary_flag 				= 'Y'
+            AND pjft.LANGUAGE 					= USERENV('LANG') 
+            AND paam.legal_entity_id            = hle.organization_id
+            AND hle.classification_code         = 'HCM_LEMP'
+            --+
+            -- AND paam_ant.person_id 			        = paam.person_id
+            -- AND paam_ant.assignment_type    	    = 'E'
+            -- AND paam_ant.primary_flag    		    = 'Y'
+            -- AND paam_ant.assignment_status_type     = 'ACTIVE'
+            -- AND trunc(paam.effective_start_date) -1 BETWEEN paam_ant.effective_start_date(+) 
+            --                                         AND paam_ant.effective_end_date(+)
+            -- AND csh.assignment_id                   = paam_ant.assignment_id
+            AND csh.date_to                         = cs.date_from - 1
+            AND csh.salary_amount                   < cs.salary_amount
+            AND csh.person_id                       = pap.person_id
+            --+
+            AND cs.action_occurrence_id             = pao.action_occurrence_id
+            AND pao.action_id                       = pav.action_id
+            AND pav.action_code                     IN ('CHANGE_SALARY','PROMOTION','GLB_TRANSFER','TRANSFER','ALLOCATE_GRP_CMP','HIRE')
+            --+
+            AND (
+                    (
+                        :fecha_cambio IS NOT NULL 
+                        AND cs.date_from = :fecha_cambio
+                    )
+                    OR
+                    (
+                        :fecha_inicio IS NOT NULL
+                        AND :fecha_fin IS NOT NULL
+                        AND cs.date_from BETWEEN :fecha_inicio AND :fecha_fin
+                    )
+                )
+            --+
+            AND pap.person_id           = ppa.person_id
+            AND ppa.payroll_term_id     = papd.payroll_term_id
+            AND ppa.legal_employer_id   = paam.legal_entity_id
+            AND papd.payroll_id         = pay.payroll_id
+            --+
+            AND cs.date_from BETWEEN paam.effective_start_date AND paam.effective_end_date
+            AND cs.date_from BETWEEN pap.effective_start_date  AND pap.effective_end_date
+            AND cs.date_from BETWEEN ppn.effective_start_date  AND ppn.effective_end_date
+            --AND cs.date_from BETWEEN pd.effective_start_date   AND pd.effective_end_date
+            AND cs.date_from BETWEEN pjft.effective_start_date AND pjft.effective_end_date
+            AND cs.date_from BETWEEN cs.date_from              AND cs.date_to
+            AND cs.date_from BETWEEN hle.effective_start_date  AND hle.effective_end_date
+            AND cs.date_from BETWEEN papd.start_date           AND papd.end_date
+            AND cs.date_from BETWEEN ppa.start_date            AND ppa.end_date
+)
+
+SELECT  ESTAFETA, 
+        NOMBRE,
+        FECHA_INGRESO,
+        FECHA_MOVIMIENTO,
+        NOMINA,
+        COD_UNIDAD,
+        UNIDAD,
+        LEMP,
+        PUESTO,
+        CAT_EMP,
+        SALARIO_ACTUAL,
+        SALARIO_ANTERIOR,
+        FECHA_MOVIMIENTO_OR
+FROM    GENERAL
+WHERE   1 = 1
+GROUP BY    ESTAFETA, 
+            NOMBRE,
+            FECHA_INGRESO,
+            FECHA_MOVIMIENTO,
+            NOMINA,
+            COD_UNIDAD,
+            UNIDAD,
+            LEMP,
+            PUESTO,
+            CAT_EMP,
+            SALARIO_ACTUAL,
+            SALARIO_ANTERIOR,
+            FECHA_MOVIMIENTO_OR
+
+ORDER BY FECHA_MOVIMIENTO_OR, NOMBRE
