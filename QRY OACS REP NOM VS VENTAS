@@ -1,0 +1,127 @@
+--QRY OACS REP NOM VS VENTAS 
+SELECT    plantilla.unidad
+        , plantilla.descripcion nombre_unidad
+        , plantilla.plantilla_anterior
+        , nomina_venta.nomina_anterior
+        , nomina_venta.venta_anterior
+        , plantilla.plantilla_actual
+        , nomina_venta.nomina_actual
+        , nomina_venta.venta_actual
+        , nomina_venta.nomina_presupuesto
+        , nomina_venta.venta_presupuesto
+FROM     
+        (
+            SELECT    unidad
+                    , descripcion
+                    , SUM(plantilla_actual) plantilla_actual
+                    , SUM(plantilla_anterior) plantilla_anterior
+            FROM      TABLE(pay.xxgrg_pay_nomina_vs_ventas.get_plantillas_ant_act(  p_organization_id => :p_organization_id
+                                                                                  , p_id_departamento => :p_id_departamento
+                                                                                  , p_id_distrito     => :p_id_distrito
+                                                                                  , p_unidad          => :p_unidad
+                                                                                  , p_anio_actual     => :p_anio_actual
+                                                                                  , p_anio_anterior   => :p_anio_anterior
+                                                                                  , p_period_num      => :p_period_num
+                                                                                 ))
+            GROUP BY  unidad
+                    , descripcion
+          ) plantilla,
+         (
+            SELECT    segment3
+                    , SUM(venta_anterior) venta_anterior
+                    , SUM(venta_actual) venta_actual
+                    , SUM(venta_presupuesto) venta_presupuesto
+                    , SUM(nomina_anterior) nomina_anterior
+                    , nomina_actual nomina_actual
+                    , SUM(nomina_presupuesto) nomina_presupuesto
+            FROM      (
+                        SELECT    
+                                  NVL(nomina.period_num, ventas.period_num) period_num
+                                , NVL(nomina.segment3, ventas.segment3) segment3
+                                ,NVL(ventas.monto_anterior, 0) venta_anterior
+                                , NVL(ventas.monto_actual, 0) venta_actual
+                                , NVL(ventas.monto_presupuesto, 0) venta_presupuesto
+                                , NVL(nomina.monto_anterior, 0) nomina_anterior
+                                , NVL(nomina.monto_actual, 0) nomina_actual
+                                , NVL(nomina.monto_presupuesto, 0) nomina_presupuesto
+                        FROM      TABLE(pay.xxgrg_pay_nomina_vs_ventas.get_balances(  p_organization_id => :p_organization_id
+                                                                                    , p_id_departamento => :p_id_departamento
+                                                                                    , p_id_distrito     => :p_id_distrito
+                                                                                    , p_unidad          => :p_unidad
+                                                                                    , p_anio_actual     => :p_anio_actual
+                                                                                    , p_anio_anterior   => :p_anio_anterior
+                                                                                    , p_period_num      => :p_period_num
+                                                                                    , p_acumulado       => :p_acumulado
+                                                                                    , p_tipo_balance    => 'VENTAS'
+                                                                                   )) ventas
+                                                                                   
+                                    FULL OUTER JOIN(SELECT balances.period_num,
+                                                           balances.segment3,
+                                                           NVL (balances.monto_anterior, 0)                 monto_anterior,
+                                                           NVL (balances.monto_actual, 0)                   monto_actual,
+                                                           NVL (balances.monto_presupuesto, 0)              monto_presupuesto
+                                                      FROM 
+                                                           TABLE (pay.xxgrg_pay_nomina_vs_ventas.get_balances (
+                                                                      p_organization_id   => :p_organization_id,
+                                                                      p_id_departamento   => :p_id_departamento,
+                                                                      p_id_distrito       => :p_id_distrito,
+                                                                      p_unidad            => :p_unidad,
+                                                                      p_anio_actual       => :p_anio_actual,
+                                                                      p_anio_anterior     => :p_anio_anterior,
+                                                                      p_period_num        => :p_period_num,
+                                                                      p_acumulado         => :p_acumulado,
+                                                                      p_tipo_balance      => 'STAFF DIRECTO')) balances
+                                                            WHERE 1=1
+                                                            AND :p_origen = 'N'
+                                                    UNION ALL
+                                                    SELECT asientos.period_num,
+                                                           asientos.segment3,
+                                                           NVL (balances.monto_anterior, 0) monto_anterior,
+                                                           asientos.saldo monto_actual,
+                                                           NVL (balances.monto_presupuesto, 0) monto_presupuesto
+                                                      FROM TABLE (pay.xxgrg_pay_nomina_vs_ventas.get_asientos_contables (
+                                                                      p_organization_id   => :p_organization_id,
+                                                                      p_id_departamento   => :p_id_departamento,
+                                                                      p_id_distrito       => :p_id_distrito,
+                                                                      p_unidad            => :p_unidad,
+                                                                      p_anio_actual       => :p_anio_actual)) asientos,
+                                                           fin.toks_er_rangos_periodos  terp,
+                                                           TABLE (pay.xxgrg_pay_nomina_vs_ventas.get_balances (
+                                                                      p_organization_id   => :p_organization_id,
+                                                                      p_id_departamento   => :p_id_departamento,
+                                                                      p_id_distrito       => :p_id_distrito,
+                                                                      p_unidad            => :p_unidad,
+                                                                      p_anio_actual       => :p_anio_actual,
+                                                                      p_anio_anterior     => :p_anio_anterior,
+                                                                      p_period_num        => :p_period_num,
+                                                                      p_acumulado         => :p_acumulado,
+                                                                      p_tipo_balance      => 'STAFF DIRECTO')) balances
+                                                     WHERE     1 = 1
+                                                           AND :p_origen = 'Y'
+                                                           AND balances.segment3 = asientos.segment3 
+                                                           AND balances.period_num = asientos.period_num
+                                                           --+
+                                                           AND asientos.period_num BETWEEN terp.mes_inicio AND terp.mes_fin
+                                                           AND terp.numero_periodo = :p_period_num
+                                                           AND terp.tipo_periodo = 6 
+                                                           AND DECODE (asientos.je_category_key,
+                                                                       'Payroll', 'Payroll',
+                                                                       'Contabilidad') =
+                                                               NVL (
+                                                                   NULL 
+                                                                       ,
+                                                                   DECODE (asientos.je_category_key,
+                                                                           'Payroll', 'Payroll',
+                                                                           'Contabilidad'))
+                                                    )nomina					                                                                                  
+                                                    ON        ventas.segment3 = nomina.segment3 
+                                                    AND       ventas.period_num  = nomina.period_num
+                                                  
+                                        )
+                                        WHERE     1 = 1
+                                        GROUP BY  segment3,
+                                        nomina_actual
+                                      ) nomina_venta
+WHERE     1 = 1
+AND      TO_NUMBER(plantilla.unidad) = TO_NUMBER(nomina_venta.segment3)
+ORDER BY  unidad
