@@ -1,0 +1,56 @@
+--QRY ORG AC_DIA CHNG 061022 PERF
+SELECT    hoi_unidad.organization_id AS organization_id
+        , CONVERT (   REPLACE (  REPLACE (  TRIM (UPPER (haou_unidad.name))
+                                          , 'Ñ'
+                                          , 'N'
+                                         )
+                               , 'ñ'
+                               , 'n'
+                              )
+                    , 'us7ascii'
+                    , 'al32utf8'
+                  ) AS organization_name
+        , 0 numero_empleados
+        --, COUNT(DISTINCT pap.person_number) numero_empleados
+        , :fechainicio AS inicio
+        , :fechafin AS fin
+        , paa.legal_entity_id
+		
+FROM      pay_payroll_actions               ppa
+        , pay_payroll_rel_actions           ppra
+        , pay_rel_groups_dn                 prg
+        , PER_ASSIGNMENT_SECURED_LIST_V     paa
+	, PER_PERSON_SECURED_LIST_V         pap       
+        , hr_organization_information_f     hoi_unidad
+        , hr_all_organization_units         haou_unidad
+WHERE     1 = 1
+AND       ppa.payroll_action_id = ppra.payroll_action_id
+AND       ppa.action_type IN ('R', 'Q', 'B')
+AND       ppra.action_status = 'C'
+AND       ppa.payroll_id = COALESCE  ( TO_NUMBER(:nomina), ppa.payroll_id)
+AND       ppa.consolidation_set_id = COALESCE  ( TO_NUMBER(:juegoconsolidacion), ppa.consolidation_set_id)
+AND       ppra.payroll_relationship_id = prg.payroll_relationship_id
+AND       prg.assignment_id = paa.assignment_id
+AND       paa.legal_entity_id = COALESCE (TO_NUMBER(:empLegal), paa.legal_entity_id)
+AND       paa.assignment_type = 'E'
+AND       paa.effective_latest_change = 'Y'
+AND       paa.person_id = pap.person_id
+AND       paa.organization_id = hoi_unidad.organization_id(+)
+AND       hoi_unidad.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+AND       hoi_unidad.org_information7(+) = '1'
+AND       paa.organization_id = haou_unidad.organization_id
+--
+AND       ppa.date_earned BETWEEN TO_DATE ( :fechainicio, 'yyyy-mm-dd') AND TO_DATE ( :fechafin, 'yyyy-mm-dd')
+AND       ppa.effective_date BETWEEN prg.start_date AND prg.end_date
+AND       ppa.effective_date BETWEEN paa.effective_start_date AND paa.effective_end_date
+AND       ppa.effective_date BETWEEN pap.effective_start_date AND pap.effective_end_date
+AND       ppa.effective_date BETWEEN hoi_unidad.effective_start_date AND hoi_unidad.effective_end_date
+--+
+--AND pap.person_number = '121223'
+--+
+GROUP BY  hoi_unidad.organization_id
+        , haou_unidad.name
+        , :fechainicio
+        , :fechafin
+        , paa.legal_entity_id
+ORDER BY hoi_unidad.organization_id
