@@ -1,0 +1,112 @@
+--CHNG PTU SALIDAPIPE
+l_archivo := 'Reporte de Proceso PTU ' || p_id || '||||||||||||||||||Maximo Días Trabajados|Salario Tope|Monto a Repartir Dias|Monto a Repartir Sueldo|Total a Repartir' || CHR(13);
+l_archivo := l_archivo || v_name_legal_emple || '||||||||||||||||||' || v_max_days_wrkd || '|' || v_av_salary_calc || '|' || v_total_amount || '|' || v_total_amount || '|' || v_ee_total_amount || CHR(13);
+l_archivo := l_archivo || '|||||||||||||||||||' || v_max_av_salary || '|Factor Días|Factor Salario' || CHR(13);
+l_archivo := l_archivo || '||||||||||||||||||' || v_total_worked_days || '|' || v_total_average_salary || '|' || Days_Factor || '|' || Salary_Factor || '|' || v_total_ptu || CHR(13) || CHR(13);
+
+l_archivo := l_archivo || 'Empleador Legal|Unidad|Organizacion|Unidad Actual|Organizacion Actual|Estafeta|Nombre|Puesto|Puesto Actual|CURP|RFC|NSS|Categoria|Fecha Reconocimiento Antiguedad|Fecha Baja|Fecha Salida Compañia|Fecha Cambio Compania|Percepciones Base PTU|Días Base PTU|Sueldo Base PTU|Percepciones por Dias Base PTU|Percepciones por Sueldo Base PTU|Topado PTU||PTU Ejercicio 2018 Pagada 2019|PTU Ejercicio 2019 Pagada 2020|PTU Ejercicio 2020 Pagada 2021|Promedio PTU Ultimos 3 Años|Último Salario Diario|Tope Máximo Salario|Mejor Tope|Topado Total PTU|Porcentaje Días|Porcentaje Salario|Pago Días PTU|Pago Salario PTU'||CHR(13);
+
+DBMS_OUTPUT.PUT_LINE('ACABO CABECERO '||p_id);
+
+-- INSERT INTO GRG_PTU_V3_LOG (
+--                                 ID, 
+--                                 LOG,
+--                                 TYPE
+--                             ) VALUES (
+--                                 p_id,
+--                                 l_archivo,
+--                                 'CALCULO_PTU'
+--                             );
+
+FOR line IN (
+    SELECT  EMPLEADOR_LEGAL
+            ,UNIDAD
+            ,ORGANIZACION
+            ,UNIDAD_ACTUAL
+            ,ORGANIZACION_ACTUAL
+            ,ESTAFETA
+            ,NOMBRE
+            ,PUESTO
+            ,PUESTO_ACTUAL
+            ,CURP
+            ,RFC
+            ,NSS
+            ,CATEGORIA
+            ,FECHA_INGRESO
+            ,FECHA_BAJA
+            ,FECHA_SEPARACION
+            ,FECHA_CAMBIO_COMPANIA
+            ,TO_CHAR(ANNUAL_SALARY,'999999.99') AS ANNUAL_SALARY
+            ,TO_CHAR(WORKED_DAYS,'999999.99') AS WORKED_DAYS
+            ,TO_CHAR(AVERAGE_DAILY_SALARY,'999999.99') AS AVERAGE_DAILY_SALARY
+            ,TO_CHAR(CAPPED_AVERAGE_SALARY,'999999.99') AS CAPPED_AVERAGE_SALARY
+            ,TO_CHAR(PTU_WORKED_DAYS,'999999.99') AS PTU_WORKED_DAYS
+            ,TO_CHAR(PTU_AVERAGE_SALARY,'999999.99') AS PTU_AVERAGE_SALARY
+            ,TO_CHAR(TOTAL_PTU,'999999.99') AS TOTAL_PTU
+            ,TO_CHAR(PTU_2018,'999999.99') AS PTU_2018
+            ,TO_CHAR(PTU_2019,'999999.99') AS PTU_2019
+            ,TO_CHAR(PTU_2020,'999999.99') AS PTU_2020
+            ,TO_CHAR(CAP1_AVERAGE_PTU_PAYMENT,'999999.99') AS CAP1_AVERAGE_PTU_PAYMENT
+            ,TO_CHAR(CAP2_MAX_SALARY,'999999.99') AS CAP2_MAX_SALARY
+            ,TO_CHAR(BEST_CAP,'999999.99') AS BEST_CAP
+            ,TO_CHAR(TOTAL_PTU_PAYMENT_CAPPED,'999999.99') AS TOTAL_PTU_PAYMENT_CAPPED
+            ,PERCENTAGE_DAYS
+            ,PERCENTAGE_SALARY
+            ,TO_CHAR(DAYS_PTU_PAYMENT,'999999.99') AS DAYS_PTU_PAYMENT
+            ,TO_CHAR(SALARY_PTU_PAYMENT,'999999.99') AS SALARY_PTU_PAYMENT
+    FROM    GRG_PTU_V3_PROCESS
+    WHERE   EMPLEADOR_LEGAL = v_name_legal_emple
+    ORDER BY ESTAFETA
+) LOOP
+    BEGIN
+    --l_archivo_l :=  l_archivo_l||
+    l_archivo :=    l_archivo||
+                    line.EMPLEADOR_LEGAL||'|'||
+                    line.UNIDAD||'|'||
+                    line.ORGANIZACION||'|'||
+                    line.UNIDAD_ACTUAL||'|'||
+                    line.ORGANIZACION_ACTUAL||'|'||
+                    line.ESTAFETA||'|'||
+                    line.NOMBRE||'|'||
+                    line.PUESTO||'|'||
+                    line.PUESTO_ACTUAL||'|'||
+                    line.CURP||'|'||
+                    line.RFC||'|'||
+                    line.NSS||'|'||
+                    line.CATEGORIA||'|'||
+                    line.FECHA_INGRESO||'|'||
+                    line.FECHA_BAJA||'|'||
+                    line.FECHA_SEPARACION||'|'||
+                    line.FECHA_CAMBIO_COMPANIA||'|'||
+                    line.ANNUAL_SALARY||'|'||
+                    line.WORKED_DAYS||'|'||
+                    line.CAPPED_AVERAGE_SALARY||'|'||
+                    line.PTU_WORKED_DAYS||'|'||
+                    line.PTU_AVERAGE_SALARY||'|'||
+                    line.TOTAL_PTU||'|'||
+                    line.PTU_2018||'|'||
+                    line.PTU_2019||'|'||
+                    line.PTU_2020||'|'||
+                    line.CAP1_AVERAGE_PTU_PAYMENT||'|'||
+                    line.AVERAGE_DAILY_SALARY||'|'||
+                    line.CAP2_MAX_SALARY||'|'||
+                    line.BEST_CAP||'|'||
+                    line.TOTAL_PTU_PAYMENT_CAPPED||'|'||
+                    line.PERCENTAGE_DAYS||'|'||
+                    line.PERCENTAGE_SALARY||'|'||
+                    line.DAYS_PTU_PAYMENT||'|'||
+                    line.SALARY_PTU_PAYMENT||CHR(13);
+    v_cont := v_cont + 1;
+    DBMS_OUTPUT.PUT_LINE(line.estafeta||' LINEA: '||v_cont);
+    IF v_cont = 50 THEN
+    UPDATE GRG_PTU_V3_LOG SET LOG = LOG || l_archivo_l WHERE ID = p_id;
+    COMMIT;
+    
+    l_archivo := '';
+    v_cont := 0;
+    END IF;
+    EXCEPTION WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE(line.estafeta||' LINEA: '||v_cont||' :: '||SQLERRM);
+    END;
+
+END LOOP;
