@@ -1,0 +1,72 @@
+--QRY PTU PROCESS 0504
+SELECT  EMPLEADOR_LEGAL, 
+        UNIDAD,
+        ORGANIZACION,
+        UNIDAD_ACTUAL,
+        ORGANIZACION_ACTUAL,
+        ESTAFETA,
+        NOMBRE,
+        PUESTO,
+        CURP,
+        RFC,
+        NSS,
+        CATEGORIA,
+        FECHA_INGRESO,
+        FECHA_SEPARACION,
+        FECHA_CAMBIO_COMPANIA,
+        ANNUAL_SALARY,
+        WORKED_DAYS,
+        CAPPED_AVERAGE_SALARY,
+        PTU_WORKED_DAYS,
+        PTU_AVERAGE_SALARY,
+        TOTAL_PTU,
+        PTU_2018,
+        PTU_2019,
+        PTU_2020,
+        CAP1_AVERAGE_PTU_PAYMENT,
+        AVERAGE_DAILY_SALARY,
+        CAP2_MAX_SALARY,
+        BEST_CAP,
+        TOTAL_PTU_PAYMENT_CAPPED,
+        PERCENTAGE_DAYS,
+        PERCENTAGE_SALARY,
+        CASE 
+        WHEN TOTAL_PTU = TOTAL_PTU_PAYMENT_CAPPED THEN 
+            PTU_WORKED_DAYS
+        ELSE
+            DAYS_PTU_PAYMENT
+        END AS DAYS_PTU_PAYMENT,
+        CASE
+        WHEN TOTAL_PTU = TOTAL_PTU_PAYMENT_CAPPED THEN 
+            PTU_AVERAGE_SALARY
+        ELSE
+            SALARY_PTU_PAYMENT
+        END AS SALARY_PTU_PAYMENT,
+        FECHA_BAJA,
+        PUESTO_ACTUAL
+FROM    GRG_PTU_V3_PROCESS
+WHERE   
+--EXISTS  ( 
+--                    SELECT  NULL
+--                    FROM    GRG_PTU_V3_SECURED_USERS
+--                    WHERE   USERNAME = :username
+--                            AND LEGAL_EMPLOYER_ID = :legal_emp_id
+--                )
+        EMPLEADOR_LEGAL= (
+                            SELECT  DISTINCT EMPLEADOR_LEGAL 
+                            FROM    GRG_PTU_V3_HEADER 
+                            WHERE   LEGAL_EMPLOYER_ID = :legal_emp_id
+                         )
+        AND ORGANIZACION =  NVL(
+                                    (
+                                        SELECT  DISTINCT TRIM(ORGANIZACION)
+                                        FROM    GRG_PTU_V3_HEADER
+                                        WHERE   UNIDAD_ID = :unit_id
+                                    ), ORGANIZACION
+                            )  
+        AND EXISTS  (
+                        SELECT  NULL
+                        FROM    GRG_PTU_V3_HEADER
+                        WHERE   NOMINA_ID = NVL(:payroll_id, NOMINA_ID)
+                    )
+ORDER BY ESTAFETA
