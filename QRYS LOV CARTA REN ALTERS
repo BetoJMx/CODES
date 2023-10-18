@@ -1,0 +1,76 @@
+SELECT
+    PAPF.PERSON_NUMBER,
+    PAPF.PERSON_ID
+FROM
+    PER_PERSON_SECURED_LIST_V   PAPF,
+    PAY_PAYROLL_ASSIGNMENTS     PPA,
+    PAY_ASSIGNED_PAYROLLS_DN    PAPD,
+    PAY_PAYROLL_SECURED_LIST_V  PY
+WHERE
+    PAPF.PERSON_ID = PPA.PERSON_ID
+    AND PPA.PAYROLL_TERM_ID = PAPD.PAYROLL_TERM_ID
+    AND PAPD.PAYROLL_ID = PY.PAYROLL_ID
+    AND PPA.START_DATE =    (
+                                SELECT MAX(PPA1.START_DATE)
+                                FROM PAY_PAYROLL_ASSIGNMENTS PPA1
+                                WHERE PPA1.PERSON_ID = PPA.PERSON_ID
+                            )
+    --+
+    AND NOT EXISTS (
+        SELECT  1
+        FROM    FND_LOOKUP_VALUES_VL FLV
+        WHERE   1 = 1
+                AND FLV.lookup_type     = 'GRG_PAY_CARTA_REN_USER_RSTRGDS'
+                AND FLV.lookup_code     = :xdo_user_name
+                AND FLV.enabled_flag    = 'Y'
+                AND FLV.tag             LIKE '%' || PY.PAYROLL_NAME || '%'
+    )
+    --+
+    AND TRUNC(SYSDATE)  BETWEEN PAPF.EFFECTIVE_START_DATE
+                        AND PAPF.EFFECTIVE_END_DATE
+    AND TRUNC(SYSDATE)  BETWEEN PY.EFFECTIVE_START_DATE
+                        AND PY.EFFECTIVE_END_DATE
+GROUP BY 
+    PAPF.PERSON_NUMBER,
+    PAPF.PERSON_ID
+
+----
+
+SELECT
+    REPLACE(PPNF.FULL_NAME, ',') AS FULL_NAME,
+    PAPF.PERSON_ID
+FROM
+    PER_PERSON_SECURED_LIST_V   PAPF,
+    PAY_PAYROLL_ASSIGNMENTS     PPA,
+    PAY_ASSIGNED_PAYROLLS_DN    PAPD,
+    PAY_PAYROLL_SECURED_LIST_V  PY,
+    PER_PERSON_NAMES_F          PPNF
+WHERE
+    PAPF.PERSON_ID = PPA.PERSON_ID
+    AND PAPF.PERSON_ID = PPNF.PERSON_ID
+    AND PPNF.NAME_TYPE = 'MX'
+    AND PPA.PAYROLL_TERM_ID = PAPD.PAYROLL_TERM_ID
+    AND PAPD.PAYROLL_ID = PY.PAYROLL_ID
+    AND PPA.START_DATE =    (
+                                SELECT MAX(PPA1.START_DATE)
+                                FROM PAY_PAYROLL_ASSIGNMENTS PPA1
+                                WHERE PPA1.PERSON_ID = PPA.PERSON_ID
+                            )
+    --+
+    AND NOT EXISTS (
+        SELECT  1
+        FROM    FND_LOOKUP_VALUES_VL FLV
+        WHERE   1 = 1
+                AND FLV.lookup_type     = 'GRG_PAY_CARTA_REN_USER_RSTRGDS'
+                AND FLV.lookup_code     = :xdo_user_name
+                AND FLV.enabled_flag    = 'Y'
+                AND FLV.tag             LIKE '%' || PY.PAYROLL_NAME || '%'
+    )
+    --+
+    AND TRUNC(SYSDATE)  BETWEEN PAPF.EFFECTIVE_START_DATE
+                        AND PAPF.EFFECTIVE_END_DATE
+    AND TRUNC(SYSDATE)  BETWEEN PY.EFFECTIVE_START_DATE
+                        AND PY.EFFECTIVE_END_DATE
+GROUP BY 
+    REPLACE(PPNF.FULL_NAME, ','),
+    PAPF.PERSON_ID
