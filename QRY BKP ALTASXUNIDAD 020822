@@ -1,0 +1,377 @@
+--QRY BKP ALTASXUNIDAD 020822
+WITH per_toks_employees AS (
+    SELECT papf.person_number as estafeta,
+        (trim(ppn.last_name ||' '||ppn.previous_last_name)||' '||trim(ppn.first_name ||' '||ppn.middle_names ) ) AS NOMBRE,
+        pj.NAME AS PUESTO,
+        REPLACE (pni_rfc.national_identifier_number,'-','') AS RFC,
+        pni_curp.national_identifier_number AS CURP,
+        REPLACE (pni_imss.national_identifier_number,'-','') AS IMSS,
+        --TO_CHAR (pps.date_start, 'DD-MON-YYYY', 'NLS_DATE_LANGUAGE = Spanish') AS FECHA_ING,
+       TO_CHAR(
+            NVL( 
+               (SELECT MIN(ppei.pei_information_date1) 
+                FROM   per_people_extra_info_f ppei 
+                WHERE  ppei.person_id = ppn.person_id
+                AND    ppei.information_type = 'Cambio de Empleador Legal'
+                AND    ppei.PEI_INFORMATION1 = 'Fecha de Inicio de Base Salarial'
+                AND    TRUNC(SYSDATE) BETWEEN ppei.effective_start_date AND ppei.effective_end_date
+               ),  psdf.seniority_date ), 'DD-MON-YYYY') as FECHA_ING,
+
+        TO_CHAR (psdf.seniority_date, 'YYYY-MM-DD') AS seniority_date,
+        hr_general.decode_lookup('EMPLOYEE_CATG',paam.employee_category) AS CATEGORIA,
+        TO_CHAR (pp.date_of_birth, 'YYYY-MM-DD') AS FECHA_NAC,
+        pldft.location_name  AS UBICACION,
+        pd.name  AS ORGANIZACION,
+        paam.assignment_id,
+        paam.legal_entity_id,
+        pps.date_start, --papf.effective_start_date,
+        papf.person_id
+    FROM per_person_secured_list_v       papf, --per_all_people_f            papf,
+        per_person_names_f               ppn,
+        per_persons                      pp,
+        per_assignment_secured_list_v    paam, -- Per_All_Assignments_m       paam,
+        per_periods_of_service           pps,
+        per_jobs_f_tl                    pj,
+        per_national_identifiers         pni_rfc,
+        per_national_identifiers         pni_curp,
+        per_national_identifiers         pni_imss,
+        hr_all_organization_units        hr, 
+        per_location_secured_list_v      pl, --per_locations               pl,
+        per_location_details_f_tl        pldft,
+        per_location_details_f           pldf,
+        per_department_secured_list_v    pdslv,
+        per_departments                  pd,
+        --+
+        per_seniority_dates_f            psdf, -- Seniority Date
+        per_seniority_dates_setup        psds  
+    WHERE 1 = 1
+        And papf.person_id = ppn.person_id
+        And ppn.name_type = 'MX'
+        And paam.person_id = papf.person_id
+        And paam.assignment_status_type_id = 1
+        And paam.assignment_type = 'E'
+        And paam.primary_flag = 'Y'
+        And paam.effective_latest_change = 'Y'
+        --AND papf.person_number = '162898'
+		--+
+		And pps.legal_entity_id = paam.legal_entity_id
+        And pps.person_id = paam.person_id
+        And pps.period_of_service_id = paam.period_of_service_id
+        And pps.period_type = 'E'
+		--+
+        And pdslv.organization_id = paam.organization_id
+        And pd.organization_id = pdslv.organization_id
+        And pd.status = 'A'
+        And pd.organization_id = NVL(:p_org,pd.organization_id)
+        --+
+        And pj.job_id = paam.job_id
+        And pj.language = 'E'
+        And pni_rfc.person_id(+) = papf.person_id
+        And pni_rfc.national_identifier_type(+) = 'RFC'
+        And pni_curp.person_id(+) = papf.person_id
+        And pni_curp.national_identifier_type(+) = 'CURP'
+        And pni_imss.person_id(+) = papf.person_id
+        And pni_imss.national_identifier_type(+) = 'IMSS'
+        And pp.person_id = papf.person_id
+        And hr.organization_id = paam.legal_entity_id
+        And pl.location_id = paam.location_id
+        And pldf.location_id = pl.location_id
+        And pldf.active_status = 'A'
+        And pldft.location_details_id = pldf.location_details_id
+        And pldft.language = 'E'
+        --+
+        -- Seniority Date
+        And psdf.person_id = paam.person_id
+        And psdf.seniority_field = 'ORA_ENT'
+        And psds.seniority_date_code = psdf.seniority_date_code
+        And psds.active_flag = 'Y'
+        And trunc( pps.date_start )
+            Between papf.effective_start_date 
+                And papf.effective_end_date
+        And trunc( pps.date_start )
+            Between ppn.effective_start_date 
+                And ppn.effective_end_date
+        And trunc( pps.date_start ) 
+            BETWEEN paam.effective_start_date 
+                AND paam.effective_end_date
+        And trunc( pps.date_start )
+            Between pdslv.effective_start_date 
+                AND pdslv.effective_end_date
+        And trunc( pps.date_start )
+            Between pd.effective_start_date 
+                AND pd.effective_end_date
+        And trunc( pps.date_start )
+            BETWEEN pj.effective_start_date 
+                AND pj.effective_end_date
+        And trunc( pps.date_start )
+            BETWEEN pldf.effective_start_date 
+                AND pldf.effective_end_date
+        And trunc( pps.date_start )
+            BETWEEN pldft.effective_start_date 
+                AND pldft.effective_end_date
+        AND trunc( pps.date_start )
+            Between psdf.effective_start_date 
+                And psdf.effective_end_date
+        And trunc( pps.date_start )
+            Between hr.effective_start_date 
+                And hr.effective_end_date
+        --+
+        AND trunc( pps.date_start ) 
+            BETWEEN TRUNC(:Fecha_Inicio) 
+                AND TRUNC(:Fecha_Fin)  
+        AND hr.organization_id = NVL (:p_org_id, hr.organization_id)
+  ),
+  pay_employee_card AS (
+    SELECT 
+      ptru.estab_name AS INF_ESTATUTARIA,
+      pdrc.tax_unit_id,
+      pdc.effective_start_date,
+      pdc.effective_end_date,
+      pdc.payroll_relationship_id
+    FROM 
+      pay_dir_cards_f             pdc,
+      pay_dir_card_definitions    pdcd,
+      pay_dir_rep_cards_f         pdrc,
+      per_tax_reporting_units     ptru
+    WHERE 1=1
+      AND pdcd.dir_card_definition_id = pdc.dir_card_definition_id
+      AND pdcd.base_display_name = 'MX_EE_DEDUCTION_CARD'
+      AND pdrc.dir_card_id = pdc.dir_card_id
+      AND ptru.organization_id = pdrc.tax_unit_id
+      AND pdc.effective_start_date 
+          BETWEEN pdrc.effective_start_date AND pdrc.effective_end_date
+
+  ),
+  xxtoks_tabla_sdi_v AS (
+    Select /*+materialize*/ 
+         pvdt.name value_definition_name
+        ,pvdf2.base_name tabla
+        ,pvdf3.base_name factor
+        ,haou.name nombre_tru
+        ,prdf.base_name tabla_sdi
+        ,haou.organization_id tru_id
+    From pay_value_definitions_tl pvdt
+        ,pay_value_definitions_f pvdf
+        ,pay_value_definitions_f pvdf2
+        ,pay_value_definitions_f pvdf3
+        ,pay_range_items_f prif
+        ,hr_all_organization_units haou
+        ,pay_range_items_f prif2
+        ,pay_rate_definitions_f prdf
+    Where 1 = 1 
+        AND pvdt.value_defn_id = pvdf.value_defn_id
+        AND prif.value_defn_id = pvdf2.value_defn_id
+        AND prif.low_value_text = haou.organization_id
+        AND prif2.value_defn_id = pvdf3.value_defn_id
+        --+
+        AND prdf.rate_definition_id = prif2.value1
+        AND pvdf.value_defn_id = pvdf2.parent_value_defn_id
+        AND pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+        AND pvdt.name = 'Fixed SDI Calculation'
+        AND pvdt.LANGUAGE = 'US'--USERENV('LANG')
+        AND TRUNC(SYSDATE) 
+            BETWEEN pvdf.effective_start_date 
+                AND pvdf.effective_end_date
+        AND TRUNC(SYSDATE) 
+            BETWEEN pvdf2.effective_start_date 
+                AND pvdf2.effective_end_date
+        AND TRUNC(SYSDATE) 
+            BETWEEN pvdf3.effective_start_date 
+                AND pvdf3.effective_end_date
+        AND TRUNC(SYSDATE) 
+            BETWEEN prif.effective_start_date 
+                AND prif.effective_end_date
+        AND TRUNC(SYSDATE) 
+            BETWEEN prif2.effective_start_date 
+                AND prif2.effective_end_date
+        AND TRUNC(SYSDATE) 
+            BETWEEN prdf.effective_start_date 
+                AND prdf.effective_end_date
+        AND TRUNC(SYSDATE) 
+            BETWEEN haou.effective_start_date 
+                AND haou.effective_end_date
+  )
+    ,xxtoks_sdi_factor_table_v As (
+        Select /*+materialize*/ 
+             pvdt.name tabla_sdi
+            ,pvdf2.sequence
+            ,pvdf2.base_name base_name_rango
+            ,to_number(prif.low_value_text) low_value
+            ,(  Select nvl( min(to_number(prif_high.low_value_text)-.01), 100)
+                From pay_range_items_f prif_high
+                    ,pay_value_definitions_f pvdf_high
+                Where 1 = 1 
+                    And pvdf_high.parent_value_defn_id = pvdf.value_defn_id
+                    And prif_high.value_defn_id = pvdf_high.value_defn_id
+                    And to_number(prif_high.low_value_text) > to_number(prif.low_value_text)
+                    And trunc(sysdate) 
+                    between pvdf_high.effective_start_date
+                        And pvdf_high.effective_end_date
+                    And trunc(sysdate) 
+                    between prif_high.effective_start_date
+                        And prif_high.effective_end_date
+            ) high_value
+            ,pvdf3.base_name
+            ,pvdf3.value_identifier columna
+            ,prif2.value1 sdi_factor
+    From pay_value_definitions_tl pvdt
+        ,pay_value_definitions_f pvdf
+        --+
+        ,pay_value_definitions_f pvdf2
+        ,pay_range_items_f prif
+        --+
+        ,pay_value_definitions_f pvdf3
+        ,pay_range_items_f prif2
+    Where 1 = 1 
+        And pvdt.value_defn_id = pvdf.value_defn_id
+        And pvdt.name like 'Tabla%'
+        And prif.value_defn_id = pvdf2.value_defn_id
+        And pvdt.language = 'US'--userenv('LANG')
+        And pvdf.value_defn_id = pvdf2.parent_value_defn_id
+        And pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+        And prif2.value_defn_id = pvdf3.value_defn_id
+        --+
+        And pvdf3.value_identifier = 'K'
+        And trunc(sysdate) 
+            between pvdf.effective_start_date
+                And pvdf.effective_end_date
+        And trunc(sysdate) 
+            between pvdf2.effective_start_date
+                And pvdf2.effective_end_date
+        And trunc(sysdate) 
+            between prif.effective_start_date
+                And prif.effective_end_date
+        And trunc(sysdate) 
+            between pvdf3.effective_start_date
+                And pvdf3.effective_end_date
+        And trunc(sysdate) 
+            between prif2.effective_start_date
+                And prif2.effective_end_date
+  )
+    , ALTA_UNIDADES AS (
+        SELECT 
+            pte.ESTAFETA,
+            pte.NOMBRE,
+            pte.PUESTO,
+            pte.RFC,
+            pte.CURP,
+            pte.IMSS,
+            pte.SENIORITY_DATE,
+            pte.FECHA_ING,
+            pte.CATEGORIA,
+            pte.FECHA_NAC,
+            pec.INF_ESTATUTARIA,
+            papy.payroll_name AS NOMINA,
+            pte.UBICACION,
+            pte.ORGANIZACION,
+            cs.salary_amount AS SALARIO_DIARIO,
+            xtsv.tabla_sdi,
+            xsft.sdi_factor,
+            TRUNC(xsft.low_value) low
+            --  TRUNC(xsft.high_value) high,
+            --  TRUNC(months_BETWEEN(SYSDATE, pte.effective_start_date)/12) anios
+        FROM 
+            per_toks_employees          pte,
+            pay_pay_relationships_dn    ppr,
+            PAY_RELATIONSHIP_TYPES      prt,
+            pay_employee_card           pec,
+            PAY_PAYROLL_TERMS           ppt,
+            PAY_REL_GROUPS_DN           prgd,
+            PAY_ASSIGNED_PAYROLLS_DN    papd,
+            --PAY_PAYROLL_SECURED_LIST_V  papy,
+			PAY_ALL_PAYROLLS_F          papy,
+            cmp_salary                  cs,
+            xxtoks_tabla_sdi_v          xtsv,
+            xxtoks_sdi_factor_table_v   xsft
+        WHERE 1 = 1
+            And ppr.person_id(+) = pte.person_id
+            And ppr.payroll_stat_unit_id(+) = pte.legal_entity_id
+            And prt.RELATIONSHIP_TYPE_ID(+) = ppr.RELATIONSHIP_TYPE_ID
+            And prt.BASE_REL_TYPE_NAME(+) = 'StANDard'
+            And pec.payroll_relationship_id(+) = ppr.payroll_relationship_id
+            And pte.date_start 
+                BETWEEN pec.effective_start_date(+) AND pec.effective_end_date(+)
+            And ppt.payroll_relationship_id(+) = ppr.payroll_relationship_id
+            And prgd.term_id(+) = ppt.HR_TERM_ID
+            And prgd.assignment_id = pte.assignment_id
+            And papd.payroll_term_id(+) = ppt.payroll_term_id
+            And papy.payroll_id(+) = papd.payroll_id
+            And pte.date_start  
+                BETWEEN ppt.start_date(+) AND ppt.end_date(+)
+            And pte.date_start  
+                BETWEEN prgd.start_date(+) AND prgd.end_date(+)
+            And pte.date_start  
+                BETWEEN papd.start_date(+) AND papd.end_date(+)
+            And pte.date_start  
+                BETWEEN papy.effective_start_date(+) AND papy.effective_end_date(+)
+            And cs.assignment_id(+) = pte.assignment_id
+            And cs.salary_approved(+) = 'Y'
+            And pte.date_start  
+                BETWEEN cs.DATE_FROM(+) AND cs.DATE_TO(+)
+            And xtsv.tru_id(+) = pec.tax_unit_id
+            And xsft.tabla_sdi(+) = xtsv.tabla_sdi
+            --And xsft.columna(+) = 'K'
+            --And TRUNC(xsft.low_value(+)) >= TRUNC(months_between(SYSDATE, pte.date_start )/12)+1
+            --And TRUNC(xsft.high_value(+)) <= TRUNC(months_between(SYSDATE, pte.date_start )/12)+1
+            And ( TRUNC( months_between( SYSDATE, pte.date_start ) /12 ) + 1 )
+                Between TRUNC(xsft.low_value(+))
+                    And TRUNC(xsft.high_value(+))
+  )
+SELECT 'Reporte de Información de Alta' AS BODY
+FROM DUAL
+UNION ALL
+SELECT  LPAD(' ', 25,' ') AS BODY
+FROM DUAL
+UNION ALL
+SELECT 
+'Por empresa:' || NVL((SELECT name FROM hr_organization_units WHERE organization_id = :p_org_id),'SGG/SET') || LPAD ('Fecha:',20,' ') || LPAD (TO_CHAR(SYSDATE, 'dd/MM/yyyy'), 35,' ')
+FROM DUAL
+UNION ALL
+SELECT
+(
+    'ESTAFETA'                            || '|' ||
+    'NOMBRE'                              || '|' ||
+    'PUESTO'                              || '|' ||
+    'RFC'                                 || '|' ||
+    'CURP'                                || '|' ||
+    'IMSS'                                || '|' ||
+    'FECHA RECONOCIMIENTO'                || '|' ||
+    'FECHA ING'                           || '|' ||
+    'CATEGORIA'                           || '|' ||
+    'FECHA_NAC'                           || '|' ||
+    'INF_ESTATUTARIA'                     || '|' ||          
+    'NOMINA'                              || '|' ||          
+    'UBICACION'                           || '|' ||          
+    'ORGANIZACION'                        || '|' ||          
+    'SALARIO DIARIO'  					  || '|' ||
+    'TABLA DE FACTOR'					  || '|' ||
+    'FACTOR DE INTEGRACION'
+)AS BODY
+FROM DUAL
+
+UNION ALL
+
+SELECT LPAD(' ', 25,' ') AS BODY
+FROM DUAL
+UNION ALL
+SELECT 
+(
+    ESTAFETA || '|' ||              
+    NOMBRE || '|' ||                
+    PUESTO || '|' ||                
+    RFC || '|' ||                   
+    CURP || '|' ||                 
+    IMSS || '|' || 
+    SENIORITY_DATE || '|' ||                 
+    FECHA_ING || '|' || 
+    CATEGORIA || '|' ||             
+    FECHA_NAC || '|' ||            
+    INF_ESTATUTARIA || '|' ||       
+    NOMINA || '|' ||                
+    UBICACION || '|' ||           
+    ORGANIZACION || '|' ||        
+    SALARIO_DIARIO || '|' ||   					
+    tabla_sdi || '|' || 					 
+    sdi_factor
+) AS BODY
+FROM ALTA_UNIDADES
