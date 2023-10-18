@@ -1,0 +1,242 @@
+--QRY BKP FINQ EMP 011122
+SELECT 
+        person_id,
+        emp_number,
+        emp_nombre,
+        emp_sexo,
+        emp_rfc,
+        emp_imss,
+        emp_curp,
+        emp_puesto,
+        emp_fecha_ing,
+        emp_fecha_baja,
+        emp_fecha_notificacion,
+        emp_unidad_id,
+        emp_local,
+        organization_id,
+        assignment_id,
+        assignment_number,
+        payroll_id,
+        payroll_name,
+        legal_entity_id,
+        action_name,
+        action_type_code,
+        action_code,
+        action_reason,
+        sub_motivo_baja,
+		bandera_solicitud
+ FROM (
+    SELECT  /*+ materialize */
+                papf.person_id     AS person_id,
+                papf.person_number AS emp_number,                
+               CONVERT(
+                REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            TRIM(
+                                UPPER (
+                                    ppnf.full_name
+                                )
+                            )
+                        ,'?'--------aqui
+                        ,'N'
+                        )
+                    , 'Ñ'
+                    , 'N'
+                    )
+                    ,',',
+                    '')
+                , 'ñ'
+                , 'n'
+                )
+            , 'us7ascii'
+            , 'al32utf8'
+            ) AS emp_nombre ,
+                pplf.sex                        AS emp_sexo,
+                --+
+                pnir.national_identifier_number AS emp_rfc,
+                pnii.national_identifier_number AS emp_imss,
+                pnic.national_identifier_number AS emp_curp,
+                --+
+                pj.name                         AS emp_puesto,
+                --+
+                TO_CHAR(
+                        NVL( 
+                           (SELECT MIN(ppei.pei_information_date1) 
+                            FROM   per_people_extra_info_f ppei 
+                            WHERE  ppei.person_id = ppnf.person_id
+                            AND    ppei.information_type = 'Cambio de Empleador Legal'
+                            AND    ppei.PEI_INFORMATION1 = 'Fecha de Inicio de Base Salarial'
+                            AND    TRUNC(SYSDATE) BETWEEN ppei.effective_start_date AND ppei.effective_end_date
+                           ),
+                           (SELECT psdf.seniority_date
+                            FROM   per_seniority_dates_f  psdf, -- Seniority Date
+                                   per_seniority_dates_setup   psds
+                            WHERE  psdf.person_id = papf.person_id
+                            AND    psdf.seniority_field = 'ORA_ENT'
+                            AND    psds.seniority_date_code = psdf.seniority_date_code
+                            AND    psds.active_flag = 'Y'
+                            AND    TRUNC(SYSDATE) BETWEEN psdf.effective_start_date AND psdf.effective_end_date
+                            AND    ROWNUM = 1
+                           )
+                        ), 'DD-MON-YYYY') AS emp_fecha_ing,
+				--TO_CHAR (ppos.date_start,'DD-MON-YYYY','NLS_DATE_LANGUAGE = SPANISH') AS emp_fecha_ing,
+                TO_CHAR (ppos.actual_termination_date,'DD-MON-YYYY','NLS_DATE_LANGUAGE = SPANISH') AS emp_fecha_baja,
+                TO_CHAR (ppos.notified_termination_date,'DD-MON-YYYY','NLS_DATE_LANGUAGE = SPANISH') AS emp_fecha_notificacion,
+                --+
+                hoi.org_information1            AS emp_unidad_id,
+                CONVERT (pldft.location_name, 'us7ascii', 'al32utf8') AS emp_local,
+                pl.LOCATION_ID                  AS organization_id,
+                --+
+                paaf.assignment_id              AS ASSIGNMENT_ID,
+                paaf.ASSIGNMENT_NUMBER          AS ASSIGNMENT_NUMBER,
+                --+
+                paypd.payroll_id                AS PAYROLL_ID,
+                --pap.PAYROLL_NAME                        AS PAYROLL_NAME,
+				paypf.PAYROLL_NAME                        AS PAYROLL_NAME,
+                paaf.legal_entity_ID,
+                 convert(pa.action_name, 'us7ascii', 'al32utf8' ) action_name,
+                 pa.action_type_code,
+                 pa.action_code,
+                 convert(par.action_reason,'us7ascii', 'al32utf8') action_reason,
+                CONVERT (hr_general.decode_lookup('ORA_HRX_MX_SS_LEAVE_REASON',ppos.pds_information1), 'us7ascii', 'al32utf8') as sub_motivo_baja,
+                (
+                SELECT pat.action_name
+                FROM
+                per_actions_tl pat
+                ,per_actions_b pab
+                ,per_action_occurrences pao
+                WHERE 1=1
+                AND pao.action_occurrence_id = ppos.action_occurrence_id
+                AND pab.action_id = pao.action_id
+                AND pab.action_id = pat.action_id
+                AND pat.language = SYS_CONTEXT ('USERENV', 'LANG')
+                AND pab.action_code IN ('TKS_DEFUNCION','TKS_RECISION') --Defunción / Rescisión de Contrato
+                AND TRUNC(ppos.actual_termination_date) BETWEEN pab.start_date AND pab.end_date
+                ) AS per_action_code,
+                (
+                SELECT
+                CONVERT (UPPER (flv.meaning),'us7ascii', 'UTF8') motivo_baja
+                FROM
+                fnd_lookup_values_vl flv
+                WHERE 1=1
+                AND ppos.pds_information1 = flv.lookup_code
+                AND flv.lookup_code IN ('ORA_SSLR_4','ORA_SSLR_8') --ORA_SSLR_4 = Defunción / ORA_SSLR_8 = Rescisión de contrato
+                AND flv.lookup_type = 'ORA_HRX_MX_SS_LEAVE_REASON'
+                AND flv.enabled_flag = 'Y'
+                ) per_baja_imss --
+                ,(
+                SELECT par.action_reason
+                FROM per_action_reasons_vl par
+                WHERE par.action_reason_code IN ('TOKS_B_DE','TOKS_B_RC') --Defunción / Rescisión de Contrato
+                AND TRUNC(ppos.actual_termination_date) BETWEEN par.start_date AND par.end_date
+                ) per_action_reason,
+				CASE 
+				   WHEN  MONTHS_BETWEEN(SYSDATE,ppos.actual_termination_date) < 12 
+				   THEN 'BAJA_CORRECTA'
+                   ELSE 'NO_SOLICITAR' END as bandera_solicitud
+        FROM     per_all_assignments_f        paaf
+                ,per_periods_of_service       ppos
+                ,per_jobs_f_tl                pj
+                --+ 
+                ,per_all_people_f             papf
+                ,per_person_names_f           ppnf
+                ,per_people_legislative_f     pplf
+                ,per_national_identifiers     pnii
+                ,per_national_identifiers     pnic
+                ,per_national_identifiers     pnir
+                --+
+                ,pay_pay_relationships_dn  pprd
+                ,pay_all_payrolls_f        paypf
+                ,pay_payroll_terms         ppt
+                ,pay_assigned_payrolls_dn  paypd
+                ,pay_rel_groups_dn         prgdn
+             --+
+                ,hr_organization_information  hoi
+                --+
+                ,per_location_secured_list_v  pl 
+                ,per_location_details_f       pldf
+                ,per_location_details_f_tl    pldft
+                --+
+                 --PAY_ALL_PAYROLLS_F           pap
+                --+
+                ,per_action_occurrences pao
+                ,per_actions_vl pa
+                ,per_action_reasons_vl par
+        WHERE   1 = 1
+                --+
+                --AND papf.person_number  in  ('163798')
+                --+
+                AND paaf.assignment_type            = 'E'
+                AND paaf.primary_flag               = 'Y'
+                --+
+                AND papf.person_id                  = paaf.person_id
+                AND ppnf.person_id                  = papf.person_id
+                AND ppnf.name_type                  = 'MX'
+                --+
+                AND pplf.person_id = papf.person_id
+                AND pplf.legislation_code = 'MX'
+                --+
+                AND pnir.person_id(+)                 = papf.person_id
+                AND pnir.national_identifier_type(+)   = 'RFC'
+                AND pnii.person_id(+)                  = papf.person_id
+                AND pnii.national_identifier_type(+)   = 'IMSS'
+                AND pnic.person_id(+)                  = papf.person_id
+                AND pnic.national_identifier_type(+)   = 'CURP'
+                --+
+                AND pj.JOB_ID                       = paaf.JOB_ID
+                AND pj.language                     = sys_context('USERENV','LANG')
+                --+
+                AND ppos.person_id                  = paaf.person_id
+                AND ppos.period_of_service_id       = paaf.period_of_service_id
+                AND ppos.legal_entity_id            = paaf.legal_entity_id
+                --+
+                And pprd.person_id(+) = paaf.person_id
+                And prgdn.assignment_id = paaf.assignment_id 
+                And ppt.payroll_relationship_id(+) = pprd.payroll_relationship_id
+                And ppt.hr_term_id = prgdn.term_id
+                And paypd.payroll_term_id(+) = ppt.payroll_term_id
+                And paypf.payroll_id(+) = paypd.payroll_id
+                And paypf.payroll_id IS NOT NULL   
+                --and pap.payroll_id = paypf.payroll_id
+                --+                
+                AND hoi.organization_id(+)              = paaf.organization_id
+                AND hoi.org_information_context(+)      = 'PER_GL_COST_CENTER_INFO'
+                --+
+                AND pl.location_id                      = paaf.location_id
+                AND pldf.location_id                    = pl.location_id
+                AND pldft.location_details_id           = pldf.location_details_id
+                AND pldft.language                      = sys_context('USERENV','LANG')
+                --+
+                And pao.action_occurrence_id = ppos.action_occurrence_id
+                And pa.action_id = pao.action_id
+                And par.action_reason_id = pao.action_reason_id
+                And paaf.assignment_type = 'E'
+                And paaf.primary_flag = 'Y'
+                And paaf.assignment_status_type = 'ACTIVE'
+                And ppos.actual_termination_date is not null			
+               --+Parametro+--
+                  AND ppos.actual_termination_date 
+                    BETWEEN nvl(fnd_date.canonical_to_date (:FECHA_1), ppos.actual_termination_date)
+                        AND nvl(fnd_date.canonical_to_date (:FECHA_2), ppos.actual_termination_date) 
+                --effective_end_date
+                AND trunc(ppos.actual_termination_date) BETWEEN paaf.effective_start_date AND paaf.effective_end_date
+                AND TRUNC(ppos.actual_termination_date) BETWEEN pj.effective_start_date AND pj.effective_end_date
+                AND trunc(ppos.actual_termination_date) BETWEEN papf.effective_start_date AND papf.effective_end_date
+                AND trunc(ppos.actual_termination_date) BETWEEN ppnf.effective_start_date AND ppnf.effective_end_date
+                AND TRUNC(ppos.actual_termination_date) BETWEEN pplf.EFFECTIVE_START_DATE AND pplf.EFFECTIVE_END_DATE
+                AND trunc(ppos.actual_termination_date) BETWEEN pldf.effective_start_date AND pldf.effective_end_date
+                AND trunc(ppos.actual_termination_date) BETWEEN pldft.effective_start_date AND pldft.effective_end_date
+				--+
+				And trunc(ppos.actual_termination_date) BETWEEN paypd.START_DATE and paypd.END_DATE
+				And trunc(ppos.actual_termination_date) BETWEEN paypf.effective_start_date and paypf.effective_end_date
+				
+               order by  ppos.actual_termination_date ASC)
+    WHERE 1 = 1
+    AND per_action_code IS NULL
+    AND per_baja_imss IS NULL
+    AND per_action_reason IS NULL
+    AND action_reason != 'Reestructura de Empresas 2021'
+
+	--AND emp_fecha_baja
