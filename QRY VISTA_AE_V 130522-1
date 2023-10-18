@@ -1,0 +1,577 @@
+-- QRY VISTA_AE_V 130522
+--+
+-- SE AGREGO LA COLUMNA DIRECCION_UNIDAD 280222 / SE CAMBIO
+-- SE HACE EL CAMBIO ANTERIOR DE DIRECCION_UNIDAD POR 3 CAMPOS NUEVOS CALLE, CP, CD_O_ESTADO 150322
+--+
+WITH xxtoks_tabla_sdi_v AS (
+		Select pvdt.name value_definition_name
+			,pvdf2.base_name tabla
+			,pvdf3.base_name factor
+			,haou.name nombre_tru
+			,prdf.base_name tabla_sdi
+			,haou.organization_id tru_id
+		From pay_value_definitions_tl pvdt
+			,pay_value_definitions_f pvdf
+			,pay_value_groups pvg
+			,pay_value_groups_tl pvgtl
+			--+
+			,pay_value_definitions_f pvdf2
+			--+
+			,pay_value_definitions_f pvdf3
+			,pay_range_items_f prif
+			,hr_all_organization_units haou
+			,pay_range_items_f prif2
+			,pay_rate_definitions_f prdf
+		Where 1 = 1
+			And pvdt.value_defn_id = pvdf.value_defn_id
+			And pvdf.value_group_id = pvg.value_group_id
+			And pvg.value_group_id = pvgtl.value_group_id
+			And prif.value_defn_id = pvdf2.value_defn_id
+			And prif.low_value_text = haou.organization_id
+			And prif2.value_defn_id = pvdf3.value_defn_id
+			--+
+			And prdf.rate_definition_id = prif2.value1
+			And pvdf.value_defn_id = pvdf2.parent_value_defn_id
+			And pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+			And pvgtl.language = 'US'--userenv('LANG')
+			And pvdt.name = 'Fixed SDI Calculation'
+			And pvdt.language = 'US' --userenv('LANG')
+			And trunc(sysdate)
+				between pvdf.effective_start_date
+					And pvdf.effective_end_date
+			And trunc(sysdate)
+				between pvdf2.effective_start_date
+					And pvdf2.effective_end_date
+			And trunc(sysdate)
+				between pvdf3.effective_start_date
+					And pvdf3.effective_end_date
+			And trunc(sysdate)
+				between prif.effective_start_date
+					And prif.effective_end_date
+			And trunc(sysdate)
+				between prif2.effective_start_date
+					And prif2.effective_end_date
+			And trunc(sysdate)
+				between prdf.effective_start_date
+					And prdf.effective_end_date
+			And trunc(sysdate)
+				between haou.effective_start_date
+					And haou.effective_end_date
+	),
+	xxtoks_org_tree_node AS (
+		Select lemp.pk1_start_value as legal_emp_id,
+			hr_lemp.name as legal_emp_name,
+			hcm.pk1_start_value as hcm_unit_id,
+			hr_hcm.name as hcm_unit_name,
+			region.pk1_start_value as region_id,
+			hr_region.name as region_name,
+			dist.pk1_start_value as district_id,
+			hr_dist.name as district_name,
+			dept.pk1_start_value as dept_id,
+			hr_dept.name as dept_name
+		From per_org_tree_node lemp,
+			per_org_tree_node hcm,
+			per_org_tree_node region,
+			per_org_tree_node dist,
+			per_org_tree_node dept,
+			hr_organization_v hr_lemp,
+			hr_organization_v hr_hcm,
+			hr_organization_v hr_region,
+			hr_organization_v hr_dist,
+			hr_organization_v hr_dept
+		Where 1 = 1
+			--> ORG_TREE
+			And lemp.parent_pk1_value = 1
+			and lemp.pk1_start_value = hcm.parent_pk1_value
+			and hcm.pk1_start_value = region.parent_pk1_value
+			and region.pk1_start_value = dist.parent_pk1_value
+			and dist.pk1_start_value = dept.parent_pk1_value
+			--> TREE_CODE
+			AND lemp.tree_code = 'ORG_TREE'
+			AND hcm.tree_code = 'ORG_TREE'
+			AND region.tree_code = 'ORG_TREE'
+			AND dist.tree_code = 'ORG_TREE'
+			AND dept.tree_code = 'ORG_TREE'
+			--> HR_DATA
+			and lemp.pk1_start_value = hr_lemp.organization_id
+			and hr_lemp.classification_code = 'HCM_LEMP'
+			and hcm.pk1_start_value = hr_hcm.organization_id
+			and region.pk1_start_value = hr_region.organization_id
+			and dist.pk1_start_value = hr_dist.organization_id
+			and dept.pk1_start_value = hr_dept.organization_id
+			--> DATES
+			and trunc (sysdate) between hr_lemp.effective_start_date and hr_lemp.effective_end_date
+			and trunc (sysdate) between hr_hcm.effective_start_date and hr_hcm.effective_end_date
+			and trunc (sysdate) between hr_region.effective_start_date and hr_region.effective_end_date
+			and trunc (sysdate) between hr_dist.effective_start_date and hr_dist.effective_end_date
+			and trunc (sysdate) between hr_dept.effective_start_date and hr_dept.effective_end_date
+	)
+	SELECT 
+		papf.person_number      AS ESTAFETA,
+		hoif.org_information1   AS ID_LOCAL,
+		pldft.location_name     AS DES_LOCAL,
+		--haouf.organization_code AS REG_PATRONAL,
+		reg.registration_number AS REG_PATRONAL,
+		paaf.legal_entity_id    AS ID_EMPLEADOR,
+		hou.name                AS DES_EMPLEADOR,
+		hapft.POSITION_ID       AS ID_PSTO,
+		TRIM( SUBSTR(
+			ppn.last_name
+			|| '/'
+			|| ppn.previous_last_name
+			|| '/'
+			|| ppn.first_name
+			|| ' '
+			|| ppn.middle_names,
+			1, 100 ) 
+		) AS NOMBRE,
+		NVL (SUBSTR (REPLACE (pni_imss.national_identifier_number, '-', ''), 1, 3),
+			'000')
+			|| NVL (SUBSTR (REPLACE (pni_imss.national_identifier_number, '-', ''), 4, 3),
+			'000')
+			|| NVL (SUBSTR (REPLACE (pni_imss.national_identifier_number, '-', ''), 7, 10),
+			'000'
+		) AS NUMIMSS,
+		NVL (SUBSTR (RPAD(REPLACE (pni_rfc.national_identifier_number, '-'), 13, ' '), 1, 13),' ') AS RFC,
+		pni_curp.national_identifier_number AS CURP,
+		pplf.sex AS SEXO,
+		--TO_CHAR (papf.start_date, 'DDMMYYYY') AS FECHAINGRESO,
+		(Select TO_CHAR (min(date_start), 'DDMMYYYY')
+		 From per_periods_of_service
+		 where 1 = 1
+			And person_id = papf.person_id
+			And period_type = 'E'
+		) AS FECHAINGRESO,
+		DECODE (paaf.assignment_status_type_id,1, NULL,
+			(SELECT TO_CHAR (MAX (actual_termination_date), 'DDMMYYYY')
+				FROM per_periods_of_service
+				WHERE person_id = papf.person_id)
+		) AS FECHABAJA,
+		DECODE (paaf.assignment_status_type_id,1, NULL,
+			(SELECT TO_CHAR (MAX (notified_termination_date), 'DDMMYYYY')
+				FROM per_periods_of_service
+				WHERE person_id = papf.person_id)
+		) AS FECHANTFBAJA,
+		NVL (SUBSTR (REPLACE (pni_imss.national_identifier_number, '-', ''), 1, 3), '000') AS IDLOCALIMSS,
+		DECODE (paaf.assignment_status_type_id, 1, 'A', 'B') AS STATUS,
+		'-' AS ZONA , --****SE ESTA MANDANDO VACIO*
+		TO_CHAR (paaf.effective_start_date,'DDMMYYYY') AS FECHACAP,
+		pd.name AS DIR,
+		DECODE (hl.meaning, 'Sindicalizado', 1, 'Empleado Ejecutivo', 2, 0) AS SINDICALIZADO,
+		DECODE (NVL (paeim.aei_attribute1, ppei.poei_information1),'N', 0, 'Y', 1, ppei.poei_information1) AS CHECA_TARJETA,
+		DECODE (NVL (paeim.aei_attribute2, ppei.poei_information2),'N', 0, 'Y', 1, ppei.poei_information2) AS PRIMA_DOMINICAL,
+		DECODE (NVL (paeim.aei_attribute3, ppei.poei_information3),'N', 0, 'Y', 1, ppei.poei_information3) AS FESTIVO_LABORAD,
+		DECODE (NVL (paeim.aei_attribute4, ppei.poei_information4),'N', 0, 'Y', 1, ppei.poei_information4) AS DESCANSO_LABORA,
+		DECODE (NVL (paeim.aei_attribute5, ppei.poei_information5),'N', 0, 'Y', 1, ppei.poei_information5) AS HORAS_EXTRAS,
+		DECODE (NVL (paeim.aei_attribute6, ppei.poei_information6),'N', 0, 'Y', 1, ppei.poei_information6) AS AYUDA_TRANSPORT,
+		NVL (SUBSTR (REPLACE (REPLACE (REPLACE (hapft.name, '-'), 'Ñ', '&'),'ñ','&'),1,60),' ') AS PUESTO,
+		NVL (TO_NUMBER (paeim.aei_attribute7), NVL (TO_NUMBER (ppei.poei_information7), 1)) AS NIVEL_COMIDA,
+		DECODE (paaf.employment_category, 'MX2_TEMP_WRK', 'Y', 'N') AS FPAGOPORHORA,
+		NVL (paaf.normal_hours, '0') AS HRS_JORNADA,
+		GREATEST (TRUNC (papf.creation_date),
+		TRUNC (papf.last_update_date),
+		TRUNC (paaf.creation_date),
+		TRUNC (paaf.last_update_date),
+		TRUNC (NVL (ppei.creation_date, SYSDATE)),
+		TRUNC (NVL (ppei.last_update_date, SYSDATE)),
+		TRUNC (NVL (paeim.creation_date, SYSDATE)),
+		TRUNC (NVL (paeim.last_update_date, SYSDATE))) AS EFF_START_DATE,
+		xtsdi.tabla_sdi AS TABLAVACACIONES,
+		paypf.payroll_name AS NOMINA,
+		CASE
+  			WHEN paypf.payroll_name LIKE 'SHAKE%' THEN
+			TRUNC (((cs.salary_amount * 7) / paaf.normal_hours), 2)
+		ELSE
+			0
+		END AS SALARIO_HORA,
+		paaf.effective_end_date     as eff_end_date,
+		paaf.ass_attribute4         as tipo_nomina,
+		paaf.business_unit_id       as id_marca,
+		haou_business_unit.name     as marca,
+		ppn.first_name              as nombre_s,
+		ppn.last_name               as apellido_pat,
+		ppn.previous_last_name      as apellido_mat,
+		pea_corporate.email_address as correo1,
+		pea_personal.email_address  as correo2,
+		paypf.payroll_id            as idnomina,
+		paypf.period_type           as periodcdd_nomin,
+		h2.meaning                  as des_tipo_nomina,
+		papf.person_id              as person_id,
+		paaf.assignment_number      as assignment_number,
+		to_char (paaf.last_update_date, 'ddmmyyyy') as ult_fech_actu,
+		xtotn.district_name as distrito,
+		xtotn.region_name as region,
+		-- papfsup.person_number ,
+		(Select papfsup.person_number As manager_line
+			From per_person_names_f ppnfsup,
+				per_assignment_supervisors_f pasf,
+				per_all_people_f papfsup
+			Where 1 = 1
+				And papfsup.person_id = pasf.manager_id
+				And ppnfsup.person_id = pasf.manager_id
+				And paaf.assignment_id = pasf.assignment_id(+)
+				And ppnfsup.name_type = 'MX'
+				And pasf.manager_type(+) = 'LINE_MANAGER'
+				And trunc(sysdate) BETWEEN papfsup.effective_start_date AND papfsup.effective_end_date
+				And trunc(sysdate) BETWEEN pasf.effective_start_date AND pasf.effective_end_date
+				And trunc(sysdate) BETWEEN ppnfsup.effective_start_date AND ppnfsup.effective_end_date
+		) AS manager_line,
+		(Select papf.person_number
+			From hr_all_organization_units_f haouf
+				,hr_org_unit_classifications_f houcf
+				,hr_organization_units_f_tl hauft
+				,hr_organization_information_f hoif
+				,per_all_people_f papf
+				,per_person_names_f ppn
+			WHERE 1 = 1
+				AND haouf.organization_id = houcf.organization_id
+				AND houcf.classification_code = 'HCM_DIVISION'
+				AND houcf.status = 'A'
+				AND haouf.organization_id = xtotn.DISTRICT_ID
+				AND haouf.organization_id = hauft.organization_id
+				AND hauft.language = USERENV('LANG')
+				AND haouf.organization_id = hoif.organization_id
+				AND hoif.org_information_context = 'PER_ORG_MANAGER_INFO'
+				AND hoif.org_information2 = papf.person_id
+				AND papf.person_id = ppn.person_id
+				AND ppn.name_type = 'MX'
+				-->DATES
+				AND TRUNC(SYSDATE) BETWEEN haouf.effective_start_date AND haouf.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN houcf.effective_start_date AND houcf.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN hauft.effective_start_date AND hauft.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN hoif.effective_start_date AND hoif.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN papf.effective_start_date AND papf.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN ppn.effective_start_date AND ppn.effective_end_date 
+		) AS SUPERVISOR_DISTRITO,
+		( Select papf.person_number
+			From hr_all_organization_units_f haouf
+				,hr_org_unit_classifications_f houcf
+				,hr_organization_units_f_tl hauft
+				,hr_organization_information_f hoif
+				,per_all_people_f papf
+				,per_person_names_f ppn
+			Where 1=1
+				AND haouf.organization_id = houcf.organization_id
+				AND houcf.classification_code = 'HCM_DIVISION'
+				AND houcf.status = 'A'
+				AND haouf.organization_id = xtotn.REGION_ID
+				AND haouf.organization_id = hauft.organization_id
+				AND hauft.language = USERENV('LANG')
+				AND haouf.organization_id = hoif.organization_id
+				AND hoif.org_information_context = 'PER_ORG_MANAGER_INFO'
+				AND hoif.org_information2 = papf.person_id
+				AND papf.person_id = ppn.person_id
+				AND ppn.name_type = 'MX'
+				-->DATES
+				AND TRUNC(SYSDATE) BETWEEN haouf.effective_start_date AND haouf.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN houcf.effective_start_date AND houcf.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN hauft.effective_start_date AND hauft.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN hoif.effective_start_date AND hoif.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN papf.effective_start_date AND papf.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN ppn.effective_start_date AND ppn.effective_end_date
+		) AS SUPERVISOR_REGIONAL
+		--+
+		,TO_CHAR(paaf.normal_hours)                                  HORASSEMANALES
+		,(
+			SELECT v.value
+			FROM 
+			ff_user_tables t 
+			,ff_user_rows_f r 
+			,ff_user_columns c 
+			,ff_user_columns_tl c_tl 
+			,ff_user_column_instances_f v 
+			WHERE t.base_user_table_name = 'TKS_GLOBAL_VALUES' 
+			AND t.user_table_id = r.user_table_id 
+			AND c.user_column_id = c_tl.user_column_id 
+			AND t.user_table_id = c.user_table_id 
+			AND c.user_column_id = v.user_column_id 
+			AND r.user_row_id = v.user_row_id 
+			AND c_tl.user_column_name = 'HRS_DIAS_DESCANSO_36'
+			AND c_tl.language = USERENV('LANG')
+			AND SYSDATE BETWEEN r.effective_start_date AND r.effective_end_date
+			AND SYSDATE BETWEEN v.effective_start_date AND v.effective_end_date
+			)HORASDESCANSO36
+		,(
+			SELECT v.value
+			FROM 
+			ff_user_tables t 
+			,ff_user_rows_f r 
+			,ff_user_columns c 
+			,ff_user_columns_tl c_tl 
+			,ff_user_column_instances_f v 
+			WHERE t.base_user_table_name = 'TKS_GLOBAL_VALUES' 
+			AND t.user_table_id = r.user_table_id 
+			AND c.user_column_id = c_tl.user_column_id 
+			AND t.user_table_id = c.user_table_id 
+			AND c.user_column_id = v.user_column_id 
+			AND r.user_row_id = v.user_row_id 
+			AND c_tl.user_column_name = 'HRS_DIAS_DESCANSO'
+			AND c_tl.language = USERENV('LANG')
+			AND SYSDATE BETWEEN r.effective_start_date AND r.effective_end_date
+			AND SYSDATE BETWEEN v.effective_start_date AND v.effective_end_date
+			)HORASDESCANSO26
+		--+ 280222
+        ,(
+            SELECT  UPPER(hla.ADDRESS_LINE_1) || ' EXT. ' || UPPER(hla.ADDRESS_LINE_2) ||
+                    (CASE WHEN UPPER(hla.ADDRESS_LINE_3) IS NOT NULL 
+                        THEN ', INT. ' || UPPER(hla.ADDRESS_LINE_3)
+                        ELSE ''
+                    END)
+                    AS LOCATION_ADDRESS    
+            FROM    HR_LOCATIONS_ALL hla
+            WHERE   1 = 1
+                    AND hla.ACTIVE_STATUS = 'A' 
+                    AND PLDF.LOCATION_ID = hla.LOCATION_ID
+            ) AS U_CALLE
+        ,(
+            SELECT  POSTAL_CODE
+            FROM    HR_LOCATIONS_ALL hla
+            WHERE   1 = 1
+                    AND hla.ACTIVE_STATUS = 'A' 
+                    AND PLDF.LOCATION_ID = hla.LOCATION_ID
+            ) AS U_CP
+        ,(
+            SELECT  UPPER(REGION_3 || ', ' || REGION_2)
+            FROM    HR_LOCATIONS_ALL hla
+            WHERE   1 = 1
+                    AND hla.ACTIVE_STATUS = 'A' 
+                    AND PLDF.LOCATION_ID = hla.LOCATION_ID
+            ) AS U_CD_EDO
+		--+ 280222
+		--,paf.address_line_1 || ', ' ||paf.address_line_2 as emp_calle_num
+		,paf.postal_code emp_postal_code
+		--,paf.region_2 ||', '||paf.region_1 emp_col_estado
+		 --+ 01.06.22 ADLH. SE AGREGRAN CAMPOS DE DIRECCION
+		,paf.ADDRESS_LINE_1                EMP_CALLE
+	    ,paf.ADDRESS_LINE_2                EMP_NUM_EXTERIOR
+        /*  ,(
+            SELECT  UPPER(hla.ADDRESS_LINE_2)
+                    AS LOCATION_ADDRESS    
+            FROM    HR_LOCATIONS_ALL hla
+            WHERE   1 = 1
+                    AND hla.ACTIVE_STATUS = 'A' 
+                    AND PLDF.LOCATION_ID = hla.LOCATION_ID
+            ) AS EMP_NUM_EXTERIOR*/
+        --+jesus
+        ,paf.ADDRESS_LINE_3                EMP_NUM_INTERIOR 
+
+        /*,(
+            SELECT  UPPER(hla.ADDRESS_LINE_3)
+                    AS LOCATION_ADDRESS    
+            FROM    HR_LOCATIONS_ALL hla
+            WHERE   1 = 1
+                    AND hla.ACTIVE_STATUS = 'A' 
+                    AND PLDF.LOCATION_ID = hla.LOCATION_ID
+            ) AS EMP_NUM_INTERIOR*/
+        --+
+		,paf.ADDL_ADDRESS_ATTRIBUTE2      EMP_COLONIA
+	    ,paf.TOWN_OR_CITY                 EMP_CIUDAD
+	    ,paf.REGION_1                     EMP_DELEGACION_MUNICIPIO
+	    ,paf.REGION_2                     EMP_ESTADO
+		,ppau.address_type
+        --+jesus
+        ,pp.PHONE_NUMBER                  TELEFONO
+        --+jesus
+	FROM per_all_people_f papf
+		,per_all_assignments_f paaf
+		,per_person_names_f ppn
+		--+
+		,per_national_identifiers pni_imss
+		,per_national_identifiers pni_rfc
+		,per_national_identifiers pni_curp
+		--+
+		,per_people_legislative_f pplf
+		--+
+		,per_periods_of_service pps
+		--+
+		,hr_organization_information_f hoif
+		,per_departments pd
+		--+
+		,per_locations pl
+		,per_location_details_f pldf
+		,per_location_details_f_tl pldft
+		--+
+		,hr_all_organization_units_f haouf
+		,hr_all_organization_units hou
+		,per_jobs_f_tl pjft
+		--+
+		,hr_lookups hl
+		,hr_lookups h2
+		--+
+		,hr_all_organization_units haou_business_unit
+		--+
+		,per_email_addresses pea_corporate
+		,per_email_addresses pea_personal
+		--+
+		,per_position_extra_info ppei
+		,per_assignment_extra_info_m paeim
+		,hr_all_positions_f hapf
+		,hr_all_positions_f_tl hapft
+		--+
+		,pay_pay_relationships_dn pprd
+		,pay_rel_groups_dn prgdn
+		,pay_payroll_terms ppt
+		,pay_assigned_payrolls_dn paypd
+		,pay_all_payrolls_f paypf
+		--+
+		,cmp_salary cs
+		--+ SDI
+		,xxtoks_tabla_sdi_v xtsdi
+		--+ TRU or GRE
+		,pay_dir_cards_f pdc
+		,pay_dir_rep_cards_f pdrc
+		,pay_dir_card_definitions pdcd
+		,per_tax_reporting_units tru
+		,xle_registrations  reg
+		--+ ORG_TREE_NODE
+		,xxtoks_org_tree_node xtotn
+		--+
+		,per_person_addr_usages_f ppau
+        ,per_addresses_f  paf
+        --+jesus
+        ,per_phones  PP
+	WHERE 1 = 1
+        --+per_phones jesus
+        AND pp.person_id(+) = paaf.person_id
+        AND pp.phone_type(+) = 'HM'
+        --+
+		And papf.person_number = nvl( :p_person_number, papf.person_number )
+		And paaf.person_id = papf.person_id
+		And paaf.assignment_type = 'E'
+		And paaf.primary_flag = 'Y'
+		--And paaf.assignment_status_type = 'ACTIVE'
+		AND papf.person_id = ppn.person_id
+		AND ppn.name_type = 'MX'
+		--+
+		--AND PAPF.person_number in ('50416')
+		--AND hoif.org_information1 IN ('0750','0751','0752','0753','0754','0755','0756')
+		And pni_imss.person_id(+) = papf.person_id
+		And pni_imss.national_identifier_type(+) = 'IMSS'
+		And pni_rfc.person_id(+) = papf.person_id
+		And pni_rfc.national_identifier_type(+) = 'RFC'
+		And pni_curp.person_id(+) = papf.person_id
+		And pni_curp.national_identifier_type(+) = 'CURP'
+		--+
+		And pplf.person_id(+) = ppn.person_id
+		--+
+		And pps.legal_entity_id = paaf.legal_entity_id
+		And pps.person_id = paaf.person_id
+		And pps.period_of_service_id = paaf.period_of_service_id
+		And pps.period_type = 'E'
+		--+
+		And pd.organization_id = paaf.organization_id
+		AND pd.status = 'A'
+		--AND (pd.name like '%TOKS%PROD%' OR pd.name like '%TOKS%OPER%')
+		--+
+		And hoif.organization_id(+) = pd.organization_id
+		And hoif.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+		--+
+		And pl.location_id = paaf.location_id
+		And pldf.location_id = pl.location_id
+		And pldf.active_status = 'A'
+		And pldft.location_details_id = pldf.location_details_id
+		And pldft.language = SYS_CONTEXT ('USERENV', 'LANG')
+		--+
+		And paaf.legal_entity_id = haouf.organization_id
+		AND hou.organization_id = paaf.legal_entity_id
+		--+
+		And pjft.job_id(+) = paaf.job_id
+		And pjft.language(+) = SYS_CONTEXT ('USERENV', 'LANG')
+		--+
+		And hl.lookup_code(+) = paaf.employee_category
+		And hl.lookup_type(+) = 'EMPLOYEE_CATG'
+		--+
+		And h2.lookup_code(+) = paaf.ass_attribute4
+		And h2.lookup_type(+) = 'XXTOKS_TIPO_NOMINA'
+		--+
+		And haou_business_unit.organization_id = paaf.business_unit_id
+		--+
+		And pea_corporate.person_id(+) = ppn.person_id
+		And pea_corporate.email_type(+) = 'W1'
+		And pea_personal.person_id(+) = ppn.person_id
+		And pea_personal.email_type(+) = 'H1'
+		--+
+		And hapf.position_id(+) = paaf.position_id
+		And hapft.position_id(+) = hapf.position_id
+		And hapft.LANGUAGE(+) = SYS_CONTEXT ('USERENV', 'LANG')
+		And ppei.position_id(+) = hapf.position_id
+		--And ppei.information_type(+) = 'Banderas Asistencia Electronica_1'
+		And ppei.poei_information_category(+) = 'MCHKEMP_ORACLE_1'
+		And paeim.Assignment_Id(+) = paaf.Assignment_Id
+		And paeim.information_type(+) = 'Banderas Asistencia Electronica_1'
+		--+
+		and prgdn.payroll_relationship_id = pprd.payroll_relationship_id
+		and prgdn.assignment_id = paaf.assignment_id
+        and prgdn.group_type = 'A'
+		--+
+		And pprd.person_id(+) = paaf.person_id
+		And ppt.payroll_relationship_id(+) = pprd.payroll_relationship_id
+		--And prgdn.assignment_id(+) = paaf.assignment_id
+		--And prgdn.term_id(+) = ppt.hr_term_id
+		And paypd.payroll_term_id(+) = ppt.payroll_term_id
+		And paypf.payroll_id(+) = paypd.payroll_id
+		--And paypf.payroll_id IS NOT NULL
+		--+
+		And cs.assignment_id(+) = paaf.assignment_id
+		And cs.salary_approved (+) ='Y'
+		--+ SDI y TRU or GRE
+		And pdc.payroll_relationship_id(+) = pprd.payroll_relationship_id
+		And pdcd.dir_card_definition_id = pdc.dir_card_definition_id
+		And pdcd.legislation_code = 'MX'
+		And pdcd.associable_tru = 'Y'
+		And pdrc.dir_card_id(+) = pdc.dir_card_id
+		And tru.organization_id(+) = pdrc.tax_unit_id
+		And xtsdi.tru_id(+) = tru.organization_id
+		--+
+		And reg.source_id                   = tru.establishment_id
+        And reg.identifying_flag            = 'Y'
+		--+
+		AND xtotn.dept_id(+) = pd.organization_id
+		ANd pps.DATE_START = (
+			Select max (pps2.date_start)
+			From per_periods_of_service PPS2
+			Where pps2.person_id = paaf.person_id
+		)
+		--+
+		And ppau.person_id(+)   = paaf.person_id
+        And (ppau.address_type(+)    = 'HOME'
+            or ppau.address_type(+)    = 'MAIL')
+        And paf.address_id(+) = ppau.address_id
+        --+jesus
+        --+
+		And paaf.legal_entity_id = NVL(:p_id_empleador, paaf.legal_entity_id)
+		---> DATES
+		--And paaf.last_update_date >= trunc(sysdate)-120
+		--And TRUNC(paaf.last_update_date) BETWEEN ppn.effective_start_date AND ppn.effective_end_date
+		--And TRUNC(paaf.last_update_date) BETWEEN paaf.effective_start_date AND paaf.effective_end_date
+		--AnD TRUNC(paaf.last_update_date) BETWEEN papf.effective_start_date AND papf.effective_end_date
+		--+
+		And TRUNC(sysdate) BETWEEN ppn.effective_start_date AND ppn.effective_end_date
+		And TRUNC(sysdate) BETWEEN paaf.effective_start_date AND paaf.effective_end_date
+		AnD TRUNC(sysdate) BETWEEN papf.effective_start_date AND papf.effective_end_date
+		--+
+		And TRUNC(SYSDATE) BETWEEN pplf.effective_start_date(+) AND pplf.effective_end_date(+)
+		And TRUNC(SYSDATE) BETWEEN hoif.effective_start_date (+) AND hoif.effective_end_date(+)
+		And TRUNC(SYSDATE) BETWEEN pldf.effective_start_date AND pldf.effective_end_date
+		And TRUNC(SYSDATE) BETWEEN pldft.effective_start_date AND pldft.effective_end_date
+		And TRUNC(SYSDATE) BETWEEN haouf.effective_start_date AND haouf.effective_end_date
+		And TRUNC(SYSDATE) BETWEEN pjft.effective_start_date(+) AND pjft.effective_end_date(+)
+		And TRUNC(SYSDATE) BETWEEN hou.effective_start_date AND hou.effective_end_date
+		And TRUNC(SYSDATE) BETWEEN haou_business_unit.effective_start_date AND haou_business_unit.effective_end_date
+		And TRUNC(SYSDATE) BETWEEN hapf.effective_start_date(+) AND hapf.effective_end_date(+)
+		And TRUNC(SYSDATE) BETWEEN hapft.effective_start_date(+) AND hapft.effective_end_date(+)
+		And TRUNC(SYSDATE) BETWEEN paypf.effective_start_date(+) AND paypf.effective_end_date(+)
+		And TRUNC(SYSDATE) BETWEEN paypd.start_date(+) and paypd.end_date(+)
+		And TRUNC(SYSDATE) BETWEEN cs.date_from(+) AND cs.date_to(+)
+		And TRUNC(SYSDATE) BETWEEN pd.effective_start_date AND pd.effective_end_date
+		And TRUNC(SYSDATE) BETWEEN pdc.effective_start_date(+) AND pdc.effective_end_date(+)
+		And TRUNC(SYSDATE) BETWEEN pdrc.effective_start_date(+) AND pdrc.effective_end_date(+)
+		--+
+		And TRUNC(SYSDATE) BETWEEN prgdn.start_date AND prgdn.end_date
+		--+
+		And TRUNC(SYSDATE) BETWEEN ppau.effective_start_date(+) AND ppau.effective_end_date(+)
+		And TRUNC(SYSDATE) BETWEEN paf.effective_start_date(+) AND paf.effective_end_date(+)
+        --+
+        AND TRUNC(SYSDATE) BETWEEN pp.date_from(+) AND pp.date_to(+)
+		--and papf.person_number in ( '143734', '92401')
+        --and paaf.legal_entity_id = 300000003143001
