@@ -1,0 +1,192 @@
+--bajas HR
+SELECT /*+ materialize */
+        papf.person_id                                            AS person_id,
+         papf.person_number                                       AS emp_number,
+         --         CONVERT (UPPER (ppnf.full_name), 'us7ascii', 'UTF8')
+         CONVERT (
+             REPLACE (
+                 REPLACE (
+                     REPLACE (
+                         REPLACE (TRIM (UPPER (ppnf.full_name)), '?', 'N'),
+                         'Ñ',
+                         'N'),
+                     ',',
+                     ''),
+                 'ñ',
+                 'n'),
+             'us7ascii',
+             'UTF8')
+             AS emp_nombre,
+         CONVERT (UPPER (pplf.sex), 'us7ascii', 'UTF8')           AS emp_sexo,
+         --+
+         CONVERT (UPPER (pnir.national_identifier_number), 'us7ascii', 'UTF8')
+             AS emp_rfc,
+         CONVERT (UPPER (pnii.national_identifier_number), 'us7ascii', 'UTF8')
+             AS emp_imss,
+         CONVERT (UPPER (pnic.national_identifier_number), 'us7ascii', 'UTF8')
+             AS emp_curp,
+         --+
+         CONVERT (UPPER (pj.name), 'us7ascii', 'UTF8')            AS emp_puesto,
+         --+
+         TO_CHAR (ppos.date_start, 'DD/MM/YYYY')                  AS emp_fecha_ing,
+         TO_CHAR (ppos.actual_termination_date, 'DD/MM/YYYY')     AS emp_fecha_baja,
+         TO_CHAR (ppos.notified_termination_date, 'DD/MM/YYYY')
+             AS emp_fecha_notificacion,
+         --+
+         CONVERT (UPPER (hoi.org_information1), 'us7ascii', 'UTF8')
+             AS emp_unidad_id,
+         CONVERT (UPPER (pldft.location_name), 'us7ascii', 'UTF8') AS emp_local,
+         pl.LOCATION_ID
+             AS organization_id,
+         --+
+         paf.assignment_id
+             AS ASSIGNMENT_ID,
+         CONVERT (UPPER (paf.ASSIGNMENT_NUMBER), 'us7ascii', 'UTF8')
+             AS ASSIGNMENT_NUMBER,
+         --+
+         paypd.payroll_id AS PAYROLL_ID,
+         CONVERT (UPPER (pap.PAYROLL_NAME), 'us7ascii', 'UTF8')
+             AS PAYROLL_NAME,
+         paf.legal_entity_ID,
+         CONVERT (UPPER(pat.action_name), 'us7ascii', 'UTF8')     action_name,
+         '' action_type_code,
+         CONVERT (UPPER (pab.action_code), 'us7ascii', 'UTF8')     action_code,
+         ''  action_reason,
+--         CONVERT (
+--             UPPER (
+--                 hr_general.decode_lookup ('ORA_HRX_MX_SS_LEAVE_REASON',
+--                                           ppos.pds_information1)),
+--             'us7ascii',
+--             'UTF8')
+         '' AS sub_motivo_baja,
+         CONVERT (UPPER (xler.registered_name), 'us7ascii', 'UTF8') empresa
+    FROM per_all_assignments_f      paf,
+         per_periods_of_service     ppos,
+         per_jobs_f_tl              pj,
+         --+
+         per_all_people_f           papf,
+         per_person_names_f         ppnf,
+         per_people_legislative_f   pplf,
+         per_national_identifiers   pnii,
+         per_national_identifiers   pnic,
+         per_national_identifiers   pnir,
+         --+
+         pay_pay_relationships_dn   pprd,
+         pay_all_payrolls_f         paypf,
+         pay_payroll_terms          ppt,
+         pay_assigned_payrolls_dn   paypd,
+         pay_rel_groups_dn          prgdn,
+         --+
+         hr_organization_information hoi,
+         --+
+         per_location_secured_list_v pl,
+         per_location_details_f     pldf,
+         per_location_details_f_tl  pldft,
+         --+
+         PAY_ALL_PAYROLLS_F         pap,
+         --+
+--         per_action_occurrences     pao,
+--         per_actions_vl             pa,
+--         per_action_reasons_vl      par,
+         per_legal_employers        ple,
+         xle_entity_profiles        xlep,
+         xle_registrations          xler,
+                 --+
+         per_action_occurrences     pao,
+         per_actions_b              pab,
+         per_actions_tl             pat
+   WHERE     1 = 1
+         --+
+         AND papf.person_number = nvl(:p_estafeta, papf.person_number)
+         AND papf.person_id  = NVL( :p_person_id, papf.person_id )
+		 --AND instr( :p_person_id, papf.person_id ) > 0
+         --+
+         AND paf.assignment_type = 'E'
+         AND paf.primary_flag = 'Y'
+         --+
+         AND papf.person_id = paf.person_id
+         AND ppnf.person_id = papf.person_id
+         AND ppnf.name_type = 'MX'
+         --+
+         AND pplf.person_id = papf.person_id
+         AND pplf.legislation_code = 'MX'
+         --+
+         AND pnir.person_id(+) = papf.person_id
+         AND pnir.national_identifier_type(+) = 'RFC'
+         AND pnii.person_id(+) = papf.person_id
+         AND pnii.national_identifier_type(+) = 'IMSS'
+         AND pnic.person_id(+) = papf.person_id
+         AND pnic.national_identifier_type(+) = 'CURP'
+         --+
+         AND pj.JOB_ID = paf.JOB_ID
+         AND pj.language = SYS_CONTEXT ('USERENV', 'LANG')
+         --+
+         AND ppos.person_id = paf.person_id
+         AND ppos.period_of_service_id = paf.period_of_service_id
+         AND ppos.legal_entity_id = paf.legal_entity_id
+         --+
+         AND pprd.person_id(+) = paf.person_id
+         AND prgdn.assignment_id = paf.assignment_id
+         AND ppt.payroll_relationship_id(+) = pprd.payroll_relationship_id
+         AND ppt.hr_term_id = prgdn.term_id
+         AND paypd.payroll_term_id(+) = ppt.payroll_term_id
+         AND paypf.payroll_id(+) = paypd.payroll_id
+         AND paypf.payroll_id IS NOT NULL
+         AND pap.payroll_id = paypf.payroll_id
+         --+
+         AND hoi.organization_id(+) = paf.organization_id
+         AND hoi.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+         --+
+         AND pl.location_id = paf.location_id
+         AND pldf.location_id = pl.location_id
+         AND pldft.location_details_id = pldf.location_details_id
+         AND pldft.language = SYS_CONTEXT ('USERENV', 'LANG')
+         --+
+--         AND pao.action_occurrence_id = ppos.action_occurrence_id
+--         AND pa.action_id = pao.action_id
+--         AND par.action_reason_id = pao.action_reason_id
+         AND paf.assignment_type = 'E'
+         AND paf.primary_flag = 'Y'
+         --AND paf.assignment_status_type = 'ACTIVE'
+         AND ppos.actual_termination_date IS NOT NULL
+         --+
+         AND paf.legal_entity_id = ple.organization_id
+         AND ple.legal_entity_id = xlep.legal_entity_id
+         AND xlep.legal_entity_id = xler.source_id
+         AND xler.source_table = 'XLE_ENTITY_PROFILES'
+         --+
+         AND pao.action_occurrence_id = ppos.action_occurrence_id
+         AND pab.action_id = pao.action_id
+         AND pab.action_id =  pat.action_id
+         AND pat.language = sys_context ('USERENV', 'LANG')
+		 --+
+		 AND paf.effective_end_date =
+				 (SELECT MAX (paam1.effective_end_date)
+					FROM per_all_assignments_m paam1
+				   WHERE     paam1.assignment_id = paf.assignment_id
+						 AND paam1.assignment_status_type in ('INACTIVE'))
+                         
+         AND paf.period_of_service_id =
+                 (SELECT ppos1.period_of_service_id
+                    FROM per_periods_of_service ppos1
+                   WHERE     ppos1.person_id = paf.person_id
+                         AND ppos1.actual_termination_date =
+                                 (SELECT MAX (actual_termination_date)
+                                    FROM per_periods_of_service ppos
+                                   WHERE ppos.person_id = ppos1.person_id))
+         --+
+         AND TRUNC (SYSDATE) BETWEEN paf.effective_start_date
+                                                      AND paf.effective_end_date
+         AND TRUNC (SYSDATE) BETWEEN pj.effective_start_date
+                                                      AND pj.effective_end_date
+         AND TRUNC (SYSDATE) BETWEEN papf.effective_start_date
+                                                      AND papf.effective_end_date
+         AND TRUNC (SYSDATE) BETWEEN ppnf.effective_start_date
+                                                      AND ppnf.effective_end_date
+         AND TRUNC (SYSDATE) BETWEEN pplf.EFFECTIVE_START_DATE
+                                                      AND pplf.EFFECTIVE_END_DATE
+         AND TRUNC (SYSDATE) BETWEEN pldf.effective_start_date
+                                                      AND pldf.effective_end_date
+         AND TRUNC (SYSDATE) BETWEEN pldft.effective_start_date
+                                                      AND pldft.effective_end_date
+ORDER BY ppos.actual_termination_date ASC
