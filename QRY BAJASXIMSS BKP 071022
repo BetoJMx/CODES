@@ -1,0 +1,382 @@
+--QRY BAJASXIMSS BKP 071022
+with toks_bajas_imss as (
+    SELECT /*+ materialize */
+        papf.person_id,
+        papf.person_number,
+        ppnf.last_name,
+        ppnf.previous_last_name,
+        ppnf.first_name,
+		ppnf.middle_names,				  
+        --+
+        pnii.national_identifier_number AS no_imss,
+        pnic.national_identifier_number AS curp,
+        --+
+        paaf.action_code,
+        pprd.payroll_relationship_id,
+        --+
+        pdrc.tax_unit_id,
+        tru.estab_name,
+        --+
+        reg.registration_number,
+        --+
+        hou.name,
+        paaf.legal_entity_id,
+        --+
+        hoi.org_information1,
+        pldft.location_name,
+        --+
+        paaf.assignment_id,
+        --+
+        paaf.employment_category,
+        paaf.effective_start_date,
+        paaf.effective_end_date,
+        --+
+        ppos.actual_termination_date AS mov_date,
+        --+
+        paaf.creation_date,
+        --+
+        'Baja' AS movimiento,
+        '02' clve_mov,
+        --+
+
+        ppos.notified_termination_date fecha,
+        pav.action_code AS social_sec_leaving_reason,
+        '0' guia,
+        ppos.last_update_date
+    FROM --per_all_assignments_f paaf
+         PER_ASSIGNMENT_SECURED_LIST_V paaf --> vista de seguridad
+        ,per_periods_of_service ppos
+        --+
+        --,per_all_people_f papf
+        ,PER_PERSON_SECURED_LIST_V papf --> vista de seguridad
+        ,per_person_names_f ppnf
+        ,per_national_identifiers pnii
+        ,per_national_identifiers pnic
+        --+
+        ,pay_pay_relationships_dn pprd
+        ,pay_dir_cards_f pdc
+        ,pay_dir_card_definitions pdcd
+        ,pay_dir_rep_cards_f pdrc
+        ,per_tax_reporting_units tru
+        ,xle_registrations reg
+        --
+        ,hr_all_organization_units hou
+        ,hr_organization_information hoi
+        --+
+        --,per_locations pl
+        ,PER_LOCATION_SECURED_LIST_V pl --> vista de seguridad
+        ,per_location_details_f pldf
+        ,per_location_details_f_tl pldft
+        --+
+        ,per_action_occurrences pao
+        ,per_actions_vl pav
+        ,per_action_reasons_vl par
+        --+
+    WHERE 1 = 1
+        --+
+        AND paaf.assignment_type = 'E'
+        AND paaf.primary_flag = 'Y'
+        AND paaf.assignment_status_type = 'ACTIVE'
+        --AND paaf.effective_latest_change = 'Y'
+        --+
+        AND ppos.person_id = paaf.person_id
+        AND ppos.period_of_service_id = paaf.period_of_service_id
+        AND ppos.legal_entity_id = paaf.legal_entity_id
+        --+
+        AND papf.person_id = paaf.person_id
+        --AND papf.person_number = '149105'
+        AND ppnf.person_id = papf.person_id
+        AND ppnf.name_type = 'MX'
+        --+
+        AND pnii.person_id = papf.person_id
+        AND pnii.national_identifier_type = 'IMSS'
+        AND pnic.person_id = papf.person_id
+        AND pnic.national_identifier_type = 'CURP'
+        --+
+        AND pprd.person_id = paaf.person_id
+        AND pprd.payroll_stat_unit_id = paaf.legal_entity_id
+        AND pdc.payroll_relationship_id = pprd.payroll_relationship_id
+        AND pdcd.dir_card_definition_id = pdc.dir_card_definition_id
+        AND pdcd.base_display_name = 'MX_EE_DEDUCTION_CARD'
+        AND pdrc.dir_card_id = pdc.dir_card_id
+        AND tru.organization_id = pdrc.tax_unit_id
+        --+
+        AND reg.source_id = tru.establishment_id
+        AND reg.identifying_flag = 'Y'
+        --
+        --+
+        AND hou.organization_id = paaf.legal_entity_id
+        AND hoi.organization_id(+) = paaf.organization_id
+        AND hoi.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+        --+
+        AND pl.location_id = paaf.location_id
+        AND pldf.location_id = pl.location_id
+        AND pldft.location_details_id = pldf.location_details_id
+        --AND pldft.language = 'E'
+        AND pldft.language = sys_context('USERENV','LANG')
+        --+
+        And pao.action_occurrence_id = ppos.action_occurrence_id
+        And pav.action_id = pao.action_id
+        And par.action_reason_id = pao.action_reason_id
+        --
+        --effective_end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN paaf.effective_start_date AND paaf.effective_end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN papf.effective_start_date AND papf.effective_end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN ppnf.effective_start_date AND ppnf.effective_end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN pdc.effective_start_date AND pdc.effective_end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN pdrc.effective_start_date AND pdrc.effective_end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN pldf.effective_start_date AND pldf.effective_end_date
+        --+
+        AND trunc(ppos.actual_termination_date) BETWEEN pprd.start_date AND pprd.end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN hou.effective_start_date AND hou.effective_end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN pldft.effective_start_date AND pldft.effective_end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN pav.start_date AND pav.end_date
+        AND trunc(ppos.actual_termination_date) BETWEEN par.start_date(+) AND par.end_date(+)
+        --+
+        --Parametros--
+        AND trunc(ppos.actual_termination_date)
+            BETWEEN nvl(fnd_date.canonical_to_date (:P_FEC_MOV1), trunc(ppos.actual_termination_date))
+            AND nvl(fnd_date.canonical_to_date (:P_FEC_MOV_2), trunc(ppos.actual_termination_date))
+
+        AND trunc(ppos.last_update_date)
+            BETWEEN nvl(fnd_date.canonical_to_date (:P_FEC_CAP1), trunc(paaf.last_update_date))
+            AND nvl(fnd_date.canonical_to_date (:P_FEC_CAP_2), trunc(paaf.last_update_date))
+        /*AND paaf.effective_end_date
+        BETWEEN nvl(fnd_date.canonical_to_date (:P_FEC_CAP1), paaf.effective_end_date)
+        AND nvl(fnd_date.canonical_to_date (:P_FEC_CAP_2), paaf.effective_end_date)*/
+        AND paaf.legal_entity_id = NVL (:P_LEGAL_ENTITY, paaf.legal_entity_id)
+        AND pdrc.tax_unit_id = NVL (:P_GRE_IMSS, pdrc.tax_unit_id)
+        AND upper( trim( :P_MOVIMIENTO ) ) = 'BAJA'
+    UNION
+    SELECT /*+ materialize */
+        papf.person_id,
+        papf.person_number,
+        ppnf.last_name,
+        ppnf.previous_last_name,
+        ppnf.first_name,
+		ppnf.middle_names,				  
+        --+
+        pnii.national_identifier_number AS no_imss,
+        pnic.national_identifier_number AS curp,
+        --+
+        paaf.action_code,
+        pprd.payroll_relationship_id,
+        --+
+        pdrc.tax_unit_id,
+        tru.estab_name,
+        --+
+        reg.registration_number,
+        --+
+        hou.name,
+        paaf.legal_entity_id,
+        --+
+        hoi.org_information1,
+        pldft.location_name,
+        --+
+        paaf.assignment_id,
+        --+
+        paaf.employment_category,
+        paaf.effective_start_date,
+        paaf.effective_end_date,
+        --+
+        paaf.effective_end_date AS mov_date,
+        --+
+        paaf.creation_date,
+        --+
+        'Transferencia baja' AS movimiento,
+        '06' clve_mov,
+        --+
+
+        ppos.notified_termination_date fecha,
+        pav.action_code AS social_sec_leaving_reason,
+        '0' guia,
+        paaf.last_update_date
+    FROM per_all_assignments_f paaf
+        --PER_ASSIGNMENT_SECURED_LIST_V paaf --> vista_seguridad
+        ,per_periods_of_service ppos
+        --+
+        ,per_all_people_f papf
+        --,PER_PERSON_SECURED_LIST_V papf --> vista_seguridad
+        ,per_person_names_f ppnf
+        ,per_national_identifiers pnii
+        ,per_national_identifiers pnic
+        --+
+        ,pay_pay_relationships_dn pprd
+        ,pay_dir_cards_f pdc
+        ,pay_dir_card_definitions pdcd
+        ,pay_dir_rep_cards_f pdrc
+        ,per_tax_reporting_units tru
+        ,xle_registrations reg
+        --
+        ,hr_all_organization_units hou
+        ,hr_organization_information hoi
+        --+
+        --,PER_LOCATION_SECURED_LIST_V pl --> vista_seguridad
+        ,per_locations pl
+        ,per_location_details_f pldf
+        ,per_location_details_f_tl pldft
+        --+
+        ,per_action_occurrences pao
+        ,per_actions_vl pav
+        ,per_action_reasons_vl par
+        --+
+    WHERE 1 = 1
+        --+
+        AND paaf.assignment_type = 'E'
+        AND paaf.primary_flag = 'Y'
+        --AND paaf.assignment_status_type = 'ACTIVE'
+        --AND paaf.effective_latest_change = 'Y'
+        --+
+        --AND paaf.action_code IN ('ASG_CHANGE', 'TRANSFER', 'GLB_TRANSFER', 'ORA_POS_SYNC','HIRE')
+        AND ppos.person_id = paaf.person_id
+        AND ppos.period_of_service_id = paaf.period_of_service_id
+        AND ppos.legal_entity_id = paaf.legal_entity_id
+        --+
+        AND papf.person_id = paaf.person_id
+        AND ppnf.person_id = papf.person_id
+        AND ppnf.name_type = 'MX'
+        --+
+        AND pnii.person_id = papf.person_id
+        AND pnii.national_identifier_type = 'IMSS'
+        AND pnic.person_id = papf.person_id
+        AND pnic.national_identifier_type = 'CURP'
+        --+
+        AND pprd.person_id = paaf.person_id
+        AND pprd.payroll_stat_unit_id = paaf.legal_entity_id
+        AND pdc.payroll_relationship_id = pprd.payroll_relationship_id
+        AND pdcd.dir_card_definition_id = pdc.dir_card_definition_id
+        AND pdcd.base_display_name = 'MX_EE_DEDUCTION_CARD'
+        AND pdrc.dir_card_id = pdc.dir_card_id
+        AND tru.organization_id = pdrc.tax_unit_id
+        --+
+        AND reg.source_id = tru.establishment_id
+        AND reg.identifying_flag = 'Y'
+        --
+        --+
+        AND hou.organization_id = paaf.legal_entity_id
+        AND hoi.organization_id(+) = paaf.organization_id
+        AND hoi.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+        --+
+        AND pl.location_id = paaf.location_id
+        AND pldf.location_id = pl.location_id
+        AND pldft.location_details_id = pldf.location_details_id
+        --AND pldft.language = 'E'
+        AND pldft.language = sys_context('USERENV','LANG')
+        --+
+        And pao.action_occurrence_id = ppos.action_occurrence_id
+        And pav.action_id = pao.action_id
+        And par.action_reason_id(+) = pao.action_reason_id
+
+        --effective_end_date
+        AND trunc(paaf.effective_end_date) BETWEEN papf.effective_start_date AND papf.effective_end_date
+        AND trunc(paaf.effective_end_date) BETWEEN ppnf.effective_start_date AND ppnf.effective_end_date
+        AND trunc(paaf.effective_end_date) BETWEEN pdc.effective_start_date AND pdc.effective_end_date
+        AND trunc(paaf.effective_end_date) BETWEEN pdrc.effective_start_date AND pdrc.effective_end_date
+        AND trunc(paaf.effective_end_date) BETWEEN pldf.effective_start_date AND pldf.effective_end_date
+        --+
+        AND trunc(paaf.effective_end_date) BETWEEN pldft.effective_start_date AND pldft.effective_end_date
+        AND trunc(paaf.effective_end_date) BETWEEN pprd.start_date AND pprd.end_date
+        AND trunc(paaf.effective_end_date) BETWEEN hou.effective_start_date AND hou.effective_end_date
+        AND trunc(paaf.effective_end_date) BETWEEN pav.start_date AND pav.end_date
+        AND trunc(paaf.effective_end_date) BETWEEN par.start_date(+) AND par.end_date(+)
+        --+
+        AND EXISTS(
+            SELECT 1
+            FROM per_all_assignments_f paaf2
+                 --PER_ASSIGNMENT_SECURED_LIST_V paaf2 --> vista_seguridad
+                ,pay_pay_relationships_dn pprd2
+                ,pay_dir_cards_f pdc2
+                ,pay_dir_card_definitions pdcd2
+                ,pay_dir_rep_cards_f pdrc2
+                ,per_tax_reporting_units tru2
+            WHERE 1 = 1
+                And paaf2.person_id = paaf.person_id
+                And paaf2.assignment_type            = 'E'
+                And paaf2.primary_flag               = 'Y'
+                And pprd2.person_id = paaf2.person_id
+                And pprd2.payroll_stat_unit_id = paaf2.legal_entity_id
+                And pdc2.payroll_relationship_id = pprd2.payroll_relationship_id
+                And pdcd2.DIR_CARD_DEFINITION_ID = pdc2.DIR_CARD_DEFINITION_ID
+                And pdcd2.BASE_DISPLAY_NAME = 'MX_EE_DEDUCTION_CARD'
+                And pdrc2.dir_card_id = pdc2.dir_card_id
+                And tru2.organization_id = pdrc2.tax_unit_id
+                --+
+                --+
+                AND ( ( ( trunc(paaf.effective_end_date)+1  -- Tranfer 
+                            BETWEEN paaf2.effective_start_date 
+                                AND paaf2.effective_end_date
+                        ) And paaf2.effective_start_date = trunc(paaf.effective_end_date)+1
+                          And paaf2.legal_entity_id = paaf.legal_entity_id
+                    ) 
+                    or 
+                    ( ( trunc(paaf.effective_end_date)+1  -- Global Tranfer 
+                            BETWEEN paaf2.effective_start_date
+                                AND paaf2.effective_end_date
+                     ) And paaf2.legal_entity_id <> paaf.legal_entity_id
+                       And paaf2.assignment_status_type = 'ACTIVE'
+                    )
+                )
+                And trim(tru2.estab_name) != trim(tru.estab_name)
+
+                --effective_end_date
+                And trunc(paaf.effective_end_date)+1 BETWEEN paaf2.effective_start_date AND paaf2.effective_end_date
+                And trunc(paaf.effective_end_date)+1 BETWEEN pprd2.start_date AND pprd2.end_date
+                And trunc(paaf.effective_end_date)+1 BETWEEN pdc2.effective_start_date AND pdc2.effective_end_date
+                And trunc(paaf.effective_end_date)+1 BETWEEN pdrc2.effective_start_date AND pdrc2.effective_end_date
+        )
+        --Parametros--
+        AND trunc(paaf.effective_end_date)
+            BETWEEN nvl(fnd_date.canonical_to_date (:P_FEC_MOV1), trunc(paaf.effective_end_date))
+                AND nvl(fnd_date.canonical_to_date (:P_FEC_MOV_2), trunc(paaf.effective_end_date))
+        --+
+        AND trunc(paaf.last_update_date)
+            BETWEEN nvl(fnd_date.canonical_to_date (:P_FEC_CAP1), trunc(paaf.last_update_date))
+                AND nvl(fnd_date.canonical_to_date (:P_FEC_CAP_2), trunc(paaf.last_update_date))
+        /*AND paaf.effective_end_date
+        BETWEEN nvl(fnd_date.canonical_to_date (:P_FEC_CAP1), paaf.effective_end_date)
+        AND nvl(fnd_date.canonical_to_date (:P_FEC_CAP_2), paaf.effective_end_date)*/
+        AND paaf.legal_entity_id = NVL (:P_LEGAL_ENTITY, paaf.legal_entity_id)
+        AND pdrc.tax_unit_id = NVL (:P_GRE_IMSS, pdrc.tax_unit_id)
+        AND upper( trim( :P_MOVIMIENTO ) ) = 'TRANSFERENCIA BAJA'
+    )
+SELECT
+    thm.person_number AS clave_trabajador,
+    CONVERT ( UPPER(thm.last_name), 'us7ascii', 'al32utf8') AS apellido_paterno,
+    CONVERT ( UPPER(thm.previous_last_name),'us7ascii', 'al32utf8') AS apellido_materno,
+    CONVERT ( UPPER(trim(thm.first_name || ' '||thm.middle_names)),'us7ascii', 'al32utf8') AS nombres,
+    thm.no_imss,
+    CONVERT ( thm.estab_name,'us7ascii', 'al32utf8') AS gre_imss,
+    thm.tax_unit_id AS gre_imss_id,
+    TO_CHAR (thm.mov_date, 'DD-MM-YYYY') AS fecha_efectiva_mov,
+    TO_CHAR (thm.fecha, 'DD-MM-YYYY') AS fecha,
+    '02' AS clave_aviso,
+    UPPER (thm.movimiento) AS movimiento,
+    --
+    thm.assignment_id AS assignment_id,
+    thm.guia AS guia,
+    thm.registration_number AS reg_patronal_gre2,
+    CONVERT( thm.name, 'us7ascii', 'al32utf8' ) AS entidad_legal,
+    thm.legal_entity_id AS entidad_legal_id,
+    --
+    thm.org_information1 AS cve_unidad,
+    DECODE (thm.clve_mov, '08', 'A', '07', 'MS', '02', 'B') AS tipo_aviso,
+    CONVERT (thm.location_name, 'us7ascii', 'al32utf8') AS unidad,
+    TO_CHAR(thm.last_update_date,'DD-MM-YYYY') last_update_date,
+    DECODE (thm.social_sec_leaving_reason,
+        'TKS_SEPARACION_VOLUNTARIA','2',
+        'TKS_DEFUNCION','4',
+        'TKS_INV_TOTAL','6',
+        'HIRE','6',
+        'ASG_CHANGE','6',
+        'GLB_TRANSFER','6',
+        'TKS_FALTA_INJUSTIFICADAS','7',
+        'TKS_RECISION','8',
+        'TKS_PENSION','A'
+    ) AS social_sec_leaving_reason
+FROM
+    toks_bajas_imss thm
+WHERE 1 = 1
+    --AND UPPER (thm.movimiento) = NVL (:P_MOVIMIENTO, UPPER (thm.movimiento))
+    --AND thm.person_number IN ('158252','161049','76721','153120','161046')
+    --AND thm.person_number IN ('161864')
+ORDER BY thm.person_number
