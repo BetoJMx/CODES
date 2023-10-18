@@ -1,0 +1,608 @@
+--CHNG PKGB JUEGO ASSG 120522
+create or replace package body     GRG_JUEGOS_ASIGNACION_PKG is
+
+PROCEDURE get_cheque_info
+(
+    p_id_juego_asig in NUMBER
+    ,p_flujo out VARCHAR2
+)
+AS 
+        l_user_name          VARCHAR2 (100); 
+        l_password           VARCHAR2 (100); 
+        l_ws_url             VARCHAR2 (500); 
+        l_ws_action          VARCHAR2 (500) 
+            := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar 
+        l_ws_response_clob   CLOB; 
+        l_ws_envelope        CLOB; 
+        l_ws_resp_xml        XMLTYPE; 
+        l_ws_resp_xml2       XMLTYPE; 
+        v_cdata              CLOB; 
+        l_clob               CLOB; 
+        v_val                PLS_INTEGER;
+        l_flujo             VARCHAR2(250) := NULL;
+        l_logs               CLOB;
+        l_bandera           VARCHAR2(9999);
+   BEGIN 
+    
+     l_ws_envelope :=
+        '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+      <soap:Body>
+      <pub:runReport>
+         <pub:reportRequest>
+         <pub:parameterNameValues>
+          <pub:item>
+                    <pub:name>FLUJO</pub:name>
+                    <pub:values>
+                     <pub:item>'|| p_id_juego_asig ||'</pub:item>
+                     </pub:values>
+                     </pub:item>
+         </pub:parameterNameValues>
+            <pub:attributeFormat>xml</pub:attributeFormat>
+            <pub:reportAbsolutePath>/Reportes Custom/PAY/Toks – Nomina Finiquitos/Cheque_Finiquitos/finiquito_cheque.xdo</pub:reportAbsolutePath>
+            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+         </pub:reportRequest>
+      </pub:runReport>
+   </soap:Body>
+</soap:Envelope>'; --Esto es el XML que vas a mandar al servicio
+   
+ 
+       
+ 		--------------------TOKEN-------------------------
+		GRG_COMMON_CONNECTIONS.get_otbi_report(
+												 l_ws_envelope  => l_ws_envelope
+												,l_user_token   => NULL
+												,x_ws_response  => l_clob 
+												,p_instance_name => 'DEV2' --'TEST'
+											  );
+		
+		--DBMS_OUTPUT.put_line('l_clob: ' || l_clob);
+		l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+ 
+        
+       
+ 
+        FOR i 
+            IN (SELECT XML_DATA.NUMERO_CHEQUE,
+                       XML_DATA.PERSON_ID, 
+                       XML_DATA.NOMBRE, 
+                       XML_DATA.ESTATUS, 
+					   XML_DATA.CANTIDAD,
+					   XML_DATA.FLOW_INSTANCE_ID,
+					   XML_DATA.FLUJO,
+                       XML_DATA.ESTAFETA,
+                       XML_DATA.OBJECT_GROUP_ID
+                  FROM XMLTABLE ( 
+                           '/DATA_DS/G_1' 
+                           PASSING XMLTYPE.createXML (l_clob) 
+                           COLUMNS NUMERO_CHEQUE VARCHAR2 (250)
+                                       PATH 'NUMERO_CHEQUE', 
+                                   PERSON_ID NUMBER 
+                                       PATH 'PERSON_ID', 
+                                   NOMBRE VARCHAR2 (250) 
+                                       PATH 'NOMBRE', 
+                                   ESTATUS VARCHAR2 (250) 
+                                       PATH 'ESTATUS',
+									   CANTIDAD NUMBER
+									   PATH 'CANTIDAD',
+									   FLOW_INSTANCE_ID NUMBER
+									   PATH 'FLOW_INSTANCE_ID',
+									   FLUJO VARCHAR2 (250)
+									   PATH 'FLUJO',
+                                       ESTAFETA VARCHAR(250)
+                                       PATH 'ESTAFETA',
+                                       OBJECT_GROUP_ID VARCHAR(250)
+                                       PATH 'OBJECT_GROUP_ID') XML_DATA)   
+        
+        LOOP 
+            --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX. 
+           
+            SELECT COUNT (*) 
+              INTO v_val 
+              FROM XXTOKS_FIN_CHEQUE 
+             WHERE PERSON_ID = i.PERSON_ID
+             AND ATTRIBUTE1 = p_id_juego_asig;
+             --AND   FLUJO = i.FLUJO; 
+            IF l_flujo IS NULL THEN 
+                l_flujo := i.FLUJO;
+            END IF;
+            IF v_val = 0 
+            THEN 
+            l_bandera := 'Nuevo registro';
+                INSERT INTO XXTOKS_FIN_CHEQUE (
+                    NUMERO_CHEQUE,
+                    PERSON_ID, 
+                    NOMBRE, 
+					ESTATUS,
+					CANTIDAD,
+					FLOW_INSTANCE_ID,
+					FLUJO,
+                    ESTAFETA,
+                    ATTRIBUTE1,
+                    CREATION_DATE, 
+                    LAST_UPDATE_DATE, 
+                    CREATED_BY,
+                    LAST_UPDATE_BY,
+                    OBJECT_GROUP_ID) 
+                 VALUES (
+                     i.NUMERO_CHEQUE,
+                     i.PERSON_ID, 
+                     i.NOMBRE, 
+					 i.ESTATUS,
+					 i.CANTIDAD,
+					 i.FLOW_INSTANCE_ID,
+					 i.FLUJO,
+                     I.ESTAFETA,
+                     p_id_juego_asig,
+                     SYSDATE, 
+                     SYSDATE, 
+                     '-1', 
+                     '-1',
+                     i.OBJECT_GROUP_ID); 
+                     
+                     DBMS_OUTPUT.put_line ('Insercion finalizada');
+            ELSE 
+            l_bandera := 'Actualizacion de registro';
+                UPDATE XXTOKS_FIN_CHEQUE 
+                   SET FLOW_INSTANCE_ID       = i.FLOW_INSTANCE_ID, 
+                       NUMERO_CHEQUE     = i.NUMERO_CHEQUE,
+					   PERSON_ID          = i.PERSON_ID,
+					   NOMBRE            = i.NOMBRE,
+					   ESTATUS           = i.ESTATUS,
+					   CANTIDAD          = i.CANTIDAD,
+					   FLUJO             = i.FLUJO,
+                       ESTAFETA          = i.ESTAFETA,
+                       CREATION_DATE     = SYSDATE, 
+                       LAST_UPDATE_DATE  = SYSDATE, 
+                       CREATED_BY        = '-1'   , 
+                       LAST_UPDATE_BY    = '-1' ,
+                       OBJECT_GROUP_ID   = i.OBJECT_GROUP_ID
+                 WHERE PERSON_ID         = i.PERSON_ID
+                 --AND   FLUJO             = i.FLUJO;
+                 AND ATTRIBUTE1          = p_id_juego_asig;
+                 
+                 DBMS_OUTPUT.put_line ('Actualización finalizada');
+            END IF; 
+
+            INSERT INTO GRG_JUEGOS_ASIGNACION_LOGS(
+                ASSIGNMENT_SET_ID,
+                --SETTLEMENT_ID,  
+                INVOICE_ID,
+                PERSON_ID,
+                LOGS,
+                CREATION_DATE,
+                LAST_UPDATE_DATE)
+            VALUES(
+                p_id_juego_asig,
+                --'',
+                i.FLOW_INSTANCE_ID,
+                i.PERSON_ID,
+                l_bandera,
+                SYSDATE,
+                SYSDATE);
+        
+        END LOOP; 
+        COMMIT;
+        p_flujo := p_id_juego_asig;
+        
+        EXCEPTION
+        WHEN OTHERS THEN
+            dbms_output.put_line ('ERROR: --> '||SQLERRM);
+            l_bandera := 'ERROR: --> '||SQLERRM;
+            ROLLBACK;
+            INSERT INTO GRG_JUEGOS_ASIGNACION_LOGS(
+                ASSIGNMENT_SET_ID,
+                --SETTLEMENT_ID,  
+                --INVOICE_ID,
+                --PERSON_ID,
+                LOGS,
+                CREATION_DATE,
+                LAST_UPDATE_DATE)
+            VALUES(
+                p_id_juego_asig,
+                --'',
+                --i.FLOW_INSTANCE_ID,
+                --i.PERSON_ID,
+                l_bandera,
+                SYSDATE,
+                SYSDATE);
+                COMMIT;
+END get_cheque_info;
+
+PROCEDURE get_cheque_cero_info
+(
+    p_id_juego_asig in NUMBER
+    ,p_flujo out VARCHAR2
+)
+AS 
+        l_user_name          VARCHAR2 (100); 
+        l_password           VARCHAR2 (100); 
+        l_ws_url             VARCHAR2 (500); 
+        l_ws_action          VARCHAR2 (500) 
+            := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar 
+        l_ws_response_clob   CLOB; 
+        l_ws_envelope        CLOB; 
+        l_ws_resp_xml        XMLTYPE; 
+        l_ws_resp_xml2       XMLTYPE; 
+        v_cdata              CLOB; 
+        l_clob               CLOB; 
+        v_val                PLS_INTEGER;
+        l_flujo             VARCHAR2(250) := NULL;
+        l_logs               CLOB;
+        l_bandera           VARCHAR2(9999);
+		l_contador          NUMBER := 0;
+		l_settlement_id     NUMBER;
+		l_settlement_number NUMBER;
+		
+   BEGIN 
+    
+     l_ws_envelope :=
+        '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+      <soap:Body>
+      <pub:runReport>
+         <pub:reportRequest>
+         <pub:parameterNameValues>
+          <pub:item>
+                    <pub:name>FLUJO</pub:name>
+                    <pub:values>
+                     <pub:item>'|| p_id_juego_asig ||'</pub:item>
+                     </pub:values>
+                     </pub:item>
+         </pub:parameterNameValues>
+            <pub:attributeFormat>xml</pub:attributeFormat>
+            <pub:reportAbsolutePath>/Reportes Custom/PAY/GRG Liberacion de Cheques en Cero/GRG Liberación Cheques Cero.xdo</pub:reportAbsolutePath>
+            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+         </pub:reportRequest>
+      </pub:runReport>
+   </soap:Body>
+</soap:Envelope>'; --Esto es el XML que vas a mandar al servicio
+   
+ 
+       
+ 		--------------------TOKEN-------------------------
+		GRG_COMMON_CONNECTIONS.get_otbi_report(
+												 l_ws_envelope  => l_ws_envelope
+												,l_user_token   => NULL
+												,x_ws_response  => l_clob 
+												,p_instance_name => 'DEV2' --'TEST'
+											  );
+		
+		--DBMS_OUTPUT.put_line('l_clob: ' || l_clob);
+		l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+ 
+        
+       DBMS_OUTPUT.put_line ('PASO 1');
+ 
+        FOR i 
+            IN (SELECT XML_DATA.NUMERO_CHEQUE,
+                       XML_DATA.PERSON_ID, 
+                       XML_DATA.NOMBRE, 
+                       XML_DATA.ESTATUS, 
+					   XML_DATA.CANTIDAD,
+					   XML_DATA.FLOW_INSTANCE_ID,
+					   XML_DATA.FLUJO,
+                       XML_DATA.ESTAFETA
+                       --XML_DATA.OBJECT_GROUP_ID
+                  FROM XMLTABLE ( 
+                           '/DATA_DS/G_1' 
+                           PASSING XMLTYPE.createXML (l_clob) 
+                           COLUMNS NUMERO_CHEQUE VARCHAR2 (250)
+                                       PATH 'NUMERO_CHEQUE', 
+                                   PERSON_ID NUMBER 
+                                       PATH 'PERSON_ID', 
+                                   NOMBRE VARCHAR2 (250) 
+                                       PATH 'NOMBRE', 
+                                   ESTATUS VARCHAR2 (250) 
+                                       PATH 'ESTATUS',
+									   CANTIDAD NUMBER
+									   PATH 'CANTIDAD',
+									   FLOW_INSTANCE_ID NUMBER
+									   PATH 'FLOW_INSTANCE_ID',
+									   FLUJO VARCHAR2 (250)
+									   PATH 'FLUJO',
+                                       ESTAFETA VARCHAR(250)
+                                       PATH 'ESTAFETA') XML_DATA)
+                                       /*OBJECT_GROUP_ID VARCHAR(250)
+                                       PATH 'OBJECT_GROUP_ID') XML_DATA)*/   
+        
+        LOOP 
+		DBMS_OUTPUT.put_line ('PASO 2');
+            --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX. 
+           DBMS_OUTPUT.put_line ('PASO 3');
+            
+            -- SELECT  COUNT (*) 
+            -- INTO    v_val 
+            -- FROM    XXTOKS_FIN_CHEQUE 
+            -- WHERE   PERSON_ID = i.PERSON_ID
+            --         AND ATTRIBUTE1 = p_id_juego_asig;
+
+            SELECT  COUNT (*) 
+            INTO    v_val 
+            FROM    XXTOKS_HR_SETTLEMENT_ALL
+            WHERE   PERSON_ID = i.PERSON_ID
+                    AND ASSIGNMENT_SET_ID = p_id_juego_asig
+                    AND STATUS = 'PA';
+            
+            -- IF l_flujo IS NULL THEN 
+            --     l_flujo := i.FLUJO;
+            -- END IF;
+			DBMS_OUTPUT.put_line ('PASO 4');
+			
+			-- l_settlement_id := XXTOKS_HR_SETTLEMENT_S.NEXTVAL || '';
+			-- l_settlement_number := to_char(sysdate,'YYYYMMDDHH24MISSYYYY') || l_settlement_id;
+			
+            IF v_val = 0 
+            THEN 
+            -- l_bandera := 'Nuevo registro';
+            --     INSERT INTO xxtoks_hr_settlement_all (
+			-- 		SETTLEMENT_ID,
+			-- 		SETTLEMENT_NUMBER,
+			-- 		ASSIGNMENT_SET_ID,
+			-- 		REQUEST_TYPE,
+			-- 		USER_ID,
+			-- 		PERIOD_ID,
+            --         INVOICE_NUM,
+            --         PERSON_ID, 
+            --         --NOMBRE, 
+			-- 		STATUS,
+			-- 		INVOICE_AMOUNT,
+			-- 		INVOICE_ID,
+			-- 		--FLUJO,
+            --         USER_NAME,
+            --         CREATION_DATE, 
+            --         --LAST_UPDATE_DATE, 
+            --         CREATED_BY)
+            --         --LAST_UPDATED_BY)
+            --         --OBJECT_GROUP_ID) 
+            --      VALUES (
+			-- 		 l_settlement_id,
+			-- 		 l_settlement_number,
+			-- 		 p_id_juego_asig,
+			-- 		 '00',
+			-- 		 '1',
+			-- 		 '0',
+            --          i.NUMERO_CHEQUE,
+            --          i.PERSON_ID, 
+            --          --i.NOMBRE, 
+			-- 		 i.ESTATUS,
+			-- 		 i.CANTIDAD,
+			-- 		 i.FLOW_INSTANCE_ID,
+			-- 		 --i.FLUJO,
+            --          'ics@oracle.com',
+            --          SYSDATE, 
+            --          --SYSDATE, 
+            --          '-1'); 
+            --          --'-1');
+            --          --i.OBJECT_GROUP_ID); 
+                     
+            --          DBMS_OUTPUT.put_line ('Insercion finalizada');
+			-- 		 l_contador := l_contador + 1;
+            -- ELSE 
+            l_bandera := 'Actualizacion de registro';
+                UPDATE  xxtoks_hr_settlement_all 
+                SET     INVOICE_ID          = i.FLOW_INSTANCE_ID, 
+                        INVOICE_NUM         = i.NUMERO_CHEQUE,
+					    --PERSON_ID           = i.PERSON_ID,
+					    STATUS              = 'PA',
+					    INVOICE_AMOUNT      = i.CANTIDAD,
+                        LAST_UPDATE_DATE    = SYSDATE,
+                        ATTRIBUTE10         = '0S'
+                WHERE   PERSON_ID        = i.PERSON_ID
+                        AND ASSIGNMENT_SET_ID = p_id_juego_asig;
+                        --AND ATTRIBUTE4          = p_id_juego_asig;
+                 
+                 DBMS_OUTPUT.put_line ('Actualización finalizada');
+				 l_contador := l_contador + 1;
+
+            END IF; 
+			
+            DBMS_OUTPUT.put_line ('PASO 5');
+			DBMS_OUTPUT.put_line (l_contador);
+            
+            INSERT INTO GRG_JUEGOS_ASIGNACION_LOGS(
+                ASSIGNMENT_SET_ID,
+                --SETTLEMENT_ID,  
+                INVOICE_ID,
+                PERSON_ID,
+                LOGS,
+                CREATION_DATE,
+                LAST_UPDATE_DATE)
+            VALUES(
+                p_id_juego_asig,
+                --'',
+                i.FLOW_INSTANCE_ID,
+                i.PERSON_ID,
+                l_bandera,
+                SYSDATE,
+                SYSDATE);
+        
+        END LOOP; 
+        COMMIT;
+        p_flujo := p_id_juego_asig;
+        DBMS_OUTPUT.put_line ('PASO 6');
+        EXCEPTION
+        WHEN OTHERS THEN
+            dbms_output.put_line ('ERROR: --> '||SQLERRM);
+            l_bandera := 'ERROR: --> '||SQLERRM;
+            ROLLBACK;
+            INSERT INTO GRG_JUEGOS_ASIGNACION_LOGS(
+                ASSIGNMENT_SET_ID,
+                --SETTLEMENT_ID,  
+                --INVOICE_ID,
+                --PERSON_ID,
+                LOGS,
+                CREATION_DATE,
+                LAST_UPDATE_DATE)
+            VALUES(
+                p_id_juego_asig,
+                --'',
+                --i.FLOW_INSTANCE_ID,
+                --i.PERSON_ID,
+                l_bandera,
+                SYSDATE,
+                SYSDATE);
+                COMMIT;
+				DBMS_OUTPUT.put_line ('PASO 7');
+END get_cheque_cero_info;
+
+
+PROCEDURE get_juegos_asignacion (
+                                    p_id_juego_asig IN number,
+                                    p_flujo in VARCHAR2)
+
+IS
+    /*l_ID_CHEQUE NUMBER;
+    l_FLOW_INSTANCE_ID NUMBER;
+    l_PERSON_ID NUMBER;
+    l_ESTAFETA VARCHAR2(230);
+    l_NOMBRE VARCHAR2(230);
+    l_NUMERO_CHEQUE NUMBER;
+    l_CANTIDAD NUMBER;
+    l_FLUJO VARCHAR2(250);
+    l_ESTATUS VARCHAR2(150);
+    l_CREATION_DATE DATE;
+    l_LAST_UPDATE_DATE DATE;
+    l_CREATED_BY VARCHAR2(220);
+    l_LAST_UPDATE_BY VARCHAR2(220);*/
+    l_bandera           VARCHAR2(9999);
+
+    CURSOR ASIGNACION IS
+        SELECT  XFC.ID_CHEQUE,
+                XFC.FLOW_INSTANCE_ID,
+                XFC.PERSON_ID,
+                XFC.ESTAFETA,
+                XFC.NOMBRE,
+                XFC.NUMERO_CHEQUE,
+                XFC.CANTIDAD,
+                XFC.FLUJO,
+                XFC.ESTATUS,
+                XFC.CREATION_DATE,
+                XFC.LAST_UPDATE_DATE,
+                XFC.CREATED_BY,
+                XFC.LAST_UPDATE_BY,
+                XFC.OBJECT_GROUP_ID
+            /*INTO l_ID_CHEQUE,
+                l_FLOW_INSTANCE_ID,
+                l_PERSON_ID,
+                l_ESTAFETA,
+                l_NOMBRE,
+                l_NUMERO_CHEQUE,
+                l_CANTIDAD,
+                l_FLUJO,
+                l_ESTATUS,
+                l_CREATION_DATE,
+                l_LAST_UPDATE_DATE,
+                l_CREATED_BY,
+                l_LAST_UPDATE_BY*/
+        FROM XXTOKS_FIN_CHEQUE XFC
+        WHERE 1=1
+        --AND XFC.ESTATUS = 'Impagado'
+        AND ATTRIBUTE1 = p_id_juego_asig; 
+        --AND XFC.FLUJO = p_flujo;
+        --AND XFC.PERSON_ID = '300000019892280'; 
+
+
+        /SELECT COUNT () 
+              INTO v_val 
+              FROM XXTOKS_FIN_CHEQUE 
+              WHERE PERSON_ID = i.PERSON_ID
+              AND   FLUJO = i.FLUJO; */
+        
+        BEGIN
+            FOR i in ASIGNACION LOOP
+                IF i.flujo IS NOT NULL THEN
+                dbms_output.put_line ('Registro seleccionado: '|| i.person_id);
+                    
+                BEGIN
+                    UPDATE xxtoks_hr_settlement_all
+                    SET STATUS = 'PA',
+                    invoice_amount = i.cantidad,
+                    invoice_id = i.FLOW_INSTANCE_ID,
+                    invoice_num = i.numero_cheque,
+                    last_update_date = SYSDATE,
+                    ATTRIBUTE1 = 'P' 
+                    WHERE 1=1
+                    AND person_id = i.person_id
+                    AND ASSIGNMENT_SET_ID = p_id_juego_asig
+                    AND STATUS = 'LB';
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        dbms_output.put_line ('ERROR: --> '||SQLERRM);
+                        l_bandera := 'ERROR: --> '||SQLERRM;
+
+                        UPDATE GRG_JUEGOS_ASIGNACION_LOGS
+                        SET LOGS = LOGS || l_bandera,
+                            LAST_UPDATE_DATE = SYSDATE
+                        WHERE 1 = 1
+                        AND PERSON_ID = i.PERSON_ID
+                        AND ASSIGNMENT_SET_ID = p_id_juego_asig;
+                END;
+                dbms_output.put_line ('Registro actualizado'|| i.person_id);
+                END IF;
+            END LOOP;
+             COMMIT;
+             EXCEPTION
+        WHEN OTHERS THEN
+            dbms_output.put_line ('ERROR: --> '||SQLERRM);
+            ROLLBACK;
+            UPDATE GRG_JUEGOS_ASIGNACION_LOGS
+            SET LOGS = LOGS || 'Error general, en el proceso de liberacion',
+            LAST_UPDATE_DATE = SYSDATE
+            WHERE 1 = 1
+            AND ASSIGNMENT_SET_ID = p_id_juego_asig;
+            --AND PERSON_ID = i.PERSON_ID
+            --AND invoice_id = i.FLOW_INSTANCE_ID;
+            COMMIT;
+END get_juegos_asignacion;
+
+-----+
+-----+
+
+PROCEDURE main(flujo in VARCHAR2)
+IS
+    l_flujo VARCHAR2(250);
+    --l_proceso1 CLOB;
+    --l_proceso2 CLOB;
+    --l_proceso3 CLOB;
+    --l_proceso_finalizado CLOB;
+    --l_bandera           VARCHAR2(9999);
+
+    CURSOR C_JUE_ASIG IS
+    SELECT XHSA.ASSIGNMENT_SET_ID
+    FROM   XXTOKS_HR_SETTLEMENT_ALL XHSA
+           --,XXTOKS_FIN_CHEQUE XFC
+    WHERE 1 = 1
+    AND XHSA.status = 'LB'
+    AND XHSA.ASSIGNMENT_SET_ID is not null
+    --+AND XHSA.ASSIGNMENT_SET_ID = 300000399833687--300000230916042
+    --AND XHSA.ASSIGNMENT_SET_ID = XFC.OBJECT_GROUP_ID
+    GROUP BY XHSA.ASSIGNMENT_SET_ID;
+    
+    l_contador NUMBER := 0;
+        
+    BEGIN
+        FOR i in C_JUE_ASIG LOOP
+                IF i.ASSIGNMENT_SET_ID IS NOT NULL THEN
+                dbms_output.put_line ('i.ASSIGNMENT_SET_ID en proceso: '||i.ASSIGNMENT_SET_ID);
+                    GRG_JUEGOS_ASIGNACION_PKG.get_cheque_info(i.ASSIGNMENT_SET_ID,l_flujo);
+                dbms_output.put_line ('l_flujoen en proceso: '||l_flujo);
+                    GRG_JUEGOS_ASIGNACION_PKG.get_juegos_asignacion (i.ASSIGNMENT_SET_ID, l_flujo);
+                dbms_output.put_line ('Proceso terminado: '||l_flujo);
+
+                --l_proceso_finalizado := dbms_output.put_line (l_proceso1 || ' ' || l_proceso2 || ' ' || l_proceso3);
+                l_contador := l_contador + 1 ;
+                END IF;
+        COMMIT;
+        END LOOP;
+        apex_json.open_object; 
+            apex_json.write ('CANTIDAD' ,l_contador);
+        apex_json.close_object;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            dbms_output.put_line ('ERROR: --> '||SQLERRM);
+            apex_json.open_object; 
+                apex_json.write ('CANTIDAD' ,'-1');
+            apex_json.close_object;
+
+END main;
+END GRG_JUEGOS_ASIGNACION_PKG;
