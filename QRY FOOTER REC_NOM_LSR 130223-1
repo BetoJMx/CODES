@@ -1,0 +1,162 @@
+--QRY FOOTER REC_NOM_LSR 130223
+--+footer
+SELECT 
+     paf.assignment_id                                    assigment
+    ,ppa.payroll_action_id                                action_id
+    ,(CASE
+        WHEN :p_cuenta_banco = 1 THEN 
+            pba.bank_account_num
+        WHEN pba.bank_account_num IS NULL THEN '-'
+     END)                                                CUENTA_BANCO
+    ,COALESCE ( :p_leyenda_1, '')                              LEYENDA_1
+    ,COALESCE ( :p_leyenda_2, '')                              LEYENDA_2
+    ,CASE WHEN :p_imprime_ispt = 1 AND :p_recibo_vales = 0 THEN 
+        NVL((Select to_char(max(bal.balance_value),'999,999,990.00') ISPT
+                 From pay_balance_types_vl     pbt
+                 ,pay_pay_relationships_dn  pprd
+                 ,pay_action_classes        pac
+                 ,per_legislative_data_groups_vl  ldg
+                 ,TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                                          p_balance_type_id         => pbt.balance_type_id,
+                                          p_payroll_rel_action_id   => ppra.payroll_rel_action_id,
+                                          p_payroll_term_id         => NULL,
+                                          p_payroll_assignment_id   => NULL)) bal,
+                 pay_dimension_usages_vl    pdu
+                 Where 1 = 1
+                   AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+                   AND ppra.payroll_relationship_id = pprd.payroll_relationship_id
+                   AND ppra.retro_component_id IS NULL
+                   AND EXISTS
+                           (SELECT 1
+                              FROM pay_run_results prr
+                             WHERE prr.payroll_rel_action_id = ppra.payroll_rel_action_id)
+                   AND ppa.payroll_action_id = ppra.payroll_action_id
+                   AND pac.action_type = ppa.action_type
+                   AND pac.classification_name = 'SEQUENCED'
+                   AND COALESCE (pbt.legislation_code, ldg.legislation_code) = ldg.legislation_code
+                   AND COALESCE (pbt.legislative_data_group_id, ldg.legislative_data_group_id) = ldg.legislative_data_group_id
+                   AND pbt.base_balance_name = 'MX_ISR_WITHHELD_REGULAR'
+                   AND pdu.database_item_suffix = '_REL_YTD'
+                   AND pdu.balance_dimension_id = bal.balance_dimension_id
+                   AND COALESCE (pdu.legislation_code, ldg.legislation_code) = ldg.legislation_code
+                   AND COALESCE (pdu.legislative_data_group_id, ldg.legislative_data_group_id) = ldg.legislative_data_group_id),0)  
+    END AS ISPT          
+    ,CASE WHEN :p_recibo_vales = 0 THEN 
+        NVL((Select to_char(max(bal.balance_value), '999,999,990.00') GRAV
+        From pay_balance_types_vl     pbt
+        ,pay_pay_relationships_dn  pprd
+        ,pay_action_classes        pac
+        ,per_legislative_data_groups_vl  ldg
+        ,TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                              p_balance_type_id         => pbt.balance_type_id,
+                              p_payroll_rel_action_id   => ppra.payroll_rel_action_id,
+                              p_payroll_term_id         => NULL,
+                              p_payroll_assignment_id   => NULL)) bal,
+        pay_dimension_usages_vl    pdu
+        Where 1 = 1
+        AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+        AND ppra.payroll_relationship_id = pprd.payroll_relationship_id
+        AND ppra.retro_component_id IS NULL
+        AND EXISTS
+               (SELECT 1
+                  FROM pay_run_results prr
+                 WHERE prr.payroll_rel_action_id = ppra.payroll_rel_action_id)
+        AND ppa.payroll_action_id = ppra.payroll_action_id
+        AND pac.action_type = ppa.action_type
+        AND pac.classification_name = 'SEQUENCED'
+        AND COALESCE (pbt.legislation_code, ldg.legislation_code) = ldg.legislation_code
+        AND COALESCE (pbt.legislative_data_group_id, ldg.legislative_data_group_id) = ldg.legislative_data_group_id
+        AND pbt.base_balance_name = 'MX_ISR_SUBJECT'
+        AND pdu.database_item_suffix = '_REL_YTD'
+        AND pdu.balance_dimension_id = bal.balance_dimension_id
+        AND COALESCE (pdu.legislation_code, ldg.legislation_code) = ldg.legislation_code
+        AND COALESCE (pdu.legislative_data_group_id, ldg.legislative_data_group_id) = ldg.legislative_data_group_id) , 0)  
+    END AS GRAVADO
+    ,CASE WHEN :p_imprime_fondo = 1 AND :p_recibo_vales = 0 THEN 
+        NVL((
+		 Select to_char(max(bal.balance_value), '999,999,990.00') FDO
+         From   pay_payroll_rel_actions         ppra2
+               ,pay_payroll_actions             ppa2
+               ,pay_time_periods                ptp2
+                --+
+               ,per_legislative_data_groups_vl  ldg
+               ,pay_balance_types_vl            pbt
+               ,pay_dimension_usages_vl         pdu
+               ,TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                        p_balance_type_id         => pbt.balance_type_id,
+                        p_payroll_rel_action_id   => ppra2.payroll_rel_action_id,
+                        p_payroll_term_id         => NULL,
+                        p_payroll_assignment_id   => NULL)) bal
+         Where 1 = 1
+           AND ppra2.payroll_relationship_id = prg.payroll_relationship_id
+           AND ppra2.retro_component_id IS NULL
+           AND EXISTS
+                   (SELECT 1
+                      FROM pay_run_results prr
+                     WHERE prr.payroll_rel_action_id = ppra2.payroll_rel_action_id)
+           AND ppa2.payroll_action_id = ppra2.payroll_action_id
+           AND ppa2.action_type IN ('R', 'B', 'Q')
+           AND ptp2.time_period_id = ppa2.earn_time_period_id
+           AND ptp2.payroll_id = ppa2.payroll_id
+		   --+
+           And ptp2.period_name = COALESCE(:p_periodo ,ptp2.period_name)
+           AND ppa2.payroll_id = nvl(:p_nomina, ppa2.payroll_id )
+		   --+
+           AND ldg.legislative_data_group_id = prg.legislative_data_group_id
+           AND pbt.base_balance_name = 'FDO_AHO_RECIBO'
+           AND COALESCE (pbt.legislation_code, ldg.legislation_code) = ldg.legislation_code
+           AND COALESCE (pbt.legislative_data_group_id, ldg.legislative_data_group_id) = ldg.legislative_data_group_id
+           AND pdu.database_item_suffix = '_REL_ITD'
+           AND pdu.balance_dimension_id = bal.balance_dimension_id
+           AND COALESCE (pdu.legislation_code, ldg.legislation_code) = ldg.legislation_code
+           AND COALESCE (pdu.legislative_data_group_id, ldg.legislative_data_group_id) = ldg.legislative_data_group_id) , 0) 
+     END AS FDO_AHORRO
+FROM
+     Per_All_People_F               ppf
+     --*per_person_secured_list_v      ppf
+    ,Per_Person_Names_F             ppn
+    ,Per_All_Assignments_m          paf
+    --*,per_assignment_secured_list_v  paf
+    --+
+    ,pay_payroll_rel_actions        ppra
+    ,pay_rel_groups_dn              prg
+    ,pay_payroll_actions            ppa
+    ,pay_personal_payment_methods_f pppm 
+    ,pay_bank_accounts              pba
+    
+WHERE 1 = 1
+    And ppn.person_id = ppf.person_id
+    And ppn.name_type = 'MX'
+    And paf.person_id = ppf.person_id
+    And paf.primary_flag = 'Y'
+    And paf.assignment_type = 'E'
+    --+
+    And prg.assignment_id = paf.assignment_id
+    And prg.group_type = 'A'
+    And ppra.payroll_relationship_id = prg.payroll_relationship_id
+    And ppra.action_status = 'C'
+    And ppra.chunk_number is not null
+    And ppra.retro_component_id is null
+    And ppa.payroll_action_id = ppra.payroll_action_id
+    And ppa.action_type IN ('R', 'B', 'Q')
+    And not exists(
+        Select 1
+        From pay_object_groups  pog
+            ,pay_object_group_types pogt
+        Where 1 = 1
+            And pog.BASE_OBJECT_GROUP_NAME = 'NOMINA ALTAS'
+            And pogt.object_group_type_id = pog.object_group_type_id
+            And name_code = 'ELEGRP'
+            And pog.object_group_id = ppa.element_set_id
+    )
+    And ppra.RUN_TYPE_ID is not null
+
+    And pppm.payroll_relationship_id(+) = ppra.payroll_relationship_id 
+    And pppm.name(+) like '%NOMINA%'
+    And pppm.PRIORITY(+) = 10
+    And pba.bank_account_id(+) = pppm.bank_account_id
+
+    And ppa.effective_date BETWEEN ppf.effective_start_date AND ppf.effective_end_date
+    And ppa.effective_date BETWEEN ppn.effective_start_date AND ppn.effective_end_date
+    And ppa.effective_date BETWEEN paf.effective_start_date AND paf.effective_end_date
+    And ppa.effective_date BETWEEN pppm.effective_start_date(+) AND pppm.effective_end_date(+)
