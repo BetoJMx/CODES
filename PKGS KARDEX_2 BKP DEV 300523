@@ -1,0 +1,64 @@
+--PKGS KARDEX_2 BKP DEV 300523
+create or replace package XXTOKS_KARDEX_2_PKG 
+as
+
+    FUNCTION get_worker_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+	RETURN GRG_PAY_KARDEX_TBL PIPELINED;
+
+    FUNCTION get_worker_information_v2 (
+        p_estafeta   IN VARCHAR2,
+        p_nombre     IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+	RETURN GRG_PAY_KARDEX_TBL PIPELINED;
+
+
+    FUNCTION get_vacation_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_VACATIONS_TBL PIPELINED;
+	
+	
+    FUNCTION get_absence_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_ABSENCES_TBL PIPELINED;
+	
+	
+    FUNCTION get_image_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_IMAGE_TBL PIPELINED;
+	
+	
+    FUNCTION get_work_history_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_WORK_HISTORY_TBL PIPELINED;
+	
+	
+    FUNCTION get_courses_information (
+        p_estafeta   IN VARCHAR2,
+        p_user_token IN VARCHAR2 )
+    RETURN GRG_PAY_COURSES_TBL PIPELINED;
+	
+	
+    PROCEDURE post_datos_otbi;
+    
+    
+    FUNCTION get_xml_information (
+        p_report_name   IN VARCHAR2,
+        p_estafeta      IN VARCHAR2,
+        p_user_token    IN VARCHAR2 )
+    RETURN XMLTYPE;
+
+    FUNCTION get_xml_information_v2 (
+        p_report_name   IN VARCHAR2,
+        p_estafeta      IN VARCHAR2,
+        p_nombre        IN VARCHAR2,
+        p_user_token    IN VARCHAR2 )
+    RETURN XMLTYPE;
+
+end;
+/
