@@ -1,0 +1,251 @@
+-- QUERY DE Interfaz Nomina Ap Plan De Ayuda Mutua
+WITH DATA AS (
+SELECT 
+	period_name
+	,regular_process_date
+	,sum(amount) amount
+FROM ( 
+		SELECT 
+            ptp.time_period_id
+			,ptp.period_name
+			,ptp.regular_process_date
+			,SUM(prrv.result_value) AS amount
+			--
+			--,pettl.element_type_id
+			--,pettl.element_name
+			--,ppa.consolidation_set_id
+			--,ppa.payroll_id
+        FROM
+            --per_person_secured_list_v   papf,
+            per_all_people_f            papf,
+			per_person_names_f          ppnf,
+            per_all_assignments_f       paam,
+			--per_assignment_secured_list_v   paam,
+            per_periods_of_service      pps,
+            --pay_pay_relationships_dn    pprd,
+            pay_rel_groups_dn           prg,
+            pay_payroll_rel_actions     ppra,
+            pay_payroll_actions         ppa,
+            pay_time_periods            ptp,
+            --+ ELEMENTOS
+            pay_run_results             prr,
+            pay_run_result_values       prrv,
+            pay_element_types_f         pet,
+            pay_element_types_tl        pettl,
+            pay_ele_classifications     pec,
+            pay_input_values_f          piv,
+            pay_input_values_tl         pivtl
+        WHERE 1 = 1
+            And ppnf.person_id = papf.person_id
+            And ppnf.name_type = 'MX'
+            And paam.person_id = ppnf.person_id
+            --AND paam.ASSIGNMENT_STATUS_TYPE = 'ACTIVE'
+            --AND paam.assignment_type = 'E'
+            And paam.primary_flag = 'Y'
+			And paam.job_id is not null
+            And paam.location_id is not null
+            And pps.legal_entity_id = paam.legal_entity_id
+            And pps.period_of_service_id = paam.period_of_service_id 
+			And pps.period_type = 'E'
+            --AND paam.effective_latest_change = 'Y'
+            And prg.assignment_id = paam.assignment_id
+            And prg.group_type = 'A'
+            And ppra.payroll_relationship_id = prg.payroll_relationship_id
+            And ppra.action_status = 'C'
+            And ppra.retro_component_id is null
+            And ppra.chunk_number is not null
+            And ppa.payroll_action_id = ppra.payroll_action_id
+            And ppa.action_type IN ('R','B','Q')
+            --And ptp.time_period_id = 300000016352201
+			AND ptp.PERIOD_NAME = (CASE 
+									WHEN UPPER(:p_time_period_id) LIKE '%SEMANAL%' THEN TRIM(SUBSTR(:p_time_period_id,1,15))
+									WHEN UPPER(:p_time_period_id) LIKE '%WEEKLY%' THEN TRIM(SUBSTR(:p_time_period_id,1,14))
+									WHEN UPPER(:p_time_period_id) LIKE '%QUINCENAL%' THEN TRIM(SUBSTR(:p_time_period_id,1,17))
+									WHEN UPPER(:p_time_period_id) LIKE '%SEMIMONTHLY%' THEN TRIM(SUBSTR(:p_time_period_id,1,19))
+									END) --*OBLIGATORIO 
+            And ptp.time_period_id = ppa.earn_time_period_id
+            And ptp.status = 'O'
+            And ptp.payroll_id = ppa.payroll_id
+            --> ELEMENTOS
+            And prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+            And prr.status IN ('P', 'PA')
+            And prrv.run_result_id = prr.run_result_id
+            And prrv.result_value is not null
+            And piv.input_value_id = prrv.input_value_id
+            And pet.element_type_id = prr.element_type_id
+            And pettl.element_type_id = piv.element_type_id
+            And pettl.language = sys_context('USERENV','LANG')
+            And pet.element_type_id = pettl.element_type_id
+            And pivtl.input_value_id = piv.input_value_id
+            And pivtl.language = sys_context('USERENV','LANG')
+            And pec.classification_id = pet.classification_id
+			And not exists(
+								Select 1
+								From pay_object_groups  pog
+									,pay_object_group_types pogt
+								Where 1 = 1
+									And pog.BASE_OBJECT_GROUP_NAME = 'NOMINA ALTAS'
+									And pogt.object_group_type_id = pog.object_group_type_id
+									And name_code = 'ELEGRP'
+									And pog.object_group_id = ppa.element_set_id
+							)
+            AND UPPER(pec.base_classification_name) = ('VOLUNTARY DEDUCTIONS')
+            AND UPPER(TRIM(pivtl.name)) IN ('VALOR PAGO', 'PAY VALUE')
+            --> PARAMS
+            AND ppa.payroll_id = NVL(:p_payroll_id, ppa.PAYROLL_ID) --*OPCIONAL* 300000016351624
+            AND ppa.consolidation_set_id = :p_consolidation_set_id --*OBLIGATORIO* 300000015981157
+            ----paam.LOCATION_ID = NVL(:p_unidad_pago, paam.LOCATION_ID)
+            AND pettl.element_type_id IN (:p_element_type_id1,:p_element_type_id2) --*OBLIGATORIO* (300000018301781,300000018305293)
+			--AND papf.person_id = 300000020041593
+			--> DATES
+            --And TRUNC (ptp.cut_off_date) BETWEEN pps.date_start And nvl(pps.notified_termination_date,TRUNC (ppa.effective_date))
+            AND TRUNC (ppa.effective_date) BETWEEN paam.effective_start_date AND paam.effective_end_date
+            AND TRUNC (ppa.effective_date) BETWEEN papf.effective_start_date AND papf.effective_end_date
+            AND TRUNC (ppa.effective_date) BETWEEN ppnf.effective_start_date AND ppnf.effective_end_date
+            AND TRUNC (ppa.effective_date) BETWEEN pet.effective_start_date AND pet.effective_end_date
+            AND TRUNC (ppa.effective_date) BETWEEN piv.effective_start_date AND piv.effective_end_date
+            And TRUNC (ppa.effective_date) BETWEEN prg.start_date AND prg.end_date
+		GROUP BY 
+			ptp.time_period_id
+			,ptp.period_name
+			,ptp.regular_process_date
+			--
+			--,ppa.consolidation_set_id
+			--,ppa.payroll_id
+			--,pettl.element_name
+			--,pettl.element_type_id
+    )
+GROUP BY 
+	--TIME_PERIOD_ID,
+	period_name
+	,regular_process_date
+)
+SELECT
+	--> HEADER
+	 0
+	,0                                           AS INVOICE_ID
+	,SUBSTR (PERIOD_NAME, 1, 7) || '_' ||0       AS INVOICE_NUM
+	,SYSDATE                                     AS INVOICE_DATE
+	,TO_CHAR(SYSDATE, 'YYYY-MM-DD')              AS GL_DATE -- and received_date(ap_invoices_interface)
+	,'STANDARD'                                  AS INVOICE_TYPE_LOOKUP_CODE                            
+	,(:p_vendor_id)                              AS VENDOR_ID
+	,(SELECT  pvs.vendor_site_id
+		FROM    poz_supplier_sites_all_m pvs
+		WHERE   pvs.VENDOR_ID = :p_vendor_id
+		AND pvs.PRC_BU_ID = :p_org_id
+		AND TRUNC(SYSDATE) 
+		BETWEEN pvs.EFFECTIVE_START_DATE 
+		AND pvs.EFFECTIVE_END_DATE
+		and  pvs.vendor_site_code = 'PLANAYU')      AS VENDOR_SITE_ID
+	,(SELECT psv.vendor_name
+		FROM poz_supplier_sites_all_m pvs
+		, poz_suppliers_v psv
+		WHERE   pvs.VENDOR_ID = :p_vendor_id
+		AND pvs.PRC_BU_ID = :p_org_id
+		AND psv.vendor_id = pvs.vendor_id
+		AND TRUNC(SYSDATE) 
+		BETWEEN pvs.EFFECTIVE_START_DATE 
+		AND pvs.EFFECTIVE_END_DATE
+		and  pvs.vendor_site_code = 'PLANAYU')      AS VENDOR_NAME
+	,AMOUNT                                      AS INVOICE_AMOUNT
+	,'MXN'                                       AS INVOICE_CURRENCY_CODE
+	,'INMEDIATO'                                 AS TERMS_NAME
+	,'INVOICE GATEWAY'                           AS SOURCE
+	,NVL((select TRIM(ieppm.payment_method_code)
+			from iby_ext_party_pmt_mthds ieppm,
+			 iby_external_payees_all iep,
+			 poz_supplier_sites_all_m apss
+			where iep.ext_payee_id 	= ieppm.ext_pmt_party_id
+			and ieppm.primary_flag 	= 'Y'
+			and apss.vendor_site_id 	= iep.supplier_site_id
+			and trunc(sysdate) 		between apss.effective_start_date and apss.effective_end_date
+			and trunc(sysdate) 		between iep.start_date and iep.end_date
+			and trunc(sysdate) 		between ieppm.start_date and ieppm.end_date
+			and apss.vendor_id 		= :P_VENDOR_ID
+			and apss.prc_bu_id 		= :P_ORG_ID
+            group by TRIM(ieppm.payment_method_code)),0)    AS PAYMENT_METHOD_LOOKUP_CODE
+	,(SELECT pvs.PAY_GROUP_LOOKUP_CODE
+		FROM poz_supplier_sites_all_m pvs
+		WHERE pvs.VENDOR_ID = :p_vendor_id
+		AND pvs.PRC_BU_ID = :p_org_id
+		AND TRUNC(SYSDATE) BETWEEN pvs.EFFECTIVE_START_DATE  AND pvs.EFFECTIVE_END_DATE
+		and  pvs.vendor_site_code= 'PLANAYU')        AS PAY_GROUP_LOOKUP_CODE
+	,'Y'                                          AS EXCLUSIVE_PAYMENT_FLAG
+	,:p_org_id                                    AS ORG_ID
+	------------
+	,'PAGO NOMINA'                                AS DESCRIPTION
+	,:p_source                                    AS GROUP_ID
+	, (
+        SELECT    fspa.accts_pay_code_combination_id
+        FROM      financials_system_params_all fspa
+        WHERE     1 = 1
+        AND       fspa.org_id = :p_org_id
+      ) AS ACCTS_PAY_CODE_COMB_ID
+	--> LINES
+	,ROWNUM                                       AS LINE_NUMBER
+	,0                                            AS INVOICE_LINE_ID
+	,'ITEM'                                       AS LINE_TYPE_LOOKUP_CODE
+	,'N'                                          AS PA_ADITTION_FLAG
+	,(SELECT NAME
+		FROM HR_ORGANIZATION_V
+		WHERE ORGANIZATION_ID = :p_org_id
+		GROUP BY NAME)                             AS LDESCRIPTION
+	,(SELECT code_combination_id                                                                                                         -- dist_code_combination_id(lines)
+		FROM   gl_code_combinations 
+		WHERE 1=1
+		AND segment1=   ( SELECT 
+							  GLSV.SEGMENT_VALUE AS SEGMENT_1
+						  FROM  
+							  HR_ORGANIZATION_V               HOV,
+							  HR_ORG_DETAILS_BY_CLASS_V       HOD,
+							  GL_LEDGER_LE_V                  GLLV,
+							  GL_LEDGER_SEGMENT_VALUES        GLSV
+						  WHERE 
+							  HOV.ORGANIZATION_ID             = :p_org_id
+							  AND HOV.ORGANIZATION_ID                = HOD.ORGANIZATION_ID
+							  AND (HOV.CLASSIFICATION_CODE        = HOD.CLASSIFICATION_CODE)
+							  AND HOD.ORG_INFORMATION_CONTEXT     = HOV.CLASSIFICATION_CODE
+							  AND (HOD.ORG_INFORMATION3           = GLLV.LEDGER_ID)
+							  AND GLLV.LEDGER_ID                  = GLSV.LEDGER_ID
+							  AND HOV.CLASSIFICATION_CODE         = 'FUN_BUSINESS_UNIT'
+							  AND HOV.NAME LIKE '%_BU')
+		AND segment2= :p_tipoNegocio --'0000'
+		AND segment3= :p_unidad 
+		AND segment4= :p_cuenta
+		AND segment5= :p_Intercompania--'0000'
+		AND segment6= :p_Proyecto)               AS DIST_CODE_COMBINATION_ID
+	,NVL((SELECT 
+				  GLSV.SEGMENT_VALUE AS SEGMENT_1
+			  FROM  
+				  HR_ORGANIZATION_V               HOV,
+				  HR_ORG_DETAILS_BY_CLASS_V       HOD,
+				  GL_LEDGER_LE_V                  GLLV,
+				  GL_LEDGER_SEGMENT_VALUES        GLSV
+			  WHERE 
+				  HOV.ORGANIZATION_ID             = :p_org_id
+				  AND HOV.ORGANIZATION_ID                = HOD.ORGANIZATION_ID
+				  AND (HOV.CLASSIFICATION_CODE        = HOD.CLASSIFICATION_CODE)
+				  AND HOD.ORG_INFORMATION_CONTEXT     = HOV.CLASSIFICATION_CODE
+				  AND (HOD.ORG_INFORMATION3           = GLLV.LEDGER_ID)
+				  AND GLLV.LEDGER_ID                  = GLSV.LEDGER_ID
+				  AND HOV.CLASSIFICATION_CODE         = 'FUN_BUSINESS_UNIT'
+				  AND HOV.NAME LIKE '%_BU'), NULL) AS COMPAÑIA
+	,(:p_tipoNegocio) AS TIPONEGOCIO
+	,(:p_unidad) AS UNIDAD
+	,(:p_cuenta) AS CUENTA
+	,(:p_Intercompania) AS INTERCOMPAÑIA
+	,(:p_Proyecto) AS PROYECTO
+	,(SELECT  USER_ID 
+		FROM    PER_USERS 
+		WHERE   USERNAME = :xdo_username)                AS CREATED_BY
+	,null                                       		 AS METODO_PAGO
+	,(SELECT  pvs.payment_priority
+		FROM    POZ_SUPPLIER_SITES_ALL_M pvs
+		WHERE   pvs.VENDOR_ID = :p_vendor_id
+		AND pvs.PRC_BU_ID = :p_org_id
+		AND TRUNC(SYSDATE) 
+		BETWEEN pvs.EFFECTIVE_START_DATE 
+		AND pvs.EFFECTIVE_END_DATE
+		and  pvs.vendor_site_code= 'PLANAYU')              AS PAYMENT_PRIORITY
+FROM 
+	DATA
