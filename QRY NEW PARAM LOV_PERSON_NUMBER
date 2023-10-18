@@ -1,0 +1,75 @@
+--QRY NEW PARAM LOV_PERSON_NUMBER
+SELECT  DISTINCT 
+        REPLACE(UPPER(ppn.full_name),',','') AS name,
+        papf.person_id
+
+FROM    per_assignment_secured_list_v   paam,
+        per_person_secured_list_v       papf,
+        pay_payroll_secured_list_v      py,
+        pay_consolidation_sets          pcs,
+        pay_payroll_actions             ppa,
+        pay_payroll_rel_actions         pra,
+        pay_assigned_payrolls_dn        apd,
+        pay_payroll_terms               pt,
+        --pay_time_periods                ptp,
+        pay_rel_groups_dn               prg,
+        per_location_secured_list_v     pl,
+        per_person_names_f              ppn
+
+WHERE   1=1
+        --AND ppa.earn_time_period_id = ptp.time_period_id
+        AND pra.payroll_action_id  = ppa.payroll_action_id  
+        AND ppa.action_type IN ('R')
+        AND ppn.name_type = 'MX'
+        AND papf.person_id = ppn.person_id
+        --AND ptp.period_category = 'E'
+        AND prg.payroll_relationship_id = pra.payroll_relationship_id
+        AND pt.payroll_term_id = apd.payroll_term_id
+        AND py.payroll_id = apd.payroll_id
+        --AND ptp.payroll_id = py.payroll_id
+        AND pra.source_action_id IS NULL
+        AND paam.primary_flag = 'Y'
+        AND pt.hr_term_id = prg.term_id
+        AND paam.assignment_id = prg.assignment_id
+        AND pcs.consolidation_set_id = NVL(ppa.consolidation_set_id,py.consolidation_set_id)
+        AND paam.assignment_type = 'E'  
+        AND papf.person_id = paam.person_id
+        AND paam.location_id = pl.location_id
+        --+
+        AND NOT EXISTS (
+            SELECT  1
+            FROM    fnd_lookup_values_vl flv
+            WHERE   1 = 1
+                    AND flv.lookup_type     = 'GRG_PAY_CARTA_REN_USER_RSTRGDS'
+                    --AND flv.lookup_code     = papf.person_number
+                    AND flv.lookup_code     = :xdo_user_name
+                    AND flv.enabled_flag    = 'Y'
+                    AND flv.tag             LIKE '%' || py.payroll_name || '%'
+        )
+        --+
+        AND TRUNC(SYSDATE) BETWEEN py.effective_start_date AND py.effective_end_date
+        AND trunc(SYSDATE) BETWEEN ppn.EFFECTIVE_START_DATE AND ppn.EFFECTIVE_END_DATE
+        AND TRUNC(SYSDATE) BETWEEN paam.effective_start_date AND paam.effective_end_date
+        AND TRUNC(SYSDATE) BETWEEN papf.effective_start_date AND papf.effective_end_date
+ORDER BY 1
+
+select distinct REPLACE(UPPER(ppn.full_name),',','') AS name,
+            ppn.person_id
+   from      per_person_names_f ppn,
+             per_person_secured_list_v papf
+		   , per_assignment_secured_list_v      paaf
+		   , per_location_secured_list_v pl
+		 --  ,hr_locations_all           hla
+ where ppn.name_type = 'MX'
+    AND paaf.assignment_type = 'E'
+    AND paaf.primary_flag = 'Y'
+	and papf.person_id = ppn.person_id
+	and ppn.person_id = paaf.person_id
+	and paaf.location_id = pl.location_id
+	--and paaf.ASSIGNMENT_STATUS_TYPE		= 'ACTIVE'
+   -- and pl.location_id = hla.location_id
+	--and papf.person_number not like '%C%'
+	And trunc(sysdate) BETWEEN ppn.EFFECTIVE_START_DATE and ppn.EFFECTIVE_END_DATE
+	And trunc(sysdate) BETWEEN papf.EFFECTIVE_START_DATE and papf.EFFECTIVE_END_DATE
+	and trunc(sysdate) BETWEEN paaf.EFFECTIVE_START_DATE and paaf.EFFECTIVE_END_DATE
+order by 1
