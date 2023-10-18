@@ -1,0 +1,669 @@
+/*
+QUERY RECIBO FINIQUITO CFDI V2
+
+    CONSULTA HEADER PARA EXTRACCION DE INFORMACION BASE Y RESULTADOS DE NOMINA DE 
+    EMPLEADOS POR PERIODOS PARA SU POST-PROCESAMIENTO Y GENERACION DE REPORTE FINAL.
+
+VERSION |RESPONSABLE            |CAMBIO                                                         |FECHA
+--------------------------------------------------------------------------------------------------------
+2.0.0   |ALBERTO JUAREZ         |ADD SOLUTION FOR MULTIPLE RESULTS SUBQUERY 		            |010323
+*/
+
+With tks_payroll_actions_v As (
+    Select  prg.assignment_id
+          , ppra.payroll_relationship_id
+          , ppra.payroll_rel_action_id
+          , NVL( ppa.date_earned , ppa.effective_date ) effective_date 
+          , ptp.start_date period_start_date 
+          , pay.payroll_name
+          , ptp.period_name
+    From    pay_payroll_actions               ppa
+          , pay_payroll_rel_actions           ppra
+          , pay_rel_groups_dn                 prg
+          , pay_run_types_f                   prtf
+          , pay_all_payrolls_f                pay
+          , pay_time_periods                  ptp
+    Where   1 = 1
+        And ppa.consolidation_set_id = :p_consolidation_set_id
+        And ppa.payroll_id = :p_payroll_id
+        And ppa.earn_time_period_id = :p_time_period_id
+        And ppa.assignment_set_id = nvl(:p_object_group_id, ppa.assignment_set_id)
+        And ppa.action_type in ( 'R' , 'Q' , 'B' )
+        --+
+        And Not Exists(
+            Select 1
+            From pay_object_groups  pog
+                ,pay_object_group_types pogt
+            Where 1 = 1
+                And pog.BASE_OBJECT_GROUP_NAME = 'NOMINA ALTAS FINIQUITOS'
+                And pogt.object_group_type_id = pog.object_group_type_id
+                And name_code = 'ELEGRP'
+                And pog.object_group_id = ppa.element_set_id
+        )
+        --+
+        And ppra.payroll_action_id = ppa.payroll_action_id
+        And ppra.action_status = 'C'
+        And ppra.retro_component_id is null
+        And ppra.chunk_number is not null 
+        --+
+        And prg.payroll_relationship_id = ppra.payroll_relationship_id
+        And prg.group_type = 'A'
+        And prtf.run_type_id = ppra.run_type_id
+        --+
+        And pay.payroll_id = ppa.payroll_id
+        And ptp.time_period_id = ppa.earn_time_period_id
+        --+
+        And ppa.effective_date 
+            Between prg.start_date 
+                And prg.end_date
+        And ppa.effective_date
+            Between pay.effective_start_date 
+                And pay.effective_end_date
+        And ppa.effective_date 
+            Between prtf.effective_start_date 
+                And prtf.effective_end_date
+        And ppa.effective_date 
+            Between ptp.start_date
+                And ptp.end_date
+) 
+, tks_worker_details_v As (
+    SELECT  tpa.payroll_relationship_id         
+        , tpa.payroll_rel_action_id
+        , REPLACE(UPPER ((ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)),'  ',' ') AS nombre
+        , pap.person_number no_de_empleado
+        --, upper(xler.registered_name) empresa
+        , upper(ple.name) empresa
+        , xler.registration_number rfc_empresa
+        ,(case when :p_puesto_con_marca = 'N' then
+            replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(
+                CONVERT (REPLACE( REPLACE (  TRIM (UPPER (pj.name)), 'Ñ', 'N'), 'ñ', 'n'), 'us7ascii', 'al32utf8'),
+                ' TOKS'),' BEER'),' FF'),' FAROLITO'), ' SS'), ' CEDIS'),' COMISARIATO'),' BEER SGG'),' PANDA EXPRESS'),' PANDA')
+          Else
+            CONVERT (REPLACE( REPLACE (  TRIM (UPPER (pj.name)), 'Ñ', 'N'), 'ñ', 'n'), 'us7ascii', 'al32utf8')
+         end) puesto 
+       -- , TO_CHAR(NVL(ppos.adjusted_svc_date, pap.start_date),'DD/MM/YYYY') 
+        , TO_CHAR(
+           (SELECT psdf.seniority_date
+            FROM   per_seniority_dates_f  psdf, -- Seniority Date
+                   per_seniority_dates_setup   psds
+            WHERE  psdf.person_id = pap.person_id
+            AND    psdf.seniority_field = 'ORA_ENT'
+            AND    psds.seniority_date_code = psdf.seniority_date_code
+            AND    psds.active_flag = 'Y'
+            AND    TRUNC(SYSDATE) BETWEEN psdf.effective_start_date AND psdf.effective_end_date
+            GROUP BY psdf.seniority_date
+           )
+        , 'DD/MM/YYYY') fecha_de_ingreso
+       --, TO_CHAR(ppos.actual_termination_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = AMERICAN')   as fecha_de_baja
+        ,case 
+            when ppos.actual_termination_date is null then  
+                (select to_char(TRUNC(to_date(peev.screen_entry_value,'YYYY-MM-DD HH24:MI:SS')),'dd/mm/yyyy')
+                    From
+                        --pay_assigned_payrolls_dn     papd,
+                        --pay_all_payrolls_f           ppp
+                        --+
+                         pay_entry_usages peu
+                        ,pay_element_entries_f peef
+                        ,pay_element_types_vl pet
+                        --+
+                        ,pay_element_entry_values_f peev
+                        ,pay_input_values_tl piv
+                        --
+                        --,per_actions_b  pab
+                        --,per_actions_tl pat
+                    Where 1 = 1
+                        --and papd.payroll_term_id(+) = prg.parent_rel_group_id
+--                                and papd.payroll_id = ppp.payroll_id(+)
+--                                and pay.payroll_id = ppp.payroll_id
+                        And peu.payroll_relationship_id(+) = tpa.payroll_relationship_id
+                        And peu.element_entry_id = peef.element_entry_id(+)
+                        And peef.element_type_id = pet.element_type_id(+)
+                        And pet.element_name = 'SETUP FINIQUITO'
+                        And piv.name = 'Fha Baja'
+                        --+
+                        --and pab.action_code = peev.screen_entry_value
+                        --and pab.action_id =  pat.action_id
+                        --and pat.language = sys_context ('USERENV', 'LANG')
+                        --+
+                        And peev.screen_entry_value is not null
+                        And peev.element_entry_id = peef.element_entry_id
+                        And peev.input_value_id = piv.input_value_id
+                        And piv.language = userenv('LANG')
+                        --+
+                        --and (ppa.date_earned) between trunc(papd.start_date(+)) and trunc(papd.end_date(+))
+                        And tpa.effective_date between peev.effective_start_date And peev.effective_end_date
+                        And tpa.effective_date between peef.effective_start_date And peef.effective_end_date
+                        And tpa.effective_date between peu.date_from And peu.date_to
+                        --AND (ppa.date_earned) BETWEEN TRUNC(ppp.effective_start_date) AND TRUNC(ppp.effective_end_date)
+                ) 
+        else 
+            TO_CHAR(ppos.actual_termination_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = AMERICAN') 
+        end fecha_de_baja
+        , TO_CHAR (hoi_unidad.org_information1) sucursal
+        , CONVERT(pldft.location_name,'us7ascii','al32utf8') as nom_unidad
+        , CASE 
+            WHEN  SUBSTR(xler.registration_number,1,3) = SUBSTR(pldft.location_name,1,3) THEN 
+                UPPER(CONVERT(SUBSTR(pldft.location_name,5),'us7ascii','al32utf8'))         
+            ELSE 
+                UPPER(CONVERT(pldft.location_name,'us7ascii','al32utf8'))
+          END unidad
+        , NVL(NVL(cs.salary_amount, cs_al_periodo.salary_amount), cs_a_la_contratacion.salary_amount) salario_dia --sueldodia
+        ,(cs.salary_amount * 30)             as salario_mensual
+        , DECODE(.00000000001*(MOD(ABS((cs.salary_amount * 30)),1000000000000)-MOD(ABS((cs.salary_amount * 30)),100000000000)),
+             1,DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-12,3),'100','CIEN ','CIENTO '),
+             2,'DOSCIENTOS ',3,'TRESCIENTOS ',
+             4,'CUATROCIENTOS ',5,'QUINIENTOS ',6,'SEISCIENTOS ',
+             7,'SETECIENTOS ',8,'OCHOCIENTOS ',9,'NOVECIENTOS ',
+             0,NULL,'ERROR') ||
+             DECODE(.0000000001*(MOD(ABS((cs.salary_amount * 30)),100000000000)-MOD(ABS((cs.salary_amount * 30)),10000000000)),
+             1,(DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)
+             -MOD(ABS((cs.salary_amount * 30)),1000000000)),
+             0,'DIEZ ',1,'ONCE ',2,'DOCE ',3,'TRECE ',
+             4,'CATORCE ',5,'QUINCE ',6,'DIECISEIS ',
+             7,'DIECISIETE ',8,'DIECIOCHO ',9,'DIECINUEVE ','ERROR')),
+             2,(DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)
+             -MOD(ABS((cs.salary_amount * 30)),1000000000)),
+             0,'VEINTE ',1,'VEINTIUN ',2,'VEINTIDOS ',3,'VEINTITRES ',
+             4,'VEINTICUATRO ',5,'VEINTICINCO ',6,'VEINTISEIS ',
+             7,'VEINTISIETE ',8,'VEINTIOCHO ',9,'VEINTINUEVE ','ERROR')),
+             3,'TREINTA ',4,'CUARENTA ',
+             5,'CINCUENTA ',6,'SESENTA ',7,'SETENTA ',
+             8,'OCHENTA ',9,'NOVENTA ',NULL) ||
+             DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)-MOD(ABS((cs.salary_amount * 30)),1000000000))
+             ,0,NULL,
+             (DECODE(.0000000001*(MOD(ABS((cs.salary_amount * 30)),100000000000)-MOD(ABS((cs.salary_amount * 30)),10000000000)),
+             0,NULL,1,NULL,2,NULL,'Y ')))||
+             DECODE(.0000000001*(MOD(ABS((cs.salary_amount * 30)),100000000000)-MOD(ABS((cs.salary_amount * 30)),10000000000)),
+             1,NULL,2,NULL,(DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)
+             -MOD(ABS((cs.salary_amount * 30)),1000000000)),
+             1,'UN ',2,'DOS ',3,'TRES ',4,'CUATRO ',5,'CINCO ',
+             6,'SEIS ',7,'SIETE ',8,'OCHO ',9,'NUEVE ',
+             0,NULL,'ERROR')))||
+             DECODE(SIGN(ABS((cs.salary_amount * 30))-999.99),1,
+             DECODE(.00000000001*(MOD(ABS((cs.salary_amount * 30)),1000000000000)
+             -MOD(ABS((cs.salary_amount * 30)),100000000000)),0,
+             DECODE (.0000000001*(MOD(ABS((cs.salary_amount * 30)),100000000000)
+             -MOD(ABS((cs.salary_amount * 30)),10000000000)),0,
+             DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)
+             -MOD(ABS((cs.salary_amount * 30)),1000000000)),0, NULL, DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-10,1),'1','BILLON ','BILLONES ')),
+             'BILLONES '),
+             'BILLONES '),  NULL) ||
+             DECODE(.00000001*(MOD(ABS((cs.salary_amount * 30)),1000000000)-MOD(ABS((cs.salary_amount * 30)),100000000)),
+             1,DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-9,3),'100','CIEN ','CIENTO '),
+             2,'DOSCIENTOS ',3,'TRESCIENTOS ',
+             4,'CUATROCIENTOS ',5,'QUINIENTOS ',6,'SEISCIENTOS ',
+             7,'SETECIENTOS ',8,'OCHOCIENTOS ',9,'NOVECIENTOS ',
+             0,NULL,'ERROR') ||
+             DECODE(.0000001*(MOD(ABS((cs.salary_amount * 30)),100000000)-MOD(ABS((cs.salary_amount * 30)),10000000)),
+             1,(DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)
+             -MOD(ABS((cs.salary_amount * 30)),1000000)),
+             0,'DIEZ ',1,'ONCE ',2,'DOCE ',3,'TRECE ',
+             4,'CATORCE ',5,'QUINCE ',6,'DIECISEIS ',
+             7,'DIECISIETE ',8,'DIECIOCHO ',9,'DIECINUEVE ','ERROR')),
+             2,(DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)
+             -MOD(ABS((cs.salary_amount * 30)),1000000)),
+             0,'VEINTE ',1,'VEINTIUN ',2,'VENTIDOS ',3,'VEINTITRES ',
+             4,'VEINTICUATRO ',5,'VEINTICINCO ',6,'VEINTISEIS ',
+             7,'VEINTISIETE ',8,'VEINTIOCHO ',9,'VEINTINUEVE ','ERROR')),
+             3,'TREINTA ',4,'CUARENTA ',
+             5,'CINCUENTA ',6,'SESENTA ',7,'SETENTA ',
+             8,'OCHENTA ',9,'NOVENTA ',NULL) ||
+             DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)-MOD(ABS((cs.salary_amount * 30)),1000000))
+             ,0,NULL,
+             (DECODE(.0000001*(MOD(ABS((cs.salary_amount * 30)),100000000)-MOD(ABS((cs.salary_amount * 30)),10000000)),
+             0,NULL,1,NULL,2,NULL,'Y ')))||
+             DECODE(.0000001*(MOD(ABS((cs.salary_amount * 30)),100000000)-MOD(ABS((cs.salary_amount * 30)),10000000)),
+             1,NULL,2,NULL,(DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)
+             -MOD(ABS((cs.salary_amount * 30)),1000000)),
+             1,'UN ',2,'DOS ',3,'TRES ',4,'CUATRO ',5,'CINCO ',
+             6,'SEIS ',7,'SIETE ',8,'OCHO ',9,'NUEVE ',
+             0,NULL,'ERROR')))||
+             DECODE(SIGN(ABS((cs.salary_amount * 30))-999.99),1,
+             DECODE(.00000001*(MOD(ABS((cs.salary_amount * 30)),1000000000)
+             -MOD(ABS((cs.salary_amount * 30)),100000000)),0,
+             DECODE (.0000001*(MOD(ABS((cs.salary_amount * 30)),100000000)
+             -MOD(ABS((cs.salary_amount * 30)),10000000)),0,
+             DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)
+             -MOD(ABS((cs.salary_amount * 30)),1000000)),0, NULL, DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-7,1),
+                                                          '1','MILLON ','MILLONES ')),
+             'MILLONES '),
+             'MILLONES '),  NULL) ||
+             DECODE(.00001*(MOD(ABS((cs.salary_amount * 30)),1000000)-MOD(ABS((cs.salary_amount * 30)),100000)),
+             1,DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-6,3),'100','CIEN ','CIENTO '),
+             2,'DOSCIENTOS ',3,'TRESCIENTOS ',
+             4,'CUATROCIENTOS ',5,'QUINIENTOS ',6,'SEISCIENTOS ',
+             7,'SETECIENTOS ',8,'OCHOCIENTOS ',9,'NOVECIENTOS ',
+             0,NULL,'ERROR') ||
+             DECODE(.0001*(MOD(ABS((cs.salary_amount * 30)),100000)-MOD(ABS((cs.salary_amount * 30)),10000)),
+             1,(DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)-MOD(ABS((cs.salary_amount * 30)),1000)),
+             0,'DIEZ ',1,'ONCE ',2,'DOCE ',3,'TRECE ',
+             4,'CATORCE ',5,'QUINCE ',6,'DIECISEIS ',
+             7,'DIECISIETE ',8,'DIECIOCHO ',9,'DIECINUEVE ','ERROR')),
+             2,(DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)
+             -MOD(ABS((cs.salary_amount * 30)),1000)),
+             0,'VEINTE ',1,'VEINTIUN ',2,'VEINTIDOS ',3,'VEINTITRES ',
+             4,'VEINTICUATRO ',5,'VEINTICINCO ',6,'VEINTISEIS ',
+             7,'VEINTISIETE ',8,'VEINTIOCHO ',9,'VEINTINUEVE ','ERROR')),
+             3,'TREINTA ',4,'CUARENTA ',
+             5,'CINCUENTA ',6,'SESENTA ',7,'SETENTA ',
+             8,'OCHENTA ',9,'NOVENTA ',NULL) ||
+             DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)-MOD(ABS((cs.salary_amount * 30)),1000))
+             ,0,NULL,
+             (DECODE(.0001*(MOD(ABS((cs.salary_amount * 30)),100000)-MOD(ABS((cs.salary_amount * 30)),10000)),
+             0,NULL,1,NULL,2,NULL,'Y ')))||
+             DECODE(.0001*(MOD(ABS((cs.salary_amount * 30)),100000)-MOD(ABS((cs.salary_amount * 30)),10000)),
+             1,NULL,2,NULL,(DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)-MOD(ABS((cs.salary_amount * 30)),1000)),
+             1,'UN ',2,'DOS ',3,'TRES ',4,'CUATRO ',5,'CINCO ',
+             6,'SEIS ',7,'SIETE ',8,'OCHO ',9,'NUEVE ',
+             0,NULL,'ERROR')))||
+             DECODE(SIGN(ABS((cs.salary_amount * 30))-999.99),1,
+             DECODE(.00001*(MOD(ABS((cs.salary_amount * 30)),1000000)-MOD(ABS((cs.salary_amount * 30)),100000)),0,
+             DECODE (.0001*(MOD(ABS((cs.salary_amount * 30)),100000)-MOD(ABS((cs.salary_amount * 30)),10000)),0,
+             DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)-MOD(ABS((cs.salary_amount * 30)),1000)),0,
+             NULL, 'MIL '),
+             'MIL '),
+             'MIL '),  NULL) ||
+             DECODE(.01*(MOD(ABS((cs.salary_amount * 30)),1000)-MOD(ABS((cs.salary_amount * 30)),100)),
+             1,DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-3,3),'100','CIEN ','CIENTO '),
+             2,'DOSCIENTOS ',3,'TRESCIENTOS ',
+             4,'CUATROCIENTOS ',5,'QUINIENTOS ',6,'SEISCIENTOS ',
+             7,'SETECIENTOS ',8,'OCHOCIENTOS ',9,'NOVECIENTOS ',
+             NULL) ||
+             DECODE(.1*(MOD(ABS((cs.salary_amount * 30)),100)-MOD(ABS((cs.salary_amount * 30)),10)),
+             1,(DECODE(TRUNC(MOD(ABS((cs.salary_amount * 30)),10)),
+             0,'DIEZ ',1,'ONCE ',2,'DOCE ',3,'TRECE ',
+             4,'CATORCE ',5,'QUINCE ',6,'DIECISEIS ',
+             7,'DIECISIETE ',8,'DIECIOCHO ',9,'DIECINUEVE ','ERROR')),
+             2,(DECODE(TRUNC(MOD(ABS((cs.salary_amount * 30)),10)),
+             0,'VEINTE ',1,'VEINTIUN ',2,'VEINTIDOS ',3,'VEINTITRES ',
+             4,'VEINTICUATRO ',5,'VEINTICINCO ',6,'VEINTISEIS ',
+             7,'VEINTISIETE ',8,'VEINTIOCHO ',9,'VEINTINUEVE ','ERROR')),
+             2,'VEINTE ',3,'TREINTA ',4,'CUARENTA ',
+             5,'CINCUENTA ',6,'SESENTA ',7,'SETENTA ',
+             8,'OCHENTA ',9,'NOVENTA ',NULL) ||
+             DECODE(TRUNC(MOD(ABS((cs.salary_amount * 30)),10))
+             ,0,NULL,
+             (DECODE(.1*(MOD(ABS((cs.salary_amount * 30)),100)-MOD(ABS((cs.salary_amount * 30)),10)),
+             0,NULL,1,NULL,2,NULL,'Y ')))||
+             DECODE(.1*(MOD(ABS((cs.salary_amount * 30)),100)-MOD(ABS((cs.salary_amount * 30)),10)),
+             1,NULL,2,NULL,(DECODE(TRUNC(MOD(ABS((cs.salary_amount * 30)),10)),
+             1,'UN ',2,'DOS ',3,'TRES ',
+             4,'CUATRO ',5,'CINCO ',6,'SEIS ',
+             7,'SIETE ',8,'OCHO ',9,'NUEVE ',
+             0,NULL,'ERROR'))) ||
+             DECODE (MOD(TRUNC((cs.salary_amount * 30),0),1000000),0,'DE ',NULL)
+             || 'PESOS '||
+             DECODE(100*(ABS((cs.salary_amount * 30))-TRUNC(ABS((cs.salary_amount * 30)))),
+             0,'00',100*(ABS((cs.salary_amount * 30))-TRUNC(ABS((cs.salary_amount * 30)))))
+             ||'/100'
+             ||' M.N.' salario_mensual_letra
+        , DECODE(  ROUND((NVL(ppos.actual_termination_date, SYSDATE) - NVL( NVL( ppos.adjusted_svc_date, ppos.adjusted_svc_date ), pap.start_date)) / 365 )
+                     , 0, 1
+                     , ROUND((NVL(ppos.actual_termination_date, SYSDATE) - NVL( NVL( ppos.adjusted_svc_date, ppos.adjusted_svc_date ), pap.start_date)) / 365 )
+            ) numaniosservicio
+        , NVL(cs_al_periodo.salary_amount * 30, 0) ultimosueldomensord_periodo
+        , NVL(cs_a_la_contratacion.salary_amount * 30, 0) ultimosueldomensord_contr
+        , Case 
+            When ppos.actual_termination_date is null Then
+                (select to_char(TRUNC(to_date(peev.screen_entry_value,'YYYY-MM-DD HH24:MI:SS')),'fm dd "de" month "de" yyyy','nls_date_language=spanish')
+                    From
+                        --pay_assigned_payrolls_dn     papd,
+                        --pay_all_payrolls_f           ppp
+                        --+
+                         pay_entry_usages peu
+                        ,pay_element_entries_f peef
+                        ,pay_element_types_vl pet
+                        --+
+                        ,pay_element_entry_values_f peev
+                        ,pay_input_values_tl piv
+                        --
+                        --,per_actions_b  pab
+                        --,per_actions_tl pat
+                    Where 1 = 1
+                        --and papd.payroll_term_id(+) = prg.parent_rel_group_id
+--                                and papd.payroll_id = ppp.payroll_id(+)
+--                                and pay.payroll_id = ppp.payroll_id
+                        And peu.payroll_relationship_id(+) = tpa.payroll_relationship_id
+                        And peu.element_entry_id = peef.element_entry_id(+)
+                        And peef.element_type_id = pet.element_type_id(+)
+                        And pet.element_name = 'SETUP FINIQUITO'
+                        And piv.name = 'Fha Baja'
+                        --+
+                        --and pab.action_code = peev.screen_entry_value
+                        --and pab.action_id =  pat.action_id
+                        --and pat.language = sys_context ('USERENV', 'LANG')
+                        --+
+                        And peev.screen_entry_value is not null
+                        And peev.element_entry_id = peef.element_entry_id
+                        And peev.input_value_id = piv.input_value_id
+                        And piv.language = userenv('LANG')
+                        --+
+                        --and (ppa.date_earned) between trunc(papd.start_date(+)) and trunc(papd.end_date(+))
+                        And tpa.effective_date between peev.effective_start_date And peev.effective_end_date
+                        And tpa.effective_date between peef.effective_start_date And peef.effective_end_date
+                        And tpa.effective_date between peu.date_from And peu.date_to
+                        --AND (ppa.date_earned) BETWEEN TRUNC(ppp.effective_start_date) AND TRUNC(ppp.effective_end_date)
+                    ) 
+        Else 
+            TO_CHAR(ppos.actual_termination_date,'fm dd "de" month "de" yyyy','nls_date_language=spanish') 
+        End fecha
+    --        , TO_CHAR(SYSDATE, 'YYYY-MM-DD')||'T'||TO_CHAR(SYSDATE, 'HH24:MI:SS') fecha
+        , REPLACE(  REPLACE(  REPLACE(  tpa.period_name
+                              , ' Semimonthly'
+                              , ''
+                             )
+                    , ' Weekly'
+                    , ''
+                   )
+          , ' '
+          , '/'
+         ) numquincena        
+        , tpa.payroll_name nomina
+        , '601' regimenfiscal
+        , hl_le.address1 calle_empresa
+        , hl_le.address2 noexterior_empresa
+        , hl_le.address3 nointerior_empresa
+        , hl_le.addr_element_attribute3 colonia_empresa
+        , 'Mexico' localidad_empresa
+        , hl_le.province municipio_empresa
+        , hl_le.state estado_empresa
+        , REPLACE(hl_le.country,'MX','Mexico') pais_empresa
+        , hl_le.postal_code codigopostal_empresa
+        , pni_rfc.national_identifier_number rfc
+        , pni_imss.national_identifier_number imss
+        , pni_curp.national_identifier_number curp
+        , TRIM(
+                CONVERT (   REPLACE (  REPLACE (  TRIM (UPPER (pea.email_address))
+                                                  , 'Ñ'
+                                                  , 'N'
+                                                 )
+                                       , 'ñ'
+                                       , 'n'
+                                      )
+                            , 'us7ascii'
+                            , 'al32utf8'
+                          )
+                        ) correo
+        , DECODE(paa.employee_category, 'BC' , 'S', NULL) sindicalizado
+        , hl.lookup_code riesgopuesto
+        , (
+            SELECT    flv.description
+            FROM      fnd_lookup_values flv
+            WHERE     1 = 1
+            AND       flv.lookup_type = 'XXGRG_PAY_ALL_PAYROLLS'
+            AND       flv.lookup_code = tpa.payroll_name
+            AND       flv.language = 'E'
+            AND       TRUNC(SYSDATE) BETWEEN TRUNC(flv.start_date_active) AND TRUNC(NVL(flv.end_date_active, SYSDATE))
+          ) periodicidadpago
+        , DECODE(  hla.region_1
+             , 'AGS', 'AGU'
+             , 'BC', 'BCN'
+             , 'BCS', 'BCS'
+             , 'CAMP', 'CAM'
+             , 'COAH', 'COA'
+             , 'COL', 'COL'
+             , 'CHIS', 'CHP'
+             , 'CHIH', 'CHH'
+             , 'DF', 'DIF'
+             , 'DGO', 'DUR'
+             , 'GTO', 'GUA'
+             , 'GRO', 'GRO'
+             , 'HGO', 'HID'
+             , 'JAL', 'JAL'
+             , 'MEX', 'MEX'
+             , 'MICH', 'MIC'
+             , 'MOR', 'MOR'
+             , 'NAY', 'NAY'
+             , 'NL', 'NLE'
+             , 'OAX', 'OAX'
+             , 'PUE', 'PUE'
+             , 'QRO', 'QUE'
+             , 'QROO', 'ROO'
+             , 'SLP', 'SLP'
+             , 'SIN', 'SIN'
+             , 'SON', 'SON'
+             , 'TAB', 'TAB'
+             , 'TAMPS', 'TAM'
+             , 'TLAX', 'TLA'
+             , 'VER', 'VER'
+             , 'YUC', 'YUC'
+             , 'ZAC', 'ZAC'
+             , 'DIF'
+            ) claveentfed         
+        , CASE WHEN ppos.pds_information1 IS NULL 
+            THEN 
+            (   
+                SELECT  pat.action_name
+                FROM    pay_entry_usages peu
+                        ,pay_element_entries_f peef
+                        ,pay_element_types_vl pet
+                        --+
+                        ,pay_element_entry_values_f peev
+                        ,pay_input_values_tl piv
+                        --
+                        ,per_actions_b            pab
+                        ,per_actions_tl           pat
+                WHERE   1=1
+                        --AND peu.payroll_relationship_id = prg.payroll_relationship_id
+                        AND peu.payroll_relationship_id = tpa.payroll_relationship_id
+                        AND peu.element_entry_id = peef.element_entry_id
+                        AND peef.element_type_id = pet.element_type_id
+                        AND pet.element_name = 'SETUP FINIQUITO'
+                        AND piv.name = 'Tpo Baja'
+                        --+
+                        AND pab.action_code = peev.screen_entry_value
+                        AND pab.action_id =  pat.action_id
+                        AND pat.language = sys_context ('USERENV', 'LANG')
+                        --+
+                        AND peev.screen_entry_value IS NOT NULL
+                        AND peev.element_entry_id = peef.element_entry_id
+                        AND peev.input_value_id = piv.input_value_id
+                        AND piv.language = userenv('LANG')
+                        --+
+                        --AND (ppa.date_earned) BETWEEN trunc(peev.effective_start_date) AND trunc(peev.effective_end_date)
+                        --AND (ppa.date_earned) BETWEEN trunc(peev.effective_start_date) AND trunc(peev.effective_end_date)
+                        AND (tpa.effective_date) BETWEEN trunc(peef.effective_start_date) AND trunc(peef.effective_end_date)
+                        AND (tpa.effective_date) BETWEEN trunc(peef.effective_start_date) AND trunc(peef.effective_end_date)
+            ) 
+        ELSE 
+            pat.action_name
+        END motivo_baja
+        --, pat.action_name motivo_baja 
+        , NVL(hla.REGION_3,hla.REGION_2)||' a ' ciudad
+        , hla.ADDRESS_LINE_1
+          ||
+          (CASE WHEN hla.ADDRESS_LINE_2 IS NOT NULL 
+            THEN ' No. ' || hla.ADDRESS_LINE_2
+            ELSE 'SN' END)
+          ||
+           (CASE WHEN hla.ADDRESS_LINE_3 IS NOT NULL 
+            THEN ', ' || hla.ADDRESS_LINE_3
+            ELSE '' END)
+          || ', ' ||  
+          hla.LOC_INFORMATION14 
+          || ', ' ||
+          hla.TOWN_OR_CITY 
+          || ' CP. ' ||
+          hla.POSTAL_CODE
+          || ', ' ||
+          NVL(hla.REGION_3,hla.REGION_2) domicilio
+        , '0/100 M.N.' LETRA
+        , nvl(:p_documento,0) documento
+        , hou.name bussines_unit
+         --+
+        , haou_unidad.name nombre_depto
+    FROM  per_all_people_f                  pap
+        , per_person_names_f                ppn
+        , per_all_assignments_f             paa
+        , per_periods_of_service            ppos
+        --+
+        , per_action_occurrences            pao
+        , per_actions_b                     pab
+        , per_actions_tl                    pat
+        --+
+        , per_national_identifiers          pni_curp
+        , per_national_identifiers     	    pni_rfc
+        , per_national_identifiers    	    pni_imss
+        --+
+        , per_jobs                          pj
+        , cmp_salary                        cs
+        , cmp_salary                        cs_al_periodo
+        , cmp_salary                        cs_a_la_contratacion
+        , hr_organization_information_f     hoi_unidad
+        , hr_all_organization_units         haou_unidad
+        , hr_lookups                        hl_categoria
+        --+
+        , tks_payroll_actions_v             tpa  
+        --+
+        , per_email_addresses          	    pea
+        , hr_locations_all                  hla
+        , per_legal_employers               ple
+        , xle_entity_profiles               xlep
+        , xle_registrations                 xler
+        , hz_locations                      hl_le
+        , hr_organization_information_f     hoi_le
+        , hcm_lookups                       hl
+        , per_location_details_f_tl         pldft
+        , per_location_details_f            pldf
+        , per_locations                     pl
+        , hr_organization_units_f_tl        hou
+    WHERE 1 = 1
+        And ppn.person_id = pap.person_id
+        And ppn.name_type = 'MX'
+        And pap.person_id = NVL( :p_person_id , pap.person_id )
+        And paa.person_id = pap.person_id
+        And paa.assignment_type = 'E'
+        And paa.effective_latest_change = 'Y'
+        And ppos.person_id = paa.person_id
+        And ppos.period_of_service_id = paa.period_of_service_id
+        And ppos.legal_entity_id = paa.legal_entity_id
+        --+
+        And pao.action_occurrence_id = ppos.action_occurrence_id
+        And pab.action_id = pao.action_id
+        And pab.action_id =  pat.action_id
+        And pat.language = sys_context ('USERENV', 'LANG')
+        --+
+        And pni_curp.person_id(+) = pap.person_id
+        And TRIM(UPPER(pni_curp.national_identifier_type(+))) = 'CURP'
+        And pni_rfc.person_id(+) = pap.person_id
+        And TRIM(UPPER(pni_rfc.national_identifier_type(+)))  = 'RFC'
+        And pni_imss.person_id(+) = pap.person_id
+        And TRIM(UPPER(pni_imss.national_identifier_type(+))) = 'IMSS'
+        --+
+        And pj.job_id = paa.job_id
+        And paa.assignment_id = cs.assignment_id(+)
+        And paa.assignment_id = cs_al_periodo.assignment_id(+)
+        And paa.assignment_id = cs_a_la_contratacion.assignment_id(+)
+        And paa.organization_id = hoi_unidad.organization_id(+)
+        And hoi_unidad.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+        And hoi_unidad.org_information7(+) = '1'
+        And paa.organization_id = haou_unidad.organization_id
+        And paa.employee_category = hl_categoria.lookup_code
+        And hl_categoria.lookup_type = 'EMPLOYEE_CATG'
+        --+
+        --AND pap.person_number IN ('63480')
+        And tpa.assignment_id = paa.assignment_id
+        --+
+        And pea.person_id(+) = pap.person_id
+        And pea.email_type(+) = 'W1'
+        And paa.location_id = hla.location_id
+        And paa.legal_entity_id = ple.organization_id
+        And ple.legal_entity_id = xlep.legal_entity_id
+        And xlep.legal_entity_id = xler.source_id
+        And xler.source_table = 'XLE_ENTITY_PROFILES'
+        And xler.location_id = hl_le.location_id
+        And ple.organization_id = hoi_le.organization_id(+)
+        And hoi_le.org_information_context(+) = 'ORA_HRX_MX_SOCIAL_SECURITY_DETAILS'
+        And hoi_le.org_information1 = hl.lookup_code(+)
+        And hl.lookup_type(+) = 'ORA_HRX_MX_WORK_RISK_CLASS'
+        And pl.location_id = NVL( :p_location_id , pl.location_id )
+        And pldft.location_details_id = pldf.location_details_id
+        And pldft.language = 'E' --
+        And pl.location_id = paa.location_id --
+        And pldf.location_id = pl.location_id --
+        --+ ubicacion
+        And pl.location_id = hla.location_id
+        --+
+        And hou.organization_id(+) = paa.business_unit_id 
+        And hou.language(+) = SYS_CONTEXT('USERENV', 'LANG')
+        --And ppa.date_earned BETWEEN prg.start_date AND prg.end_date
+        And tpa.effective_date BETWEEN hou.effective_start_date(+) AND hou.effective_end_date(+)
+        --+
+        And tpa.effective_date BETWEEN paa.effective_start_date AND paa.effective_end_date
+        And tpa.effective_date BETWEEN pap.effective_start_date AND pap.effective_end_date
+        And tpa.effective_date BETWEEN ppn.effective_start_date AND ppn.effective_end_date
+        --+
+        And NVL( ppos.actual_termination_date , tpa.effective_date ) BETWEEN cs.date_from(+) AND cs.date_to(+)
+        And tpa.period_start_date BETWEEN cs_al_periodo.date_from(+) AND cs_al_periodo.date_to(+)
+        And ppos.date_start BETWEEN cs_a_la_contratacion.date_from(+) AND cs_a_la_contratacion.date_to(+)
+        And tpa.effective_date BETWEEN hoi_unidad.effective_start_date AND hoi_unidad.effective_end_date
+        And tpa.effective_date BETWEEN hoi_le.effective_start_date(+) AND hoi_le.effective_end_date(+)
+        And tpa.effective_date BETWEEN pldf.effective_start_date and pldf.effective_end_date
+    --ORDER BY hoi_unidad.org_information1 , pap.person_number
+)
+SELECT  payroll_relationship_id
+    , payroll_rel_action_id
+    , nombre
+    , no_de_empleado
+    , empresa
+    , rfc_empresa
+    , puesto
+    , fecha_de_ingreso
+    , fecha_de_baja
+    , sucursal
+    , nom_unidad
+    , CASE
+        WHEN UPPER(nombre_depto) LIKE '%SINERGIA%' THEN
+            TRIM(REPLACE(unidad, 'TOKS '))
+        WHEN UPPER(nombre_depto) LIKE '%OSRTO%' AND UPPER(unidad) LIKE 'TOKS%' THEN
+            TRIM(REPLACE(unidad, 'TOKS ', 'OSRTO '))
+        ELSE
+            unidad
+      END unidad
+    , salario_dia
+    , TRIM( to_char( salario_mensual, '999,999,990.00' ) ) as salario_mensual
+    , salario_mensual_letra
+    , numaniosservicio
+    , ultimosueldomensord_periodo
+    , ultimosueldomensord_contr
+    , fecha
+    , numquincena       
+    , nomina
+    , regimenfiscal
+    , calle_empresa
+    , noexterior_empresa
+    , nointerior_empresa
+    , colonia_empresa
+    , localidad_empresa
+    , municipio_empresa
+    , estado_empresa
+    , pais_empresa
+    , codigopostal_empresa
+    , rfc
+    , imss
+    , curp
+    , correo
+    , sindicalizado
+    , riesgopuesto
+    , periodicidadpago
+    , claveentfed
+    , motivo_baja                
+    , ciudad
+    , domicilio
+    , letra
+    , case 
+        when rownum = 1 then
+            TO_NUMBER(:p_folio_finiquito)
+        else 
+            (TO_NUMBER(:p_folio_finiquito) + rownum)-1
+    end finiquito_no
+    , documento
+    , bussines_unit
+    , nombre_depto
+FROM (
+        Select * 
+        From tks_worker_details_v
+        Where 1 = 1
+        Order By sucursal , nombre --no_de_empleado
+    )
+Order By sucursal , nombre --no_de_empleado
