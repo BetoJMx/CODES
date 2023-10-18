@@ -1,0 +1,126 @@
+--XXGRG_AE_TABLAS_VAC_PKG
+
+create or replace package XXGRG_AE_TABLAS_VAC_PKG as
+PROCEDURE get_vacaciones;	
+						 
+end XXGRG_AE_TABLAS_VAC_PKG;
+
+create or replace package body XXGRG_AE_TABLAS_VAC_PKG as
+
+	procedure get_vacaciones
+	IS 
+	    l_user_name          VARCHAR2(100); 
+        l_password           VARCHAR2(100); 
+        l_ws_url             VARCHAR2(500); 
+        l_ws_action          VARCHAR2(500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; 
+        l_ws_response_clob   CLOB; 
+        l_ws_envelope        CLOB; 
+        l_ws_resp_xml        XMLTYPE; 
+        l_ws_resp_xml2       XMLTYPE; 
+        v_cdata              CLOB; 
+        l_clob               CLOB; 
+        v_val                PLS_INTEGER; 
+		-- 
+		v_error              VARCHAR2(500); 
+        v_contador_8         NUMBER;
+    BEGIN 
+        v_contador_8 := 1;
+        l_ws_envelope :=    '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+                                <soap:Body> 
+                                    <pub:runReport> 
+                                        <pub:reportRequest> 
+                                            <pub:parameterNameValues> 
+													 
+ 
+                                            </pub:parameterNameValues> 
+                                            <pub:reportAbsolutePath>/Reportes Custom/PAY/GRG AE Tablas Vacaciones/Tabla_Vacaciones_RP.xdo</pub:reportAbsolutePath> 
+                                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+                                        </pub:reportRequest> 
+                                    </pub:runReport> 
+                                </soap:Body> 
+                            </soap:Envelope>';    
+							 
+        --------------------------------------------------- 
+        -------------------TOKEN--------------------------- 
+        		GRG_COMMON_CONNECTIONS_ATI_PKG.get_otbi_report( 
+                    l_ws_envelope    => l_ws_envelope, 
+                    l_user_token     => null,  --p_user_token
+                    x_ws_response    => l_clob,
+					p_instance_name  => 'DEV1'
+        			); 
+        ------------------------------------------------- 
+        ------------------------------------------------- 
+        l_ws_resp_xml2 := xmltype.createxml (l_clob);  
+ 
+        BEGIN 
+		
+ 
+			FOR i  
+					IN (SELECT  xml_data.TABLE_NAME, 
+								xml_data.YEARS_SENIORITY, 
+								xml_data.DAYS_OF_VACATION, 
+								xml_data.DOV_EFFECTIVE_FROM,
+								xml_data.TABLE_EFFECTIVE_FROM
+						FROM XMLTABLE (
+										'/DATA_DS/G_1'  
+										PASSING xmltype.createxml(l_clob) 
+										COLUMNS TABLE_NAME              VARCHAR2(250) PATH 'TABLE_NAME', 
+										        YEARS_SENIORITY         VARCHAR2(250) PATH 'YEARS_SENIORITY', 
+												DAYS_OF_VACATION	    VARCHAR2(250) PATH 'DAYS_OF_VACATION',
+                                                DOV_EFFECTIVE_FROM	    VARCHAR2(250) PATH 'DOV_EFFECTIVE_FROM',
+                                                TABLE_EFFECTIVE_FROM	VARCHAR2(250) PATH 'TABLE_EFFECTIVE_FROM'
+									  )
+                                  
+						xml_data )  
+			LOOP 
+
+							select 1
+							INTO v_ini
+							from GRG_ASIST_ELECTR_VACACIONES
+							where i.TABLE_NAME = TABLE_NAME
+									and i.YEARS_SENIORITY = YEARS_SENIORITY
+									and i.DAYS_OF_VACATION = DAYS_OF_VACATION;
+							
+							if v_ini = 0 then 
+							
+								INSERT INTO GRG_AE_VACACIONES_COMPARATIVO(	TABLE_NAME,
+																				YEARS_SENIORITY,
+																				DAYS_OF_VACATION,
+																				DOV_EFFECTIVE_FROM,
+																				TABLE_EFFECTIVE_FROM,
+																				CREATED_BY,
+																				CREATION_DATE,
+																				LAST_UPDATED_BY,
+																				LAST_UPDATE_DATE
+																						) VALUES (	i.TABLE_NAME, 
+																									TO_NUMBER(i.YEARS_SENIORITY), 
+																									i.DAYS_OF_VACATION, 
+																									i.DOV_EFFECTIVE_FROM, 
+																									i.TABLE_EFFECTIVE_FROM, 
+																									'-1', 
+																									SYSDATE -5/24, 
+																									'-1', 
+																									SYSDATE -5/24); 						 
+							end if;
+            END LOOP;                                           
+			COMMIT;
+				
+		EXCEPTION
+		    WHEN OTHERS THEN 
+				v_error := SQLERRM||' '||SQLCODE;
+				   
+				INSERT INTO GRG_ASISTENCIA_ELECTR_ERROR(ERROR,
+														FECHA,
+														CREATED_BY,
+														CREATION_DATE,
+														LAST_UPDATED_BY,
+												        LAST_UPDATE_DATE) VALUES (	'Ocurrio un error en el procedimiento get_vacaciones: ' ||v_error,
+																					SYSDATE - 5/24,
+																					'-1',
+																					SYSDATE - 5/24,
+																					'-1',
+																					SYSDATE - 5/24);
+				COMMIT;																			
+	    END;
+    END get_vacaciones;
+END XXGRG_AE_TABLAS_VAC_PKG;
