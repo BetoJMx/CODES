@@ -1,0 +1,582 @@
+--PKGB XXODM_PAY_REP_COMP_NOM_PKG BKP 270923
+create or replace PACKAGE BODY XXODM_PAY_REP_COMP_NOM_PKG AS   
+    --
+    /*PROCEDURE limpiar(p_id_exec NUMBER) as   
+    BEGIN   
+        --   
+        DELETE   
+        FROM      pay.xxodm_pay_acumulados_org   
+        WHERE     1 = 1   
+        AND       process_id = p_id_exec;   
+        --   
+        --   
+        DELETE   
+        FROM      pay.xxodm_pay_acumulados_report_data   
+        WHERE     1 = 1   
+        AND       process_id = p_id_exec;   
+        --   
+        --   
+        DELETE   
+        FROM      pay.xxodm_pay_acumulados_element_source   
+        WHERE     1 = 1   
+        AND       process_id = p_id_exec;   
+        --   
+        --   
+        COMMIT; 
+        -- 
+        EXCEPTION WHEN OTHERS THEN 
+        ROLLBACK; 
+        -- 
+    END limpiar;*/
+    --   
+    PROCEDURE ac_data (contenido CLOB, id_exec IN NUMBER)   
+    AS   
+        ac_id       NUMBER;   
+		v_errormsg  VARCHAR2(512);   
+    BEGIN   
+        INSERT INTO XXODM_PAY_ACUMULADOS_CLOB_DATA (contenido, id)   
+             VALUES (contenido, id_exec)   
+          RETURNING id   
+               INTO ac_id;   
+   
+        COMMIT;   
+   
+	EXCEPTION   
+	WHEN OTHERS THEN    
+			v_errormsg := SQLERRM;   
+			INSERT INTO XXODM_PAY_ACUMULADO_ERROR_TRACING(  
+                process_id,
+                error,
+                fecha,
+                created_by,
+                creation_date,
+                last_updated_by,
+                last_update_date   
+            )VALUES(  
+                id_exec,
+                'Ocurrio un error al insertar en ac_data:'||v_errormsg,
+                SYSDATE - 6/24,
+                '-1',
+                SYSDATE - 6/24,
+                '-1',
+                SYSDATE - 6/24
+            );
+    END ac_data;   
+    --   
+    PROCEDURE ac_clob ( 
+        p_id_exec               IN NUMBER,
+        p_fechainicio           IN VARCHAR2,
+        p_fechafin              IN VARCHAR2,
+        p_juegoconsolidacion_n  IN VARCHAR2 DEFAULT NULL,
+        p_nomina_n              IN VARCHAR2 DEFAULT NULL,
+        p_emp_legal_n           IN VARCHAR2 DEFAULT NULL,
+        p_a_totales             IN VARCHAR2
+    ) AS   
+        contenido   CLOB;   
+        v_excel     VARCHAR2 (32000);   
+		v_errormsg  VARCHAR2(512);   
+        --variables header elementos   
+        v_elementos CLOB;   
+        v_header    CLOB;   
+		v_count     NUMBER := 1;   
+        l_emp_leg   VARCHAR2(250);
+   
+        CURSOR matrix (p_dep NUMBER DEFAULT NULL, p_tienda NUMBER DEFAULT NULL) IS   
+  
+            WITH xxodm_elementos_acumulados AS(   
+                SELECT    element_name   
+                        , SUBSTR(element_name,1,22) element_name_mostrar   
+                FROM      xxodm_pay_acumulados_element_source   
+                WHERE     process_id = p_id_exec   
+                GROUP BY  element_name   
+                        , SUBSTR(element_name,1,22)   
+            )   
+            ,xxodm_resultados AS(   
+                SELECT    SUM(NVL(resultados.result_value, 0)) result_value
+                        , resultados.element_name
+                        , empleados.unidad||
+                          empleados.descripcion||
+                          empleados.no_emp_as400||
+                          empleados.no_emp||
+                          empleados.nombre||
+                          empleados.puesto||
+                          empleados.tabla_factor||
+                          empleados.fecha_ingreso||
+                          empleados.fecha_baja||
+                          empleados.reg_patronal||
+                          empleados.imss||
+                          empleados.rfc llave
+                FROM      xxodm_pay_acumulados_report_data empleados
+                        , xxodm_pay_acumulados_element_source resultados
+                WHERE     1 = 1
+                AND       empleados.process_id = resultados.process_id
+                AND       empleados.organization_id = NVL(p_dep,empleados.organization_id)
+                AND       empleados.tienda_id = NVL(p_tienda,empleados.tienda_id)
+                --+
+                AND       empleados.payroll_rel_action_id = resultados.payroll_rel_action_id
+                --+
+                AND       empleados.process_id = p_id_exec
+                GROUP BY  resultados.element_name
+                        , empleados.unidad||
+                          empleados.descripcion||
+                          empleados.no_emp_as400||
+                          empleados.no_emp||
+                          empleados.nombre||
+                          empleados.puesto||
+                          empleados.tabla_factor||
+                          empleados.fecha_ingreso||
+                          empleados.fecha_baja||
+                          empleados.reg_patronal||
+                          empleados.imss||
+                          empleados.rfc
+            )   
+            ,xxodm_empleados AS(   
+                SELECT    empleados.unidad
+                        , empleados.descripcion
+                        , empleados.no_emp_as400
+                        , empleados.no_emp
+                        , empleados.nombre
+                        , empleados.puesto
+                        , empleados.tabla_factor
+                        , empleados.fecha_ingreso
+                        , empleados.fecha_baja
+                        , empleados.reg_patronal
+                        , empleados.imss   
+                        , empleados.rfc   
+                        , MAX(TO_NUMBER(empleados.salario)) salario
+                        , MAX(empleados.sdi) sdi
+                        , SUM(empleados.total_deductions) total_deductions
+                        , SUM(empleados.total_earnings) total_earnings
+                        , SUM(empleados.net_payment) net_payment
+                        , empleados.unidad||
+                          empleados.descripcion||
+                          empleados.no_emp_as400||
+                          empleados.no_emp||
+                          empleados.nombre||
+                          empleados.puesto||
+                          empleados.tabla_factor||
+                          empleados.fecha_ingreso||
+                          empleados.fecha_baja||
+                          empleados.reg_patronal||
+                          empleados.imss||
+                          empleados.rfc llave
+                FROM      xxodm_pay_acumulados_report_data empleados
+                WHERE     1 = 1
+                AND       empleados.process_id = p_id_exec
+                AND       empleados.organization_id = NVL(p_dep,empleados.organization_id)
+                AND       empleados.tienda_id = NVL(p_tienda,empleados.tienda_id)
+                AND       EXISTS(
+                                    SELECT    NULL
+                                    FROM      xxodm_pay_acumulados_element_source resultados
+                                    WHERE     1 = 1
+                                    AND       resultados.process_id = empleados.process_id
+                                    AND       resultados.payroll_rel_action_id = empleados.payroll_rel_action_id
+                                )
+                GROUP BY empleados.unidad
+                        , empleados.descripcion
+                        , empleados.no_emp_as400
+                        , empleados.no_emp
+                        , empleados.nombre
+                        , empleados.puesto
+                        , empleados.tabla_factor
+                        , empleados.fecha_ingreso
+                        , empleados.fecha_baja
+                        , empleados.reg_patronal
+                        , empleados.imss   
+                        , empleados.rfc   
+                        , empleados.unidad||
+                          empleados.descripcion||
+                          empleados.no_emp_as400||
+                          empleados.no_emp||
+                          empleados.nombre||
+                          empleados.puesto||
+                          empleados.tabla_factor||
+                          empleados.fecha_ingreso||
+                          empleados.fecha_baja||
+                          empleados.reg_patronal||
+                          empleados.imss||
+                          empleados.rfc
+            )   
+            --
+            SELECT  DISTINCT   
+                    1 orden, 
+                    empleados.unidad||','||
+                    empleados.descripcion||','||
+                    empleados.no_emp_as400||','||
+                    empleados.no_emp||','||
+                    empleados.nombre||','||
+                    empleados.puesto||','||
+                    empleados.tabla_factor||','||
+                    empleados.fecha_ingreso||','||
+                    empleados.fecha_baja||','||
+                    empleados.reg_patronal||','||
+                    empleados.imss||','||
+                    empleados.rfc||','||
+                    empleados.salario||','||
+                    empleados.sdi||','||
+                    NVL(empleados.total_deductions, 0)||','||
+                    NVL(empleados.total_earnings, 0)||','||
+                    empleados.net_payment||','||
+                    LISTAGG (resultados.result_value, ',') WITHIN GROUP (ORDER BY resultados.element_name) OVER (PARTITION BY empleados.llave) body   
+            FROM    XXODM_EMPLEADOS empleados,
+                    (   
+                        SELECT  emp_res.llave,
+                                elementos.element_name,
+                                NVL(emp_res.result_value, 0) result_value   
+                        FROM    XXODM_RESULTADOS emp_res PARTITION BY (llave)   
+                        RIGHT JOIN XXODM_ELEMENTOS_ACUMULADOS elementos   
+                                ON emp_res.element_name = elementos.element_name   
+                    ) resultados   
+            WHERE   1 = 1   
+            AND     p_dep IS NOT NULL
+            AND     p_a_totales = 'N'   
+            AND     empleados.llave = resultados.llave   
+            UNION   
+            SELECT  DISTINCT   
+                    2 orden,
+                    --NULL||'|'||
+                    --NVL2(p_dep,empleados.unidad,NULL)||'|'||
+                    --NULL||'|'||
+                    --NVL2(p_dep,empleados.descripcion,NULL)||'|'||
+                    --'TOTAL|'||
+                    CASE 
+                        WHEN p_dep IS NOT NULL AND p_tienda IS NOT NULL THEN 
+                            'SUBTOTAL DEPTO,'
+                        WHEN p_dep IS NULL AND p_tienda IS NOT NULL THEN
+                            'SUBTOTAL TIENDA,'
+                        ELSE 
+                            'TOTAL,'
+                    END ||
+                    COUNT (1)||','||
+                    NULL||','||
+                    NULL||','||
+                    NULL||','||
+                    NULL||','||
+                    NULL||','||
+                    NULL||','||
+                    NULL||','||
+                    NULL||','||
+                    SUM (empleados.salario)||','||
+                    SUM (empleados.sdi)||','||
+                    SUM (empleados.total_deductions)||','||
+                    SUM (empleados.total_earnings)||','||
+                    SUM (empleados.net_payment)||','||
+                    resultados.resultado_cadena body
+            FROM    xxodm_empleados empleados,
+                    (   
+                        SELECT  DISTINCT
+                                LISTAGG (NVL(resultados_cadena.result_value, 0), ',') WITHIN GROUP (ORDER BY resultados_cadena.element_name) resultado_cadena
+                        FROM    (
+                                    SELECT  element_name,
+                                            SUM(result_value) result_value
+                                    FROM    (
+                                                SELECT  elementos.element_name,
+                                                        NVL(emp_res.result_value, 0) result_value
+                                                FROM      xxodm_resultados emp_res PARTITION BY (llave)
+                                                RIGHT JOIN xxodm_elementos_acumulados elementos
+                                                        ON emp_res.element_name = elementos.element_name
+                                            )
+                                    GROUP BY    element_name
+                                  ) resultados_cadena
+                    ) resultados
+            WHERE   1 = 1
+            GROUP BY    resultados.resultado_cadena
+            ORDER BY    1;
+    --   
+    BEGIN   
+        --construccion header elementos nuevo   
+        FOR i IN (   
+            SELECT  element_name   
+            FROM    xxodm_pay_acumulados_element_source   
+            WHERE   process_id = p_id_exec   
+            GROUP BY    element_name   
+            ORDER BY    element_name   
+        )      
+        LOOP   
+            v_elementos := v_elementos || ',' || i.element_name;   
+        END LOOP;   
+   
+        v_header := 'Unidad,'||   
+                    'Descripcion,'||   
+                    'No. Empleado AS400,'||   
+                    'No. Empleado,'||   
+                    'Nombre,'||   
+                    'Puesto,'||   
+                    'Tabla Factor,'||   
+                    'Fecha Ingreso,'||   
+                    'Fecha Baja,'||   
+                    'Reg. Patronal,'||   
+                    'IMSS,'||   
+                    'RFC,'||   
+                    'Salario,'||   
+                    'SDI,'||   
+                    'Total Deducciones,'||   
+                    'Total Percepciones,'||   
+                    'Total Neto'||   
+                    v_elementos;   
+        --EMPLEADOR_LEGAL 
+        IF (p_nomina_n IS NOT NULL OR p_juegoconsolidacion_n IS NOT NULL) AND p_emp_legal_n IS NULL THEN
+            SELECT  empleador_legal
+            INTO    l_emp_leg
+            FROM    xxodm_pay_acumulados_report_data
+            WHERE   process_id = p_id_exec
+            GROUP BY    empleador_legal;
+        ELSE
+            l_emp_leg := p_emp_legal_n;
+        END IF;
+        --ENCABEZADO DE ARCHIVO   
+        contenido := 'Diario de Nomina con Detalle,' || p_id_exec || CHR(13);
+        contenido := contenido || 'Empleador Legal:,"'|| NVL(CONVERT(l_emp_leg,'us7ascii','al32utf8'),'-') || '"' || CHR(13);
+        contenido := contenido || 'Nomina:,'|| NVL(p_nomina_n,'TODAS') || CHR(13);
+        contenido := contenido || 'Juego de Consolidacion:,'|| NVL(p_juegoconsolidacion_n,'TODOS') || CHR(13);
+        contenido := contenido || 'Periodo:' ||',Del ' || TO_CHAR(TO_DATE(p_fechainicio, 'YYYY-MM-DD'), 'DD/MM/YYYY') || ' al ' || TO_CHAR(TO_DATE(p_fechafin, 'YYYY-MM-DD'), 'DD/MM/YYYY') || CHR(13);   
+        contenido := contenido || 'Fecha de Ejecucion:,' || TO_CHAR((SYSDATE - 6/24), 'DD/MM/YYYY HH24:MI:SS') || CHR(13) || CHR(13);   
+        --insercion header elementos nuevo   
+        contenido := contenido || v_header || CHR(10);   
+
+        FOR tienda IN (
+            SELECT  tienda,
+                    tienda_id
+            FROM    xxodm_pay_acumulados_report_data
+            WHERE   1 = 1
+                    AND process_id = p_id_exec
+            GROUP BY    tienda,
+                        tienda_id
+        ) LOOP
+
+            FOR dep IN (
+                SELECT  organization_id unidad,
+                        descripcion nombre,
+                        unidad codigo
+                FROM    xxodm_pay_acumulados_report_data
+                WHERE   1 = 1
+                        AND tienda_id = tienda.tienda_id
+                        AND process_id = p_id_exec
+                GROUP BY    organization_id,
+                            descripcion,
+                            unidad
+                ORDER BY    3
+                
+            ) LOOP
+                --insercion lineas   
+                FOR line IN matrix (dep.unidad, tienda.tienda_id) LOOP
+                    v_count := v_count + 1;   
+                    --
+                    IF line.orden = 2 AND p_a_totales = 'N' THEN
+                        contenido := concat( contenido, dep.codigo||','||dep.nombre||','||line.body || CHR(10) || CHR(10) );
+                    ELSIF line.orden = 2 AND p_a_totales = 'Y' THEN
+                        contenido := concat( contenido, dep.codigo||','||dep.nombre||','||line.body || CHR(10) );
+                    ELSE 
+                        contenido := concat( contenido, line.body || CHR(10) );  
+                    END IF;
+
+                END LOOP;   
+            
+            END LOOP;
+
+            IF p_a_totales = 'Y' THEN
+                FOR line IN matrix (NULL, tienda.tienda_id) LOOP
+                    v_count := v_count + 1;   
+                    contenido := concat( contenido, ',' || tienda.tienda || ',' || line.body || CHR (10) );   
+                END LOOP;
+            END IF;
+        
+        END LOOP;
+
+        FOR line IN matrix (NULL, NULL) LOOP
+            v_count := v_count + 1;   
+            contenido := concat( contenido, ',,' || line.body || CHR (10) );   
+        END LOOP;  
+   
+        ac_data (contenido, p_id_exec);   
+        --   
+    EXCEPTION    
+	WHEN OTHERS THEN   
+			v_errormsg := SQLERRM;   
+			INSERT INTO XXODM_PAY_ACUMULADO_ERROR_TRACING(  
+                process_id,
+                error,
+                fecha,
+                created_by,
+                creation_date,
+                last_updated_by,
+                last_update_date   
+            )VALUES(  
+                p_id_exec,
+                'Ocurrio un error al crear en ac_clob:'||v_errormsg||' | '||DBMS_UTILITY.FORMAT_ERROR_BACKTRACE,
+                SYSDATE - 6/24,
+                '-1',
+                SYSDATE - 6/24,
+                '-1',
+                SYSDATE - 6/24
+            );   	   
+    END ac_clob;   
+    --   
+    PROCEDURE main(  
+        p_fechainicio          IN VARCHAR2,    
+        p_fechafin             IN VARCHAR2,    
+        p_juegoconsolidacion   IN VARCHAR2,    
+        p_juegoconsolidacion_n IN VARCHAR2,    
+        p_nomina               IN VARCHAR2,    
+        p_nomina_n             IN VARCHAR2,    
+        p_emp_legal            IN VARCHAR2,   
+        p_emp_legal_n          IN VARCHAR2,   
+        p_a_totales            IN VARCHAR2,   
+        p_user_token           IN VARCHAR2,    
+		p_process_id           IN NUMBER,   
+		p_user_name            IN VARCHAR2,   
+		p_status               OUT NUMBER   
+    ) AS   
+        --   
+        v_id_exec       NUMBER;   
+        v_inicio        DATE;   
+        v_errormsg      VARCHAR2(512);   
+        l_user_token    VARCHAR2(4500) := p_user_token;
+        --   
+        BEGIN   
+            --   
+            v_inicio := sysdate - 6/24;   
+            --   
+			v_id_exec := p_process_id;   --+   
+            BEGIN   
+                --   
+                --Se elimina el token para que el usuario pueda ver todo   
+
+                -- -- IF p_a_totales = 'Y' THEN   
+                -- --     ODM_COMMON_CONNECTIONS_ATI_PKG.get_security_token(l_user_token,'DEV2');   
+                -- --     l_user_token := REPLACE(l_user_token,'Bearer ');   
+                -- -- END IF;   
+			      
+			    --+: Se cambio la estructura de la tabla para implementar JOB   
+			    INSERT INTO xxodm_PAY_ACUMULADO_PROCESS( 
+                    PROCESS_ID,
+			        NOMINA,
+                    NOMINA_N,
+					JUEGO_CONSOLIDACION,
+                    JUEGO_CONSOLIDACION_N,
+					EMPLEADOR_LEGAL,
+                    EMPLEADOR_LEGAL_N,
+					FECHA_INICIAL,
+					FECHA_FINAL,
+					STATUS,
+					FECHA_INICIO,
+					CLIENT_IDENTIFIER,
+					TOTALES_FLAG
+                )VALUES(
+                    p_process_id,
+					p_nomina,
+					p_nomina_n,
+					p_juegoconsolidacion,
+					p_juegoconsolidacion_n,
+					p_emp_legal,
+					p_emp_legal_n,
+					p_fechainicio,
+					p_fechafin,
+					'INIT_PROCESS',
+					SYSDATE - 6/24,
+					p_user_name,
+					p_a_totales
+                );   
+               --+   
+            EXCEPTION   
+                WHEN OTHERS THEN   
+			    v_errormsg := SQLERRM;   
+			    INSERT INTO XXODM_PAY_ACUMULADO_ERROR_TRACING(  
+                    process_id,
+			    	error,
+			    	fecha,
+			    	created_by,
+			    	creation_date,
+			    	last_updated_by,
+			    	last_update_date   
+                )VALUES(  
+                    v_id_exec,
+			    	'Ocurrio un error al insertar en insert process:'||v_errormsg,
+			    	SYSDATE - 6/24,
+			    	'-1',
+			    	SYSDATE - 6/24,
+			    	'-1',
+			    	SYSDATE - 6/24
+                );
+            END;   
+            --   
+            --Se ejecuta el proceso generico de datos para nomina   
+            BEGIN
+                XXODM_PAY_DATA_AC_PKG.init_exe(  
+                    p_fechainicio,
+                    p_fechafin,
+                    p_juegoconsolidacion,
+                    p_nomina,
+                    p_emp_legal,
+                    l_user_token,
+                    v_id_exec
+                );   
+                --   
+                XXODM_PAY_REP_COMP_NOM_PKG.ac_clob ( 
+                    v_id_exec,
+                    p_fechainicio,
+                    p_fechafin,
+                    p_juegoconsolidacion_n,
+                    p_nomina_n,
+                    p_emp_legal_n,
+                    p_a_totales
+                );   
+                --
+            EXCEPTION WHEN OTHERS THEN
+                v_errormsg := SQLERRM;   
+			    INSERT INTO XXODM_PAY_ACUMULADO_ERROR_TRACING(  
+                    process_id,
+					error,
+					fecha,
+					created_by,
+					creation_date,
+					last_updated_by,
+					last_update_date   
+                ) VALUES(  
+                    v_id_exec,
+					'Ocurrio un error en el proceso data_ac:'||v_errormsg,
+					SYSDATE - 6/24,
+					'-1',
+					SYSDATE - 6/24,
+					'-1',
+					SYSDATE - 6/24 
+                );				 
+            END;
+            --   
+            --XXODM_PAY_REP_COMP_NOM_PKG.limpiar(v_id_exec);   
+            --   
+			--+   
+			UPDATE xxodm_PAY_ACUMULADO_PROCESS   
+			SET STATUS = 'PROCESSED'   
+			   ,FECHA_FIN = SYSDATE - 6/24   
+			WHERE PROCESS_ID = v_id_exec;   
+			--+   
+            COMMIT; 
+            --+ 
+        EXCEPTION   
+            WHEN OTHERS THEN   
+			   
+			v_errormsg := SQLERRM;   
+			INSERT INTO XXODM_PAY_ACUMULADO_ERROR_TRACING(  
+                    process_id,
+			    	error,
+			    	fecha,
+			    	created_by,
+			    	creation_date,
+			    	last_updated_by,
+			    	last_update_date   
+                )VALUES(  
+                    v_id_exec,
+			    	'Ocurrio un error al insertar en main:'||v_errormsg,
+			    	SYSDATE - 6/24,
+			    	'-1',
+			    	SYSDATE - 6/24,
+			    	'-1',
+			    	SYSDATE - 6/24
+                );		   
+				   
+   
+        END main;   
+        --   
+END XXODM_PAY_REP_COMP_NOM_PKG;
+/
