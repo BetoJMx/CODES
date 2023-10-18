@@ -1,0 +1,25 @@
+--QRY NO_EMP_AS400 EXTIDS
+SELECT  UPPER(ppnf.full_name) AS full_name,
+        papf.person_number,
+        peai.ext_identifier_id,
+        peai.ext_identifier_type,
+        peai.ext_identifier_number,
+        MAX(peai.ext_identifier_seq) ext_identifier_seq
+
+FROM    PER_EXT_APP_IDENTIFIERS peai,
+        PER_ALL_PEOPLE_F        papf,
+        PER_PERSON_NAMES_F      ppnf
+
+WHERE   peai.ext_identifier_type    = 'OD_NUM_EMP_ANT'
+        AND peai.person_id          = papf.person_id
+        AND papf.person_id          = ppnf.person_id
+        AND ppnf.name_type          = 'MX'
+        AND SYSDATE                 BETWEEN papf.effective_start_date
+                                    AND papf.effective_end_date
+
+GROUP BY    UPPER(ppnf.full_name),
+            papf.person_number,
+            peai.ext_identifier_id,
+            peai.ext_identifier_type,
+            peai.ext_identifier_number
+        
