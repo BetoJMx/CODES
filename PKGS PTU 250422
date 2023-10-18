@@ -1,0 +1,69 @@
+--PKGS PTU 250422
+CREATE OR REPLACE PACKAGE PAY.GRG_PROCESO_PTU_V3 IS
+    filehandler            utl_file.file_type;
+    v_file_load            utl_file.file_type;
+    l_file_load CLOB;  
+    v_folio     VARCHAR2(250);
+    v_token     VARCHAR2(5000);
+    ------+
+    PROCEDURE get_information_employee  (
+                                            p_start_id NUMBER,
+                                            p_end_id NUMBER
+                                        );
+    -----+
+    PROCEDURE get_information_units  (
+                                        p_process_year IN NUMBER,
+                                        p_legal_employeer_id IN NUMBER DEFAULT NULL
+                                        ,p_token IN VARCHAR2 DEFAULT NULL
+                                    );
+    -----+
+    PROCEDURE parallel_execution    (  
+                                        p_legal_employeer_id NUMBER
+                                    );
+    -----+
+    PROCEDURE main  (
+                        p_process_year IN NUMBER,
+                        p_legal_employeer_id IN NUMBER DEFAULT NULL,
+                        p_status OUT NUMBER
+                    );
+    -----+
+    PROCEDURE calculo_ptu   (
+                                p_legal_employeer_id    IN NUMBER
+                                ,p_unidad_id            IN NUMBER
+                                ,p_nomina_id            IN NUMBER
+                                ,p_effective_date       IN VARCHAR2
+                                ,p_process_year         IN NUMBER DEFAULT 2021
+                                ,p_id                   IN NUMBER
+                                ,p_user_name            IN VARCHAR2
+                                ,p_user_token           IN CLOB
+                                ,p_status               OUT NUMBER
+                            );      
+    -----+
+    PROCEDURE get_information_limits    (p_legal_employeer_id IN NUMBER);
+    -----+
+    PROCEDURE hdl_files (
+                            p_fecha_efectiva      IN VARCHAR2
+                            ,p_process_year       IN VARCHAR2
+                            ,p_legal_employeer_id IN VARCHAR2
+                            ,p_id                 IN NUMBER
+                            ,p_tipo               IN VARCHAR2 DEFAULT 'B'
+                        );
+    -----+
+    FUNCTION BASE64_ENCODE_F (p_blob IN BLOB)
+        RETURN CLOB;
+    -----+
+    PROCEDURE get_secured_users  (
+                        p_legal_employeer_id    IN NUMBER,
+                        p_user_name             IN VARCHAR2,
+                        p_user_token            IN CLOB
+                    );
+    -----+
+    PROCEDURE output (p_message IN VARCHAR2);
+    -----+
+    FUNCTION schedule_hdl   (  
+                                archivo VARCHAR2                                         
+                                , p_id  NUMBER
+                            ) RETURN VARCHAR2;
+    
+END;
+/
