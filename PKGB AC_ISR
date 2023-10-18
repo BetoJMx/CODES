@@ -1,0 +1,3721 @@
+--PKGB AC_ISR
+create or replace PACKAGE BODY     GRG_ACUM_ISR_PKG AS
+
+
+	PROCEDURE main (  p_payroll_id              IN 	VARCHAR2
+					, p_consolidation_set_id    IN 	VARCHAR2
+					, p_legal_entity_id         IN 	VARCHAR2 
+					, p_fecha_inicial           IN 	VARCHAR2    
+					, p_fecha_final             IN 	VARCHAR2  
+					, p_user_token              IN 	VARCHAR2
+					, p_process_id              IN 	NUMBER						  
+					, p_user_name               IN 	VARCHAR2     
+					, p_status                  OUT NUMBER )     
+	AS    
+		--    
+		v_process_id   	 			NUMBER;    
+		v_error         			VARCHAR2(200);    
+		v_existe_elemento_finiquito NUMBER;   
+        v_existe_elemento_sueldo    NUMBER;
+		l_sysdate            		DATE; 
+    
+	BEGIN    
+
+			DELETE FROM grg_acum_isr_organizations    
+			COMMIT; --+    
+
+			DELETE FROM grg_acum_isr_header    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_per    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_ded    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_hextra    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_inc    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_otrspagos    
+			COMMIT; --+
+    
+			DELETE FROM xxtoks_pay_ati_lines_diastrab    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_diastrab    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_sdi    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_ausentism    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_separacio    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_impuestos     
+            COMMIT; 
+			
+			DELETE FROM grg_acum_isr_acumulado      
+            COMMIT;
+			
+			DELETE FROM grg_acum_isr_acumulado_mensual      
+            COMMIT;
+			--+    
+			v_process_id := p_process_id; 
+			
+			BEGIN
+			
+				l_sysdate   := XXGRG_SYSDATE_F();
+				
+				INSERT INTO grg_acum_isr_process(	 process_id    
+													,payroll_id
+													,legal_entity_id      
+													,consolidation_set_id    
+													,fecha_inicial    
+													,fecha_final     
+													,status    
+													,fecha_inicio    
+													,client_identifier	) VALUES(	v_process_id    
+																					,TO_NUMBER(p_payroll_id)
+																					,TO_NUMBER(p_legal_entity_id)      
+																					,TO_NUMBER(p_consolidation_set_id)
+																					,p_fecha_inicial    
+																					,p_fecha_final       
+																					,'PROCESANDO'    
+																					,l_sysdate  
+																					,p_user_name);    
+				--       
+			EXCEPTION   
+			
+				WHEN OTHERS THEN    
+					--    
+					v_error := SQLERRM;    
+					--    
+					INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																 , error    
+																 , fecha    
+																 , created_by    
+																 , creation_date    
+																 , last_updated_by    
+																 , last_update_date	) VALUES(  v_process_id    
+																							 , 'Ocurrio un error al guardar la informacion de la ejecucion:'||v_error    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24	);    
+			END; 
+			
+			--+
+			
+			BEGIN
+			
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'INICIA :GRG_ACUM_ISR_PKG.get_organizations',v_process_id);    
+															
+				GRG_ACUM_ISR_PKG.get_organizations(  	  p_payroll_id				=>  p_payroll_id
+														, p_consolidation_set_id    =>  p_consolidation_set_id
+														, p_legal_entity_id         =>  p_legal_entity_id       
+														, p_fecha_inicial           =>  p_fecha_inicial       
+														, p_fecha_final             =>  p_fecha_final           
+														, p_process_id              =>  v_process_id     
+														, p_user_token              =>  p_user_token );
+														
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'FINALIZA :GRG_ACUM_ISR_PKG.get_organizations',v_process_id);  
+				
+			EXCEPTION   
+			
+				WHEN OTHERS THEN    
+					--    
+					v_error := SQLERRM;    
+					--    
+					INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																 , error    
+																 , fecha    
+																 , created_by    
+																 , creation_date    
+																 , last_updated_by    
+																 , last_update_date	) VALUES(  v_process_id    
+																							 , 'Ocurrio un error al invocar get_organizations:'||v_error    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24	);    
+			END;
+			
+			--+
+			
+			BEGIN
+			
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'INICIA :GRG_ACUM_ISR_PKG.generar_procesos_paralelo',v_process_id);    
+															
+				GRG_ACUM_ISR_PKG.generar_procesos_paralelo( p_process_id	=> v_process_id);
+														
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'FINALIZA :GRG_ACUM_ISR_PKG.generar_procesos_paralelo',v_process_id);  
+				
+			EXCEPTION   
+			
+				WHEN OTHERS THEN    
+					--    
+					v_error := SQLERRM;    
+					--    
+					INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																 , error    
+																 , fecha    
+																 , created_by    
+																 , creation_date    
+																 , last_updated_by    
+																 , last_update_date	) VALUES(  v_process_id    
+																							 , 'Ocurrio un error al invocar generar_procesos_paralelo:'||v_error    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24	);    
+			END;
+			
+			--+
+			
+			BEGIN
+			
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'INICIA :GRG_ACUM_ISR_PKG.carga_totales',v_process_id);    
+															
+				GRG_ACUM_ISR_PKG.carga_totales( p_process_id	=>	p_process_id);
+														
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'FINALIZA :GRG_ACUM_ISR_PKG.carga_totales',v_process_id);  
+				
+			EXCEPTION   
+			
+				WHEN OTHERS THEN    
+					--    
+					v_error := SQLERRM;    
+					--    
+					INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																 , error    
+																 , fecha    
+																 , created_by    
+																 , creation_date    
+																 , last_updated_by    
+																 , last_update_date	) VALUES(  v_process_id    
+																							 , 'Ocurrio un error al invocar carga_totales:'||v_error    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24	);    
+			END;
+			
+			--+
+			
+			BEGIN
+			
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'INICIA :GRG_ACUM_ISR_PKG.carga_elementos_totales',v_process_id);    
+															
+				GRG_ACUM_ISR_PKG.carga_elementos_totales( p_process_id	=>	p_process_id);
+														
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'FINALIZA :GRG_ACUM_ISR_PKG.carga_elementos_totales',v_process_id);  
+				
+			EXCEPTION   
+			
+				WHEN OTHERS THEN    
+					--    
+					v_error := SQLERRM;    
+					--    
+					INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																 , error    
+																 , fecha    
+																 , created_by    
+																 , creation_date    
+																 , last_updated_by    
+																 , last_update_date	) VALUES(  v_process_id    
+																							 , 'Ocurrio un error al invocar carga_elementos_totales:'||v_error    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24	);    
+			END;
+			
+			--+
+			
+			BEGIN
+			
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'INICIA :GRG_ACUM_ISR_PKG.crear_archivo',v_process_id);    
+															
+				GRG_ACUM_ISR_PKG.crear_archivo( p_process_id	=>	p_process_id);
+														
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'FINALIZA :GRG_ACUM_ISR_PKG.crear_archivo',v_process_id);  
+				
+			EXCEPTION   
+			
+				WHEN OTHERS THEN    
+					--    
+					v_error := SQLERRM;    
+					--    
+					INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																 , error    
+																 , fecha    
+																 , created_by    
+																 , creation_date    
+																 , last_updated_by    
+																 , last_update_date	) VALUES(  v_process_id    
+																							 , 'Ocurrio un error al invocar crear_archivo:'||v_error    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24	);    
+			END;
+			
+			--+
+			
+			BEGIN
+			
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'INICIA :GRG_ACUM_ISR_PKG.retry_org_err',v_process_id);    
+															
+				GRG_ACUM_ISR_PKG.retry_org_err( p_process_id	=>	p_process_id);
+														
+				INSERT INTO grg_acumulado_isr_logs VALUES(TO_CHAR(SYSDATE - 6/24,'DD/MM/YYYY HH24:MI:SS'),'FINALIZA :GRG_ACUM_ISR_PKG.retry_org_err',v_process_id);  
+				
+			EXCEPTION   
+			
+				WHEN OTHERS THEN    
+					--    
+					v_error := SQLERRM;    
+					--    
+					INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																 , error    
+																 , fecha    
+																 , created_by    
+																 , creation_date    
+																 , last_updated_by    
+																 , last_update_date	) VALUES(  v_process_id    
+																							 , 'Ocurrio un error al invocar retry_org_err:'||v_error    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24    
+																							 , '-1'    
+																							 , SYSDATE - 6/24	);    
+			END;
+			
+
+			
+			l_sysdate   := XXGRG_SYSDATE_F();
+			
+			UPDATE grg_acum_isr_process
+			SET  fecha_fin		= l_sysdate
+				,status			= 'FINALIZADO'
+			WHERE process_id	= v_process_id;
+			
+			--+
+			
+	
+
+	EXCEPTION
+		WHEN OTHERS THEN
+			v_error := SQLERRM;    
+			
+			INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+														 , error    
+														 , fecha    
+														 , created_by    
+														 , creation_date    
+														 , last_updated_by    
+														 , last_update_date ) VALUES(   p_process_id    
+																					 , 'Ocurrio un error principal en el proceso main:'||v_error    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24 );    
+		
+            COMMIT;
+
+
+
+	END main;
+
+---------------------------------------------------------------------------------------
+
+	PROCEDURE get_organizations(  	  p_payroll_id              IN VARCHAR2
+									, p_consolidation_set_id    IN VARCHAR2	
+									, p_legal_entity_id         IN VARCHAR2        
+									, p_fecha_inicial           IN VARCHAR2    
+									, p_fecha_final             IN VARCHAR2      
+									, p_process_id              IN NUMBER    
+									, p_user_token              IN VARCHAR2) 
+	IS    
+			--    
+			v_user_name					VARCHAR2 (100);    
+			v_password                 	VARCHAR2 (100);    
+			--    	
+			v_ws_url                   	VARCHAR2 (500);    
+			v_ws_action                	VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar    
+			--    	
+			v_ws_envelope              	CLOB;    
+			v_ws_response_clob         	CLOB;    
+			--    	
+			v_ws_resp_xml              	XMLTYPE;    
+			v_ws_resp_xml2             	XMLTYPE;    
+			--    	
+			v_cdata                    	CLOB;    
+			v_clob                     	CLOB;    
+			--    
+			v_error                     VARCHAR2(500);    
+			--
+			v_contador					NUMBER	:= 0;
+	BEGIN    
+  
+			v_ws_envelope := '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">    
+									<soap:Body>    
+									<pub:runReport>    
+										<pub:reportRequest>    
+											<pub:parameterNameValues>    
+
+											<pub:item>    
+											<pub:name>p_payroll_id</pub:name>    
+											<pub:values>    
+												<pub:item>'||p_payroll_id||'</pub:item>    
+											</pub:values>    
+											</pub:item>  
+											      
+											<pub:item>    
+											<pub:name>p_consolidation_set_id</pub:name>    
+											<pub:values>    
+												<pub:item>'||p_consolidation_set_id||'</pub:item>    
+											</pub:values>    
+											</pub:item> 
+
+											<pub:item>    
+											<pub:name>p_legal_entity_id</pub:name>    
+											<pub:values>    
+												<pub:item>'||p_legal_entity_id||'</pub:item>    
+											</pub:values>
+											</pub:item>
+											    
+											<pub:item>    
+											<pub:name>fechainicio</pub:name>    
+											<pub:values>    
+												<pub:item>'||p_fecha_inicial||'</pub:item>    
+											</pub:values>    
+											</pub:item>  
+	                                          
+											<pub:item>    
+											<pub:name>fechafin</pub:name>    
+											<pub:values>    
+												<pub:item>'||p_fecha_final||'</pub:item>    
+											</pub:values>    
+											</pub:item>    
+											    
+											</pub:parameterNameValues>    
+											<pub:attributeFormat>xml</pub:attributeFormat>    
+											<pub:reportAbsolutePath>/Reportes Custom/PAY/GRG Acumulado ISR/ISR Calculo Nomina por Unidad - REP.xdo</pub:reportAbsolutePath>    
+											<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>    
+										</pub:reportRequest>    
+									</pub:runReport>    
+								</soap:Body>    
+							</soap:Envelope>';               
+
+			--------------------TOKEN---------------------    
+			----------------------------------------------    
+			GRG_COMMON_CONNECTIONS_ATI_PKG.get_otbi_report( 
+	            l_ws_envelope 	=> v_ws_envelope,    
+	            l_user_token  	=> p_user_token,    
+	            x_ws_response 	=> v_clob,
+	            p_instance_name => 'DEV1'   
+	        );    
+			---------------------------------------------    
+			----------------------------------------------   
+			v_ws_resp_xml2 := xmltype.createxml(v_clob);    
+			--    
+			FOR v_organization IN ( SELECT	 xml_data.organization_id    
+											,CONVERT(xml_data.organization_name,'us7ascii','al32utf8') organization_name    
+											,xml_data.numero_empleados
+											,xml_data.numero_calculos
+											,xml_data.legal_entity_id
+											,xml_data.payroll_id
+											,xml_data.payroll_name
+											,xml_data.consolidation_set_id
+											,xml_data.consolidation_set_name
+											,xml_data.period_name
+											,xml_data.time_period_id
+											,xml_data.tipo_nomina
+											,xml_data.fecha_liquidacion
+									FROM      XMLTABLE (    
+														 '/DATA_DS/G_1' PASSING xmltype.createxml(v_clob)    
+														 COLUMNS    
+														 ORGANIZATION_ID 		VARCHAR2(250) PATH 'ORGANIZATION_ID',    
+														 ORGANIZATION_NAME 		VARCHAR2(250) PATH 'ORGANIZATION_NAME',    
+														 NUMERO_EMPLEADOS 		VARCHAR2(250) PATH 'NUMERO_EMPLEADOS',
+														 NUMERO_CALCULOS		VARCHAR2(250) PATH 'NUMERO_CALCULOS',		
+														 LEGAL_ENTITY_ID        VARCHAR2(250) PATH 'LEGAL_ENTITY_ID',      
+														 PAYROLL_ID             VARCHAR2(250) PATH 'PAYROLL_ID',            
+														 PAYROLL_NAME           VARCHAR2(250) PATH 'PAYROLL_NAME',          
+														 CONSOLIDATION_SET_ID   VARCHAR2(250) PATH 'CONSOLIDATION_SET_ID',  
+														 CONSOLIDATION_SET_NAME VARCHAR2(250) PATH 'CONSOLIDATION_SET_NAME',
+														 PERIOD_NAME            VARCHAR2(250) PATH 'PERIOD_NAME',           
+														 TIME_PERIOD_ID         VARCHAR2(250) PATH 'TIME_PERIOD_ID',        
+														 TIPO_NOMINA            VARCHAR2(250) PATH 'TIPO_NOMINA',           
+														 FECHA_LIQUIDACION      VARCHAR2(250) PATH 'FECHA_LIQUIDACION'     
+													   ) xml_data    
+				) LOOP    
+				--
+				v_contador	:=	v_contador + 1;
+				--
+				BEGIN    
+					--    
+					INSERT INTO grg_acum_isr_organizations (  organization_id    
+															, organization_name   
+															, numero_empleados       
+															, numero_calculos    
+															, legal_entity_id      
+															, payroll_id    
+															, payroll_name    
+															, consolidation_set_id    
+															, consolidation_set_name 
+															, time_period_id
+															, period_name
+															, tipo_nomina
+															, fecha_liquidacion
+															, token
+															, process_id
+															, created_by    
+															, creation_date    
+															, last_updated_by    
+															, last_update_date    
+														    )	VALUES	(     v_organization.organization_id     
+																			, v_organization.organization_name 
+																			, v_organization.numero_empleados      
+																			, v_organization.numero_calculos    
+																			, v_organization.legal_entity_id    
+																			, v_organization.payroll_id    
+																			, v_organization.payroll_name   
+																			, v_organization.consolidation_set_id    
+																			, v_organization.consolidation_set_name
+																			, v_organization.time_period_id
+																			, v_organization.period_name
+																			, v_organization.tipo_nomina
+																			, v_organization.fecha_liquidacion
+																			, p_user_token
+																			, p_process_id
+																			, '-1'    
+																			, SYSDATE - 6/24    
+																			, '-1'    
+																			, SYSDATE - 6/24    
+																			);    
+					--    
+					COMMIT;    
+					--    
+				EXCEPTION    
+				WHEN OTHERS THEN    
+					--    
+					v_error := SQLERRM;    
+					--    
+					INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																 , error    
+																 , fecha    
+																 , created_by    
+																 , creation_date    
+																 , last_updated_by    
+																 , last_update_date)	VALUES(    p_process_id    
+																								 , 'Ocurri? un error al guardar la informaci?n de las organizaciones:'||v_error    
+																								 , SYSDATE - 6/24    
+																								 , '-1'    
+																								 , SYSDATE - 6/24    
+																								 , '-1'    
+																								 , SYSDATE - 6/24    
+																	);    
+					--    
+					COMMIT;    
+					--    
+				END;    
+				--
+				IF MOD(v_contador,200) = 0 THEN
+					COMMIT;
+				END IF;
+				--
+			END LOOP;    
+			--    
+	EXCEPTION    
+		WHEN OTHERS THEN    
+			--    
+			v_error := SQLERRM;    
+			--    
+			INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+														 , error    
+														 , fecha    
+														 , created_by    
+														 , creation_date    
+														 , last_updated_by    
+														 , last_update_date    
+														 , mensaje ) VALUES(   p_process_id    
+																			 , 'Ocurri? un error al obtener la informaci?n de las organizaciones:'||v_error    
+																			 , SYSDATE - 6/24    
+																			 , '-1'    
+																			 , SYSDATE - 6/24    
+																			 , '-1'    
+																			 , SYSDATE - 6/24    
+																			 , v_ws_envelope );    
+			--    
+			COMMIT;    
+			--    
+	END get_organizations;
+	
+---------------------------------------------------------------------------------------------------------------
+
+	PROCEDURE get_result_values(	p_start_id	IN NUMBER,
+									p_end_id	IN NUMBER ) 
+	IS    
+		--    
+		CURSOR c_organizations IS    
+		SELECT    organization_id  
+				, organization_name   
+				, numero_empleados       
+				, numero_calculos    
+				, legal_entity_id      
+				, payroll_id    
+				, payroll_name    
+				, consolidation_set_id    
+				, consolidation_set_name
+				, time_period_id
+				, period_name
+				, tipo_nomina
+				, fecha_liquidacion
+				, token
+				, process_id
+				
+		FROM      grg_acum_isr_organizations    
+		WHERE     1 = 1    
+		AND       id BETWEEN p_start_id AND p_end_id    
+		AND       process_id = (    
+								SELECT    process_id    
+								FROM      grg_acum_isr_organizations    
+								WHERE     id = p_start_id    
+							   );     
+			    
+		--    
+		l_user_name         VARCHAR2 (100);    
+		l_password          VARCHAR2 (100);    
+		l_ws_url            VARCHAR2 (500);    
+		l_ws_action         VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest';    
+		--    
+		l_ws_envelope       CLOB;    
+		--    
+		l_ws_response_clob  CLOB;    
+		--    
+		v_cdata             CLOB;    
+		v_contenido         CLOB;    
+		--    
+		l_ws_resp_xml       XMLTYPE;    
+		l_ws_resp_xml2      XMLTYPE;    
+		--    
+		--    
+		v_val               PLS_INTEGER;    
+		v_lines_arr         apex_t_varchar2;    
+		v_content_arr       apex_t_varchar2;    
+		p_errormsg          VARCHAR2 (512 CHAR);    
+		v_inicio            VARCHAR2(200);    
+		--    
+		v_error             VARCHAR2(500);    
+		--    
+        v_count             NUMBER := 0;
+        v_loop              NUMBER;
+		v_contador_1        NUMBER;
+        --
+		v_g1                NUMBER := 0; 
+        v_g2                NUMBER := 0; 
+        v_g3                NUMBER := 0; 
+        v_g4                NUMBER := 0; 
+        v_g5                NUMBER := 0; 
+        v_g6                NUMBER := 0; 
+        v_g7                NUMBER := 0; 
+        v_g8                NUMBER := 0; 
+        v_g9                NUMBER := 0; 
+        v_g10               NUMBER := 0; 
+        v_g11               NUMBER := 0; 
+        v_g12               NUMBER := 0;
+		v_g13               NUMBER := 0;
+	BEGIN
+		v_contador_1 := 1; 
+  
+		FOR v_organization IN c_organizations LOOP      
+			--    
+			l_ws_envelope :=    
+							'<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">    
+								<soap:Body>    
+								<pub:runReport>    
+									<pub:reportRequest>    
+										<pub:parameterNameValues>
+
+										
+												<pub:item>    
+												<pub:name>p_payroll_id</pub:name>    
+												<pub:values>    
+													<pub:item>'||v_organization.payroll_id||'</pub:item>    
+												</pub:values>    
+												</pub:item>
+
+												
+												<pub:item>    
+												<pub:name>p_consolidation_set_id</pub:name>    
+												<pub:values>    
+													<pub:item>'||v_organization.consolidation_set_id||'</pub:item>    
+												</pub:values>    
+												</pub:item>
+												
+												   
+												<pub:item>    
+												<pub:name>p_time_period_id</pub:name>    
+												<pub:values>    
+													<pub:item>'||v_organization.time_period_id||'</pub:item>    
+												</pub:values>    
+												</pub:item>
+												
+
+												<pub:item>    
+												<pub:name>p_period_name</pub:name>    
+												<pub:values>    
+													<pub:item>'||v_organization.period_name||'</pub:item>    
+												</pub:values>    
+												</pub:item>
+
+												
+												<pub:item>    
+												<pub:name>p_legal_entity_id</pub:name>    
+												<pub:values>    
+													<pub:item>'||v_organization.legal_entity_id||'</pub:item>    
+												</pub:values>    
+												</pub:item>
+												
+
+												<pub:item>    
+												<pub:name>p_organization_id</pub:name>    
+												<pub:values>    
+													<pub:item>'||v_organization.organization_id||'</pub:item>    
+												</pub:values>    
+												</pub:item>
+												
+												
+												<pub:item>    
+												<pub:name>p_tipo_nomina</pub:name>    
+												<pub:values>    
+													<pub:item>'||v_organization.tipo_nomina||'</pub:item>    
+												</pub:values>    
+												</pub:item>
+												
+
+												<pub:item>    
+												<pub:name>p_fecha_liquidacion</pub:name>    
+												<pub:values>    
+													<pub:item>'||v_organization.fecha_liquidacion||'</pub:item>    
+												</pub:values>    
+												</pub:item>
+
+										
+										</pub:parameterNameValues>    
+										<pub:attributeFormat>xml</pub:attributeFormat>    
+										<pub:reportAbsolutePath>/Reportes Custom/PAY/GRG Acumulado ISR/Acumulado ISR - REP.xdo</pub:reportAbsolutePath>    
+										<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>    
+									</pub:reportRequest>    
+								</pub:runReport>    
+							</soap:Body>    
+						</soap:Envelope>';      
+			-- 
+			BEGIN
+				v_count := 0;   
+				v_loop 	:= 0;
+					
+				WHILE v_count <> v_organization.numero_calculos	LOOP
+
+
+						v_loop := v_loop + 1;
+
+						--------------------TOKEN---------------------    
+						----------------------------------------------    
+						GRG_COMMON_CONNECTIONS_ATI_PKG.get_otbi_report(   
+							l_ws_envelope => l_ws_envelope,    
+							l_user_token  => v_organization.token,    
+							x_ws_response => v_contenido,
+							p_instance_name => 'DEV1'     
+						);    
+						---------------------------------------------    
+						----------------------------------------------    
+										
+					BEGIN  
+					
+						
+						l_ws_resp_xml2 := xmltype.createxml(v_contenido);    
+						
+						BEGIN
+						
+							SELECT  NUM_EMP	AS	numero_calculos
+							INTO    v_count
+							FROM    XMLTABLE 
+									('/DATA_DS/G_1' PASSING xmltype.createxml(v_contenido) COLUMNS    
+										  NUMERO_SUCURSAL 		VARCHAR2(250) PATH 'NUMERO_SUCURSAL' 
+										, NUMERO_EMPLEADO 		VARCHAR2(250) PATH 'NUMERO_EMPLEADO' 
+										, NOMBRE 				VARCHAR2(250) PATH 'NOMBRE'
+										, UNIDAD 				VARCHAR2(250) PATH 'UNIDAD'
+										, DATE_EARNED 			VARCHAR2(250) PATH 'DATE_EARNED'
+										, ORGANIZATION_ID 		VARCHAR2(250) PATH 'ORGANIZATION_ID'
+										, PUESTO 				VARCHAR2(250) PATH 'PUESTO' 
+										, PERIODO_NOMINA 		VARCHAR2(250) PATH 'PERIODO_NOMINA'
+										, JUEGO_CONSOLIDACION 	VARCHAR2(250) PATH 'JUEGO_CONSOLIDACION' 
+    									, NOMINA 				VARCHAR2(250) PATH 'NOMINA'  
+										, FECHA_INGRESO 		VARCHAR2(250) PATH 'FECHA_INGRESO'
+										, FECHA_BAJA 			VARCHAR2(250) PATH 'FECHA_BAJA'
+										, NUM_EMP 				VARCHAR2(250) PATH 'NUM_EMP' 
+										, PAYROLL_REL_ACTION_ID NUMBER 		  PATH 'PAYROLL_REL_ACTION_ID'
+									) xml_data
+							WHERE ROWNUM = 1;
+									
+						EXCEPTION
+							WHEN NO_DATA_FOUND THEN
+								v_count := 0;
+							WHEN OTHERS THEN
+								v_count := 0;
+						END;
+
+					EXCEPTION
+						WHEN OTHERS THEN    
+						
+							v_error := SQLERRM; 
+							
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date	) VALUES(     v_organization.process_id    
+																										, 'Error al crear el XML2. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																										, SYSDATE - 6/24    
+																										, '-1'    
+																										, SYSDATE - 6/24    
+																										, '-1'    
+																										, SYSDATE - 6/24	);    
+
+					END;    
+
+				EXIT WHEN v_loop = 3;
+
+				END LOOP;
+				--    
+				FOR header IN (     
+									SELECT    *     
+									FROM      XMLTABLE (  '/DATA_DS/G_1' PASSING xmltype.createxml(v_contenido) COLUMNS                                                      
+															  NUMERO_SUCURSAL 		VARCHAR2(250) PATH 'NUMERO_SUCURSAL' 
+															, NUMERO_EMPLEADO 		VARCHAR2(250) PATH 'NUMERO_EMPLEADO' 
+															, NOMBRE 				VARCHAR2(250) PATH 'NOMBRE'
+															, UNIDAD 				VARCHAR2(250) PATH 'UNIDAD'
+															, DATE_EARNED 			VARCHAR2(250) PATH 'DATE_EARNED'
+															, ORGANIZATION_ID 		VARCHAR2(250) PATH 'ORGANIZATION_ID'
+															, PUESTO 				VARCHAR2(250) PATH 'PUESTO' 
+															, PERIODO_NOMINA 		VARCHAR2(250) PATH 'PERIODO_NOMINA'
+															, JUEGO_CONSOLIDACION 	VARCHAR2(250) PATH 'JUEGO_CONSOLIDACION' 
+															, NOMINA 				VARCHAR2(250) PATH 'NOMINA'  
+															, FECHA_INGRESO 		VARCHAR2(250) PATH 'FECHA_INGRESO'
+															, FECHA_BAJA 			VARCHAR2(250) PATH 'FECHA_BAJA'
+															, NUM_EMP 				VARCHAR2(250) PATH 'NUM_EMP' 
+															, PAYROLL_REL_ACTION_ID NUMBER 		  PATH 'PAYROLL_REL_ACTION_ID'
+													   ) xml_data    
+				) LOOP    
+					-- 
+					v_g1 := v_g1 + 1;
+					--    
+					BEGIN    
+						--
+						INSERT INTO grg_acum_isr_header	 (  numero_sucursal
+														  , numero_empleado
+														  , nombre
+														  , unidad
+														  , date_earned
+														  , organization_id
+														  , puesto 
+														  , periodo_nomina
+														  , juego_consolidacion
+														  , nomina
+														  , fecha_ingreso
+														  , fecha_baja
+														  , num_emp   
+														  , payroll_rel_action_id 
+														  , process_id    
+														  , created_by    
+														  , creation_date    
+														  , last_updated_by    
+														  , last_update_date) VALUES(  header.numero_sucursal 
+																					 , header.numero_empleado
+																					 , REPLACE(header.nombre, '?', 'Ñ') 
+																					 , header.unidad
+																					 , header.date_earned
+																					 , header.organization_id
+																					 , header.puesto 
+																					 , header.periodo_nomina
+																					 , header.juego_consolidacion
+																					 , header.nomina
+																					 , header.fecha_ingreso
+																					 , header.fecha_baja
+																					 , header.num_emp
+																					 , header.payroll_rel_action_id   
+																					 , v_organization.process_id    
+																					 , '-1'    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24   
+																				   );
+  
+					EXCEPTION    
+						WHEN OTHERS THEN    
+							--    
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar al empleado. payroll_rel_action_id:'||header.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	); 
+		
+					END;
+
+	                IF MOD(v_g1,100) = 0 THEN  
+	                    COMMIT;  
+	                END IF; 
+					--      
+				END LOOP;    
+				--    
+			EXCEPTION    
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G1. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		);    
+  
+			END;
+			
+			--+PERCEPCIONES
+			BEGIN
+				
+				FOR per IN (
+							SELECT    *     
+							FROM      XMLTABLE (  '/DATA_DS/G_1/G_2' PASSING xmltype.createxml(v_contenido) COLUMNS    
+												  TIPOPERCEPCION 		VARCHAR2(250) 	PATH 'TIPOPERCEPCION'    
+												, CLAVE 				VARCHAR2(250) 	PATH 'CLAVE'    
+												, DESCRIPCION 			VARCHAR2(250) 	PATH 'DESCRIPCION'    
+												, IMPORTEEXENTO 		NUMBER			PATH 'IMPORTEEXENTO'    
+												, IMPORTEGRAVADO 		NUMBER 			PATH 'IMPORTEGRAVADO'    
+												, IMPORTE 				NUMBER 			PATH 'IMPORTE'    
+												, CANTIDAD 				NUMBER 			PATH 'CANTIDAD'   
+												, PAYROLL_REL_ACTION_ID NUMBER 			PATH 'PAYROLL_REL_ACTION_ID'    
+											   ) xml_data  		
+							)	LOOP
+
+					--+ 
+                    v_g2 := v_g2 + 1; 
+                    --+ 
+			
+					BEGIN
+						
+						INSERT INTO  grg_acum_isr_per		(   tipopercepcion    
+															  , clave    
+															  , descripcion    
+															  , importeexento    
+															  , importegravado    
+															  , importe    
+															  , cantidad   
+															  , payroll_rel_action_id    
+															  , process_id    
+															  , created_by    
+															  , creation_date    
+															  , last_updated_by    
+															  , last_update_date    
+															 ) VALUES (  per.tipopercepcion    
+																	   , per.clave    
+																	   , per.descripcion    
+																	   , per.importeexento    
+																	   , per.importegravado    
+																	   , per.importe    
+																	   , per.cantidad   
+																	   , per.payroll_rel_action_id    
+																	   , v_organization.process_id    
+																	   , '-1'    
+																	   , SYSDATE - 6/24    
+																	   , '-1'    
+																	   , SYSDATE - 6/24    
+																	  );
+														 
+						
+					EXCEPTION
+						WHEN OTHERS THEN
+							--    
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar percepcion. payroll_rel_action_id:'||per.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+  						
+					END;
+				
+                    IF MOD(v_g2,100) = 0 THEN  
+                        COMMIT;  
+                    END IF;
+				
+				END LOOP;
+				
+				
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_2. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		);  
+			END;
+				
+			--+DEDUCCIONES	
+			BEGIN
+				
+				FOR ded	IN (
+							SELECT    *     
+							FROM      XMLTABLE (  '/DATA_DS/G_1/G_3' PASSING xmltype.createxml(v_contenido) COLUMNS    
+												  TIPODEDUCCION 		VARCHAR2(250) 	PATH 'TIPODEDUCCION'    
+												, CLAVE 				VARCHAR2(250) 	PATH 'CLAVE'    
+												, DESCRIPCION 			VARCHAR2(250) 	PATH 'DESCRIPCION'    
+												, IMPORTEEXENTO 		NUMBER 			PATH 'IMPORTEEXENTO'    
+												, IMPORTEGRAVADO 		NUMBER 			PATH 'IMPORTEGRAVADO'    
+												, IMPORTE 				NUMBER 			PATH 'IMPORTE'   
+                                                , CANTIDAD 				NUMBER 			PATH 'CANTIDAD'												   
+												, PAYROLL_REL_ACTION_ID NUMBER 			PATH 'PAYROLL_REL_ACTION_ID'    
+											   ) xml_data						
+							) LOOP
+					--
+					v_g3 := v_g3 + 1;
+					--		
+					BEGIN
+
+						INSERT INTO  grg_acum_isr_ded	     (  tipodeduccion    
+															  , clave    
+															  , descripcion    
+															  , importeexento    
+															  , importegravado    
+															  , importe    
+															  , cantidad   
+															  , payroll_rel_action_id    
+															  , process_id    
+															  , created_by    
+															  , creation_date    
+															  , last_updated_by    
+															  , last_update_date    
+															 ) VALUES (  ded.tipodeduccion    
+																	   , ded.clave    
+																	   , ded.descripcion    
+																	   , ded.importeexento    
+																	   , ded.importegravado    
+																	   , ded.importe   
+																	   , ded.cantidad   
+																	   , ded.payroll_rel_action_id    
+																	   , v_organization.process_id    
+																	   , '-1'    
+																	   , SYSDATE - 6/24    
+																	   , '-1'    
+																	   , SYSDATE - 6/24    
+																	  ); 
+	
+
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar deduccion. payroll_rel_action_id:'||ded.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+ 							
+					END;
+
+					--
+                    IF MOD(v_g3,100) = 0 THEN  
+                        COMMIT;  
+                    END IF;  				
+					--
+				END LOOP;
+				
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_3. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		);  
+			END;
+			
+			--+HORAS EXTRA
+			BEGIN
+			
+				FOR hextra	IN (
+				
+								SELECT    *     
+								FROM      XMLTABLE (  '/DATA_DS/G_1/G_4' PASSING xmltype.createxml(v_contenido) COLUMNS    
+													   DIAS 					NUMBER 			PATH 'DIAS'    
+													 , TIPOHORAS 				VARCHAR2(250) 	PATH 'TIPOHORAS'    
+													 , HORASEXTRA 				NUMBER 			PATH 'HORASEXTRA'    
+													 , IMPORTE 					NUMBER 			PATH 'IMPORTE'    
+													 , BASE_ELEMENT_NAME 		VARCHAR2(250) 	PATH 'BASE_ELEMENT_NAME'    
+													 , HORA_EXTRA_REAL 			VARCHAR2(250) 	PATH 'HORA_EXTRA_REAL'    
+													 , PAYROLL_REL_ACTION_ID 	NUMBER 			PATH 'PAYROLL_REL_ACTION_ID'    
+												   ) xml_data 
+								)LOOP
+					--
+					v_g4 := v_g4 + 1;
+					--
+
+					BEGIN
+					
+						INSERT INTO grg_acum_isr_hextra		   (  dias    
+																, tipohoras    
+																, horasextra    
+																, importe    
+																, base_element_name    
+																, hora_extra_real    
+																, payroll_rel_action_id     
+																, process_id    
+																, created_by      
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+															   ) VALUES (  hextra.dias    
+																		 , hextra.tipohoras    
+																		 , hextra.horasextra    
+																		 , hextra.importe    
+																		 , hextra.base_element_name    
+																		 , hextra.hora_extra_real    
+																		 , hextra.payroll_rel_action_id    
+																		 , v_organization.process_id    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		);
+
+					
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar horasextra. payroll_rel_action_id:'||hextra.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+
+					END;
+					--
+                    IF MOD(v_g4,100) = 0 THEN  
+                        COMMIT;  
+                    END IF; 
+					--			
+				END LOOP;
+			
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_4. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		);  			
+			END;
+			
+			--+INCAPACIDADES
+			BEGIN
+		
+				FOR inc IN (SELECT    *     
+							FROM      XMLTABLE (  '/DATA_DS/G_1/G_5' PASSING xmltype.createxml(v_contenido) COLUMNS    
+												  DIAS 					NUMBER			PATH 'DIAS'    
+												, TIPOINCAPACIDAD 		VARCHAR2(250) 	PATH 'TIPOINCAPACIDAD'    
+												, IMPORTEMONETARIO 		NUMBER 			PATH 'IMPORTEMONETARIO'    
+												, DESCUENTO 			NUMBER 			PATH 'DESCUENTO'    
+												, PAYROLL_REL_ACTION_ID NUMBER 			PATH 'PAYROLL_REL_ACTION_ID'    
+											   ) xml_data    
+						   ) LOOP 
+					--
+					v_g5 := v_g5 + 1;
+					--
+					BEGIN
+					
+						INSERT INTO grg_acum_isr_inc		(  dias    
+															 , tipoincapacidad    
+															 , importemonetario    
+															 , descuento    
+															 , payroll_rel_action_id    
+															 , process_id    
+															 , created_by    
+															 , creation_date    
+															 , last_updated_by    
+															 , last_update_date    
+															) VALUES (  inc.dias    
+																	  , inc.tipoincapacidad    
+																	  , inc.importemonetario    
+																	  , inc.descuento    
+																	  , inc.payroll_rel_action_id    
+																	  , v_organization.process_id    
+																	  , '-1'    
+																	  , SYSDATE - 6/24    
+																	  , '-1'    
+																	  , SYSDATE - 6/24    
+																	 );
+
+					
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar acum isr inc . payroll_rel_action_id:'||inc.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+					
+					END;
+					--
+                    IF MOD(v_g5,100) = 0 THEN  
+                        COMMIT;  
+                    END IF;
+					--
+				END LOOP;
+			
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_5. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		);  
+			END;
+			
+			--+OTROS PAGOS
+			BEGIN
+			
+				FOR opag IN (   SELECT    *     
+								FROM      XMLTABLE (  '/DATA_DS/G_1/G_6' PASSING xmltype.createxml(v_contenido) COLUMNS    
+													  TIPOOTROPAGO 			VARCHAR2(250) PATH 'TIPOOTROPAGO'    
+													, CLAVE 				VARCHAR2(250) PATH 'CLAVE'    
+													, CONCEPTO 				VARCHAR2(250) PATH 'CONCEPTO'    
+													, IMPORTE 				NUMBER        PATH 'IMPORTE'    
+													, SUBSIDIOCAUSADO 		NUMBER        PATH 'SUBSIDIOCAUSADO'    
+													, SALDOAFAVOR 			NUMBER        PATH 'SALDOAFAVOR'    
+													, ANIO 					NUMBER        PATH 'ANIO'    
+													, REMANENTESALDOAFAVOR 	NUMBER        PATH 'REMANENTESALDOAFAVOR'    
+													, IMPORTEAJUSTE 		NUMBER        PATH 'IMPORTEAJUSTE'    
+													, PAYROLL_REL_ACTION_ID NUMBER        PATH 'PAYROLL_REL_ACTION_ID'    
+												   ) xml_data    
+							) LOOP 
+					--
+					v_g6 := v_g6 + 1;
+					--				
+					BEGIN
+					
+						INSERT INTO grg_acum_isr_otrspagos		(  	 tipootropago    
+																   , clave    
+																   , concepto    
+																   , importe    
+																   , subsidiocausado    
+																   , saldoafavor    
+																   , anio    
+																   , remanentesaldoafavor    
+																   , importeajuste    
+																   , payroll_rel_action_id    
+																   , process_id    
+																   , created_by    
+																   , creation_date    
+																   , last_updated_by    
+																   , last_update_date    
+																   ) VALUES (  opag.tipootropago    
+																			 , opag.clave    
+																			 , opag.concepto    
+																			 , opag.importe    
+																			 , opag.subsidiocausado    
+																			 , opag.saldoafavor    
+																			 , opag.anio    
+																			 , opag.remanentesaldoafavor    
+																			 , opag.importeajuste    
+																			 , opag.payroll_rel_action_id    
+																			 , v_organization.process_id    
+																			 , '-1'    
+																			 , SYSDATE - 6/24    
+																			 , '-1'    
+																			 , SYSDATE - 6/24    
+																			); 
+						
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar otrospagos . payroll_rel_action_id:'||opag.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+							--    
+							--COMMIT; 						
+					END;
+					--
+                    IF MOD(v_g6,100) = 0 THEN  
+                        COMMIT;  
+                    END IF;
+					--			
+				END LOOP;
+			
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_6. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		);  			
+			END;
+			
+			--+DIAS TRABAJADOS
+			BEGIN
+			
+				FOR diastrab IN (   SELECT    *     
+									FROM      XMLTABLE (  '/DATA_DS/G_1/G_7' PASSING xmltype.createxml(v_contenido) COLUMNS    
+														  DIASTRABAJADOS 			VARCHAR2(250) PATH 'DIASTRABAJADOS'    
+														, PAYROLL_REL_ACTION_ID 	NUMBER        PATH 'PAYROLL_REL_ACTION_ID'    
+													   ) xml_data    
+								) LOOP 
+					--			 
+					v_g7 := v_g7 + 1;
+					--		
+					BEGIN
+					
+						INSERT INTO grg_acum_isr_diastrab	(	  	diastrabajados    
+																  , payroll_rel_action_id    
+																  , process_id    
+																  , created_by    
+																  , creation_date    
+																  , last_updated_by    
+																  , last_update_date    
+																  ) VALUES (  diastrab.diastrabajados    
+																			, diastrab.payroll_rel_action_id    
+																			, v_organization.process_id    
+																			, '-1'    
+																			, SYSDATE - 6/24    
+																			, '-1'    
+																			, SYSDATE - 6/24    
+																		   );
+
+					
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar diastrab . payroll_rel_action_id:'||diastrab.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+					
+					END;
+					--
+                    IF MOD(v_g7,100) = 0 THEN  
+                        COMMIT;  
+                    END IF;
+					--
+				END LOOP;
+			
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_7. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		); 		
+			END;
+			
+			--+SDI
+			BEGIN
+			
+				FOR sdi IN (   SELECT    *     
+							   FROM      XMLTABLE (  '/DATA_DS/G_1/G_8' PASSING xmltype.createxml(v_contenido) COLUMNS    
+													 SDI 				    VARCHAR2(250) PATH 'SDI'    
+												   , PAYROLL_REL_ACTION_ID  NUMBER 		  PATH 'PAYROLL_REL_ACTION_ID'    
+												  ) xml_data    
+						   ) LOOP 
+					--
+					v_g8 := v_g8 + 1;
+					--						   
+					BEGIN
+					
+						INSERT INTO grg_acum_isr_sdi	 (     sdi    
+															 , payroll_rel_action_id    
+															 , process_id    
+															 , created_by    
+															 , creation_date    
+															 , last_updated_by    
+															 , last_update_date    
+															 ) VALUES (  sdi.sdi    
+																	   , sdi.payroll_rel_action_id    
+																	   , v_organization.process_id    
+																	   , '-1'    
+																	   , SYSDATE - 6/24    
+																	   , '-1'    
+																	   , SYSDATE - 6/24    
+																	  );
+				
+					
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar sdi . payroll_rel_action_id:'||sdi.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+					
+					END;
+					--
+                    IF MOD(v_g8,100) = 0 THEN  
+                        COMMIT;  
+                    END IF; 
+					--   
+				END LOOP;
+			
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_8. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		); 			
+			END;
+			
+			--+AUSENTISMOS
+			BEGIN
+			
+				FOR ausentismo IN ( SELECT    *     
+									FROM      XMLTABLE (  '/DATA_DS/G_1/G_9' PASSING xmltype.createxml(v_contenido) COLUMNS    
+														 AUSENTISMO 			VARCHAR2(250) PATH 'AUSENTISMO'    
+													   , PAYROLL_REL_ACTION_ID 	NUMBER 		  PATH 'PAYROLL_REL_ACTION_ID'    
+													  ) xml_data    
+								   ) LOOP
+					--
+					v_g9 := v_g9 + 1;
+					--								   
+					BEGIN
+						INSERT INTO grg_acum_isr_ausentism		(	  ausentismo    
+																	, payroll_rel_action_id    
+																	, process_id    
+																	, created_by    
+																	, creation_date    
+																	, last_updated_by    
+																	, last_update_date    
+																	) VALUES (  ausentismo.ausentismo    
+																			  , ausentismo.payroll_rel_action_id    
+																			  , v_organization.process_id    
+																			  , '-1'    
+																			  , SYSDATE - 6/24    
+																			  , '-1'    
+																			  , SYSDATE - 6/24    
+																			 );
+
+	
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar ausentismo . payroll_rel_action_id:'||ausentismo.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+	
+					END;
+					--
+                    IF MOD(v_g9,100) = 0 THEN  
+                        COMMIT;  
+                    END IF;
+					--		   
+				END LOOP;
+			
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_9. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		); 			
+			END;
+			
+			--+SEPARACION E INDEMNIZACION
+			BEGIN
+			
+				FOR separacion IN ( SELECT    *     
+									FROM      XMLTABLE (  '/DATA_DS/G_1/G_10' PASSING xmltype.createxml(v_contenido) COLUMNS    
+														 TOTALPAGADO 			VARCHAR2(250) PATH 'TOTALPAGADO'    
+													   , PAYROLL_REL_ACTION_ID 	NUMBER        PATH 'PAYROLL_REL_ACTION_ID'    
+													  ) xml_data    
+								  ) LOOP
+					--
+					v_g10 := v_g10 + 1;
+					--		  
+					BEGIN
+					
+						INSERT INTO grg_acum_isr_separacio		(  	  totalpagado    
+																	, payroll_rel_action_id    
+																	, process_id    
+																	, created_by    
+																	, creation_date    
+																	, last_updated_by    
+																	, last_update_date    
+																	) VALUES (  separacion.totalpagado    
+																			  , separacion.payroll_rel_action_id    
+																			  , v_organization.process_id    
+																			  , '-1'    
+																			  , SYSDATE - 6/24    
+																			  , '-1'    
+																			  , SYSDATE - 6/24    
+																			 );
+
+					
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar separacion . payroll_rel_action_id:'||separacion.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+					
+					END;
+					--
+                    IF MOD(v_g10,100) = 0 THEN  
+                        COMMIT;  
+                    END IF;
+					--		  
+				END LOOP;
+			
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_10. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		); 				
+			END;
+			
+			--+IMPUESTOS RETENIDOS
+			BEGIN
+
+				FOR impuestos IN ( SELECT    *     
+								   FROM      XMLTABLE (  '/DATA_DS/G_1/G_11' PASSING xmltype.createxml(v_contenido) COLUMNS    
+														IMPUESTOSRETENIDOS 		VARCHAR2(250) PATH 'IMPUESTOSRETENIDOS'    
+													  , PAYROLL_REL_ACTION_ID 	NUMBER        PATH 'PAYROLL_REL_ACTION_ID'    
+                                                      , ELEMENT_NAME_REPORTE 	VARCHAR2(250) PATH 'ELEMENT_NAME_REPORTE'    
+													 ) xml_data    
+								 ) LOOP
+					--
+					v_g11 := v_g11 + 1;
+					--								 
+					BEGIN
+						
+						INSERT INTO grg_acum_isr_impuestos		(  	 impuestosretenidos
+																   , element_name_reporte
+																   , payroll_rel_action_id    
+																   , process_id    
+																   , created_by    
+																   , creation_date    
+																   , last_updated_by    
+																   , last_update_date   
+																   ) VALUES (  impuestos.impuestosretenidos
+																			 , impuestos.element_name_reporte
+																			 , impuestos.payroll_rel_action_id    
+																			 , v_organization.process_id    
+																			 , '-1'    
+																			 , SYSDATE - 6/24    
+																			 , '-1'    
+																			 , SYSDATE - 6/24    
+																			); 																				
+						
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar impuestos . payroll_rel_action_id:'||impuestos.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+							--    
+							--COMMIT;						
+					END;
+					--
+                    IF MOD(v_g11,100) = 0 THEN  
+                        COMMIT;  
+                    END IF; 
+					-- 			 
+				END LOOP;
+
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_11. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		); 				
+			END;
+			
+			--+ACUMULADOS
+			BEGIN
+			
+				FOR acumulados IN ( SELECT    *     
+									FROM      XMLTABLE (  '/DATA_DS/G_1/G_12' PASSING xmltype.createxml(v_contenido) COLUMNS    
+														  ISRRETENIDOACUMULADO 			VARCHAR2(250) PATH 'ISRRETENIDOACUMULADO'    
+														, PERCEPCIONGRAVABLEACUMULADA 	VARCHAR2(250) PATH 'PERCEPCIONGRAVABLEACUMULADA'    
+														, FONDODEAHORRODEPOSITADO 		VARCHAR2(250) PATH 'FONDODEAHORRODEPOSITADO'    
+														--, PAYROLL_RELATIONSHIP_ID 		NUMBER 	      PATH 'PAYROLL_RELATIONSHIP_ID'    
+														, PAYROLL_REL_ACTION_ID 		NUMBER 		  PATH 'PAYROLL_REL_ACTION_ID'    
+													   ) xml_data    
+								  ) LOOP
+					--
+					v_g12 := v_g12 + 1;
+					--
+					BEGIN
+					
+						INSERT INTO grg_acum_isr_acumulado		(    isrretenidoacumulado    
+																   , percepciongravableacumulada    
+																   , fondodeahorrodepositado   
+																   --, payroll_relationship_id   
+																   , payroll_rel_action_id    
+																   , process_id    
+																   , created_by    
+																   , creation_date    
+																   , last_updated_by    
+																   , last_update_date    
+																   ) VALUES (  acumulados.isrretenidoacumulado    
+																			 , acumulados.percepciongravableacumulada    
+																			 , acumulados.fondodeahorrodepositado    
+																			 --, acumulados.payroll_relationship_id   
+																			 , acumulados.payroll_rel_action_id    
+																			 , v_organization.process_id    
+																			 , '-1'    
+																			 , SYSDATE - 6/24    
+																			 , '-1'    
+																			 , SYSDATE - 6/24    
+																			);
+
+					
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar acumulados . payroll_rel_action_id:'||acumulados.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+				
+					END;
+					--
+                    IF MOD(v_g12,100) = 0 THEN  
+                        COMMIT;  
+                    END IF;	
+					--			
+				END LOOP;
+								  
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_12. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		); 				
+			END;
+			
+			--+BALANCES MENSUALES
+			BEGIN
+
+				FOR acumuladomes IN ( SELECT    *     
+									  FROM      XMLTABLE (  '/DATA_DS/G_1/G_13' PASSING xmltype.createxml(v_contenido) COLUMNS    
+															  ISRRETENIDOMENSUAL 			NUMBER PATH 'ISRRETENIDOMENSUAL'    
+															, SUBSIDIOMENSUAL				NUMBER PATH 'SUBSIDIOMENSUAL'    
+															, SUBSIDIOCAUSADOMENSUAL		NUMBER PATH 'SUBSIDIOCAUSADOMENSUAL'    
+															, GRAVABLEMENSUAL			 	NUMBER PATH 'GRAVABLEMENSUAL'    
+															, PAYROLL_REL_ACTION_ID 		NUMBER PATH 'PAYROLL_REL_ACTION_ID'    
+													   ) xml_data    
+								  ) LOOP
+					--
+					v_g13 := v_g13 + 1;
+					--			  
+					BEGIN
+
+						INSERT INTO grg_acum_isr_acumulado_mensual (  	  isrretenidomensual    
+																		, subsidiomensual    
+																		, subsidiocausadomensual   
+																		, gravablemensual   
+																		, payroll_rel_action_id    
+																		, process_id    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date    
+																		) VALUES (     acumuladomes.isrretenidomensual    
+																					 , acumuladomes.subsidiomensual    
+																					 , acumuladomes.subsidiocausadomensual    
+																					 , acumuladomes.gravablemensual   
+																					 , acumuladomes.payroll_rel_action_id    
+																					 , v_organization.process_id    
+																					 , '-1'    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24    
+																					);
+
+					EXCEPTION
+						WHEN OTHERS THEN
+							v_error := SQLERRM;    
+							--    
+							INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																		, error    
+																		, fecha    
+																		, created_by    
+																		, creation_date    
+																		, last_updated_by    
+																		, last_update_date  ) VALUES(  v_organization.process_id    
+																									 , 'Error al guardar acumuladomes . payroll_rel_action_id:'||acumuladomes.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24    
+																									 , '-1'    
+																									 , SYSDATE - 6/24	);    
+				
+					END;
+					--
+                    IF MOD(v_g12,100) = 0 THEN  
+                        COMMIT;  
+                    END IF;	
+					--							  
+				END LOOP;
+
+			EXCEPTION
+				WHEN OTHERS THEN    
+					v_error := SQLERRM;    
+						--    
+					INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+																, error    
+																, fecha    
+																, created_by    
+																, creation_date    
+																, last_updated_by    
+																, last_update_date    
+																) VALUES(  v_organization.process_id    
+																		 , 'Error al leer el G_13. ORG_ID:'||v_organization.organization_id||'. ERROR:'||v_error    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		 , '-1'    
+																		 , SYSDATE - 6/24    
+																		); 			
+			END;
+			
+		END LOOP; 
+			
+			
+	EXCEPTION
+		WHEN OTHERS THEN 
+			--    
+			v_error := SQLERRM;    
+			--    
+			INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+														, error    
+														, fecha    
+														, created_by    
+														, creation_date    
+														, last_updated_by    
+														, last_update_date ) VALUES(  NULL    
+																					 , 'Error principal en get_result_values. ERROR:'||v_error    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24  );    			
+    END get_result_values;
+
+---------------------------------------------------------------------------------------
+
+	PROCEDURE generar_procesos_paralelo( p_process_id	IN NUMBER)
+	IS
+		v_task_name         VARCHAR2(240);    
+		v_plsql_block       VARCHAR2(32767); 
+		v_sql_stmt_filtro   VARCHAR2(32767);    
+		v_sql_stmt          VARCHAR2(32767); 
+		v_intentos          NUMBER := 0; 
+		v_error             VARCHAR2(500);  
+		
+	BEGIN
+	
+		v_task_name := dbms_parallel_execute.generate_task_name( prefix   => 'GRGATI$_');  
+		
+		dbms_parallel_execute.create_task(task_name   => v_task_name);
+
+		v_sql_stmt_filtro := '  SELECT    MIN(id) start_id    
+										, MAX(id) end_id    
+								FROM      (    
+											SELECT    id    
+													, NTILE(14) OVER( ORDER BY id asc ) grupo     
+											FROM      grg_acum_isr_organizations    
+											WHERE     1 = 1
+											AND       process_id = '||p_process_id||'    
+										  )    
+								GROUP BY  grupo    
+							 ';  
+
+		dbms_parallel_execute.create_chunks_by_sql(  task_name  => v_task_name    
+												   , sql_stmt   => v_sql_stmt_filtro    
+												   , by_rowid   => FALSE    
+												  ); 
+
+		v_sql_stmt := q'[    
+						BEGIN     
+						   pay.grg_acum_isr_pkg.get_result_values(  :start_id , :end_id );    
+						END;    
+					   ]';  
+
+		dbms_parallel_execute.run_task(  task_name      => v_task_name    
+									   , sql_stmt       => v_sql_stmt    
+									   , language_flag  => DBMS_SQL.native    
+									   , parallel_level => 14    
+									  );
+
+		LOOP    
+			--    
+			EXIT WHEN    
+				--    
+				dbms_parallel_execute.task_status(v_task_name) = dbms_parallel_execute.finished OR v_intentos > 120;    
+				--    
+				v_intentos := v_intentos + 1;    
+				dbms_lock.sleep(10);    
+				--    
+		END LOOP; 
+
+		dbms_parallel_execute.drop_task(v_task_name); 
+		
+	EXCEPTION
+		WHEN OTHERS THEN 
+			--    
+			v_error := SQLERRM;    
+			--    
+			INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+														, error    
+														, fecha    
+														, created_by    
+														, creation_date    
+														, last_updated_by    
+														, last_update_date ) VALUES(   p_process_id    
+																					 , 'Error al ejecutar procesos en paralelo: '||v_error   
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24  );    	
+	END generar_procesos_paralelo;
+	
+----------------------------------------------------------------------------------------------
+
+	PROCEDURE	carga_totales( p_process_id	IN	NUMBER)
+	IS
+		CURSOR	c_header (p_process_id	IN NUMBER)
+		IS
+		SELECT	*
+		FROM	(
+				
+					SELECT	ROWNUM numerorecibo,
+							header.*
+					FROM	(
+								SELECT	numero_sucursal,
+										numero_empleado,
+										nombre,
+										unidad,
+										puesto,
+										fecha_ingreso,
+										fecha_baja,
+										periodo_nomina,
+										juego_consolidacion,
+										nomina,
+										payroll_rel_action_id
+								
+								FROM	grg_acum_isr_header
+								WHERE 1=1
+								AND	process_id	=	p_process_id
+								ORDER BY	numero_empleado, date_earned
+							)	header
+					WHERE 1=1			
+				
+				)
+		WHERE 1=1
+		ORDER BY numerorecibo;
+		
+		--+
+		
+		CURSOR	c_percepciones(	p_payroll_rel_action_id	IN	NUMBER,   
+								p_process_id			IN	NUMBER,
+								p_tipo_nomina			IN 	VARCHAR2)
+		IS
+		SELECT	per.tipopercepcion,   
+				per.clave,    
+				per.descripcion,  
+				per.importeexento,    
+				per.importegravado,    
+				per.importe 
+				
+		FROM	grg_acum_isr_per	per
+		WHERE	1=1
+		AND	per.payroll_rel_action_id	=	p_payroll_rel_action_id
+		AND per.process_id				=	p_process_id
+		AND       (     p_tipo_nomina <> 'FINIQUITO'   
+					OR (   
+								p_tipo_nomina 		= 'FINIQUITO'   
+							AND g_ciclo_sencuencia 	= 'SUELDOS'   
+							AND NOT EXISTS(   
+											SELECT    1   
+											FROM      xxgrg_elementos_finiquitos_ati xefa   
+											WHERE     1 = 1   
+											AND       xefa.element_name = per.clave   
+										   )   
+						  )   
+					OR (   
+								p_tipo_nomina		 = 'FINIQUITO'   
+							AND g_ciclo_sencuencia 	 = 'INDEMNIZACION'   
+							AND EXISTS(   
+											SELECT    1   
+											FROM      xxgrg_elementos_finiquitos_ati xefa   
+											WHERE     1 = 1   
+											AND       xefa.element_name = per.clave   
+										)   
+						)   
+					) 	
+		ORDER BY	per.clave;
+
+		--+
+
+		CURSOR	c_deducciones(	p_payroll_rel_action_id	IN	NUMBER,   
+								p_process_id			IN	NUMBER,
+								p_tipo_nomina			IN 	VARCHAR2)
+		IS
+		SELECT	ded.tipodeduccion,   
+				ded.clave,    
+				ded.descripcion, 
+				ded.importeexento,   
+				ded.importegravado,    
+				ded.importe,    
+				ded.payroll_rel_action_id  
+				
+		FROM	grg_acum_isr_ded	ded
+		WHERE 1=1
+		AND	ded.payroll_rel_action_id	=	p_payroll_rel_action_id
+		AND ded.process_id				=	p_process_id
+		AND       (     p_tipo_nomina <> 'FINIQUITO'   
+					OR (   
+								p_tipo_nomina 		= 'FINIQUITO'   
+							AND g_ciclo_sencuencia 	= 'SUELDOS'   
+							AND NOT EXISTS(   
+											SELECT    1   
+											FROM      xxgrg_elementos_finiquitos_ati xefa   
+											WHERE     1 = 1   
+											AND       xefa.element_name = ded.clave   
+										   )   
+						  )   
+					OR (   
+								p_tipo_nomina		 = 'FINIQUITO'   
+							AND g_ciclo_sencuencia 	 = 'INDEMNIZACION'   
+							AND EXISTS(   
+											SELECT    1   
+											FROM      xxgrg_elementos_finiquitos_ati xefa   
+											WHERE     1 = 1   
+											AND       xefa.element_name = ded.clave   
+										)   
+						)   
+					)	
+		ORDER BY	ded.clave;
+
+		--+
+		
+		CURSOR	c_horas_extra(	p_payroll_rel_action_id	IN	NUMBER,
+								p_base_element_name		IN	VARCHAR2,
+								p_process_id			IN	NUMBER)
+		IS
+		SELECT	NVL(hxtra.dias,	0)		AS dias, 		--+NVL
+				hxtra.tipohoras,    
+				hxtra.horasextra,    
+				NVL(hxtra.importe,	0)	AS importe,  	--+NVL  
+				hxtra.base_element_name,    
+				hxtra.hora_extra_real,   
+				hxtra.payroll_rel_action_id  
+						
+		FROM	grg_acum_isr_hextra	hxtra
+		WHERE 1=1
+		AND hxtra.payroll_rel_action_id	=	p_payroll_rel_action_id
+		AND hxtra.base_element_name		=	p_base_element_name
+		AND hxtra.process_id			=	p_process_id;
+		
+		--+
+		
+		CURSOR	c_incapacidades(	p_payroll_rel_action_id	IN	NUMBER,   
+									p_process_id			IN	NUMBER)
+		IS
+		SELECT 	inc.dias,  
+				inc.tipoincapacidad,   
+				inc.importemonetario,    
+				inc.descuento,    
+				inc.payroll_rel_action_id 
+				
+		FROM	grg_acum_isr_inc		inc
+		WHERE 1=1
+		AND inc.payroll_rel_action_id	=	p_payroll_rel_action_id
+		AND inc.process_id				=	p_process_id;
+		
+		--+
+		
+		CURSOR	c_otrospagos(	p_payroll_rel_action_id	IN	NUMBER,   
+								p_process_id			IN	NUMBER,
+								p_tipo_nomina			IN 	VARCHAR2)
+		IS
+		SELECT	otrop.tipootropago, 
+				otrop.clave,    
+				otrop.concepto,    
+				otrop.importe,    
+				otrop.subsidiocausado,    
+				otrop.saldoafavor,    
+				otrop.anio,    
+				otrop.remanentesaldoafavor,   
+				otrop.importeajuste,    
+				otrop.payroll_rel_action_id 
+				
+		FROM	grg_acum_isr_otrspagos	otrop
+		WHERE	1=1
+		AND otrop.payroll_rel_action_id		=	p_payroll_rel_action_id
+		AND otrop.process_id				=	p_process_id
+		AND       (     p_tipo_nomina <> 'FINIQUITO'   
+					OR (   
+								p_tipo_nomina 		= 'FINIQUITO'   
+							AND g_ciclo_sencuencia 	= 'SUELDOS'   
+							AND NOT EXISTS(   
+											SELECT    1   
+											FROM      xxgrg_elementos_finiquitos_ati xefa   
+											WHERE     1 = 1   
+											AND       xefa.element_name = otrop.clave   
+										   )   
+						  )   
+					OR (   
+								p_tipo_nomina		 = 'FINIQUITO'   
+							AND g_ciclo_sencuencia 	 = 'INDEMNIZACION'   
+							AND EXISTS(   
+											SELECT    1   
+											FROM      xxgrg_elementos_finiquitos_ati xefa   
+											WHERE     1 = 1   
+											AND       xefa.element_name = otrop.clave   
+										)   
+						)   
+					)
+		ORDER BY	otrop.clave;
+
+		--+
+		v_tipo_nomina					VARCHAR2(100);
+		v_payroll_rel_action_id			NUMBER;
+		v_existe_elemento_finiquito		NUMBER := NULL;
+		v_existe_elemento_sueldo		NUMBER := NULL;
+		v_repeticiones                  NUMBER;
+		v_tipo_regimen                  VARCHAR2(2);
+		v_tipocontrato                  VARCHAR2(2);
+		--+
+		v_total_percepciones            NUMBER := 0;  
+		v_total_deducciones             NUMBER := 0;
+		v_neto_pagado                   NUMBER := 0;
+		v_horasextra                    NUMBER := 0;
+		v_isrretenidoacumulado          NUMBER := 0; 
+		v_percepciongravableacumulada   NUMBER := 0;
+		v_fondodeahorrodepositado       NUMBER := 0;
+		v_totalsueldos                  NUMBER := 0;
+		v_totalseparacionindemnizacion  NUMBER := 0;
+		v_totaljubilacionpensionretiro  NUMBER;
+		v_totalgravado_percepciones     NUMBER := 0;
+		v_totalexento_percepciones      NUMBER := 0;
+		v_totalgravado_deducciones      NUMBER := 0;
+		v_totalexento_deducciones       NUMBER := 0;
+		v_total_otros_pagos             NUMBER := 0;
+		v_subsidiocausado               NUMBER;
+		v_diastrabajados                NUMBER := 0;
+		v_np003_np033					NUMBER;
+		v_sdi                           NUMBER := 0;
+		v_sdi_v2						NUMBER;
+		v_ausentismo					NUMBER := 0;
+		v_incapacidad					NUMBER := 0;
+		v_totalpagado					NUMBER := 0;
+		v_totalimpuestosretenidos		NUMBER := 0;
+		v_totalotrasdeducciones         NUMBER := 0;
+		v_isrretenidomensual			NUMBER := 0;
+		v_subsidiomensual				NUMBER := 0;
+		v_subsidiocausadomensual		NUMBER := 0;
+		v_gravablemensual				NUMBER := 0;
+		v_error         				VARCHAR2(200);
+		v_totalgravable					NUMBER := 0;
+		v_totalexento					NUMBER := 0;
+		v_contador_7         			NUMBER;
+		
+	BEGIN
+	
+		FOR header IN c_header(p_process_id)	LOOP
+		
+		
+			v_payroll_rel_action_id	:=	header.payroll_rel_action_id;
+			
+			--+Obtenemos el TIPO DE NOMINA respecto al Juego de Consolidacion
+			IF header.juego_consolidacion LIKE '%FIN%' THEN
+			
+				v_tipo_nomina:=	'FINIQUITO';
+				
+			ELSIF header.juego_consolidacion LIKE '%RETVOL%' THEN
+			
+				v_tipo_nomina:=	'RETIRO VOLUNTARIO';
+				
+			ELSIF header.juego_consolidacion LIKE '%VALES%' THEN
+			
+				v_tipo_nomina:=	'VALES DE DESPENSA';
+				
+			ELSIF header.juego_consolidacion LIKE '%PTU BAJAS' THEN
+			
+				v_tipo_nomina:=	'PTU BAJAS';
+				
+			ELSIF header.juego_consolidacion LIKE '%PTU' THEN
+			
+				v_tipo_nomina:=	'PTU';
+				
+			ELSIF header.juego_consolidacion LIKE '%BONO EJECUTIVO%' THEN
+			
+				v_tipo_nomina:=	'BONO EJECUTIVO';
+				
+			ELSIF header.juego_consolidacion LIKE '%PRODUCTIVIDAD%' THEN
+			
+				v_tipo_nomina:=	'BONO_PRODUCTIVIDAD';
+			
+			ELSIF header.juego_consolidacion LIKE '%NOMINA QUINCENAL%' THEN
+			
+				v_tipo_nomina:=	'NOMINA QUINCENAL';
+
+			ELSIF header.juego_consolidacion LIKE '%NOMINA SEMANAL%' THEN
+			
+				v_tipo_nomina:=	'NOMINA SEMANAL';
+				
+			ELSIF header.juego_consolidacion LIKE '%COMPLEMENTO%'	AND	header.periodo_nomina	LIKE	'%Semimonthly%' THEN
+			
+				v_tipo_nomina:=	'NOMINA QUINCENAL';
+				
+			ELSIF header.juego_consolidacion LIKE '%COMPLEMENTO%'	AND	header.periodo_nomina	LIKE	'%Weekly%' THEN
+			
+				v_tipo_nomina:=	'NOMINA SEMANAL';
+				
+			END IF;
+			
+			--+
+			
+			IF	v_tipo_nomina	=	'FINIQUITO'	THEN
+			
+				v_existe_elemento_finiquito	:= 0;
+				
+					SELECT    SUM(existe)   
+					INTO      v_existe_elemento_finiquito   
+					FROM      (   
+								SELECT    NVL(COUNT(1), 0) existe   
+								FROM      grg_acum_isr_per xpalp   
+								WHERE     1 = 1    
+								AND       xpalp.payroll_rel_action_id = header.payroll_rel_action_id    
+								AND       xpalp.process_id = p_process_id   
+								AND       v_tipo_nomina = 'FINIQUITO'   
+								AND       EXISTS(   
+													SELECT    1   
+													FROM      xxgrg_elementos_finiquitos_ati xefa   
+													WHERE     1 = 1   
+													AND       xefa.element_name = xpalp.clave   
+												)   
+								UNION ALL   
+								SELECT    NVL(COUNT(1), 0) existe   
+								FROM      grg_acum_isr_otrspagos xpalo   
+								WHERE     1 = 1    
+								AND       xpalo.payroll_rel_action_id = header.payroll_rel_action_id    
+								AND       xpalo.process_id = p_process_id   
+								AND       v_tipo_nomina = 'FINIQUITO'   
+								AND       EXISTS(   
+													SELECT    1   
+													FROM      xxgrg_elementos_finiquitos_ati xefa   
+													WHERE     1 = 1   
+													AND       xefa.element_name = xpalo.clave   
+												)   
+								UNION ALL   
+								SELECT    NVL(COUNT(1), 0) existe   
+								FROM      grg_acum_isr_ded xpald   
+								WHERE     1 = 1    
+								AND       xpald.payroll_rel_action_id = header.payroll_rel_action_id    
+								AND       xpald.process_id = p_process_id   
+								AND       v_tipo_nomina = 'FINIQUITO'   
+								AND       EXISTS(   
+													SELECT    1   
+													FROM      xxgrg_elementos_finiquitos_ati xefa   
+													WHERE     1 = 1   
+													AND       xefa.element_name = xpald.clave   
+												)   
+							  ) finiquitos   
+					WHERE     1 = 1;	
+
+					 v_existe_elemento_sueldo := 0; 
+					 
+					SELECT    SUM(existe)   
+					INTO      v_existe_elemento_sueldo   
+					FROM      (   
+								SELECT    NVL(COUNT(1), 0) existe   
+								FROM      grg_acum_isr_per xpalp   
+								WHERE     1 = 1    
+								AND       xpalp.payroll_rel_action_id = header.payroll_rel_action_id    
+								AND       xpalp.process_id = p_process_id   
+								AND       v_tipo_nomina = 'FINIQUITO'   
+								AND       NOT EXISTS(   
+													SELECT    1   
+													FROM      xxgrg_elementos_finiquitos_ati xefa   
+													WHERE     1 = 1   
+													AND       xefa.element_name = xpalp.clave   
+												)   
+								UNION ALL   
+								SELECT    NVL(COUNT(1), 0) existe   
+								FROM      grg_acum_isr_otrspagos xpalo   
+								WHERE     1 = 1    
+								AND       xpalo.payroll_rel_action_id = header.payroll_rel_action_id    
+								AND       xpalo.process_id = p_process_id   
+								AND       v_tipo_nomina = 'FINIQUITO'   
+								AND       NOT EXISTS(   
+													SELECT    1   
+													FROM      xxgrg_elementos_finiquitos_ati xefa   
+													WHERE     1 = 1   
+													AND       xefa.element_name = xpalo.clave   
+												)   
+								UNION ALL   
+								SELECT    NVL(COUNT(1), 0) existe   
+								FROM      grg_acum_isr_ded xpald   
+								WHERE     1 = 1    
+								AND       xpald.payroll_rel_action_id = header.payroll_rel_action_id    
+								AND       xpald.process_id = p_process_id   
+								AND       v_tipo_nomina = 'FINIQUITO'   
+								AND       NOT EXISTS(   
+													SELECT    1   
+													FROM      xxgrg_elementos_finiquitos_ati xefa   
+													WHERE     1 = 1   
+													AND       xefa.element_name = xpald.clave   
+												)   
+							  ) sueldos   
+					WHERE     1 = 1;  
+			
+			
+			END IF;
+			
+			--+
+			
+			IF	v_tipo_nomina = 'FINIQUITO' AND v_existe_elemento_finiquito > 0 AND v_existe_elemento_sueldo > 0 THEN 
+			
+				v_repeticiones := 2;
+				
+			ELSE
+				
+				v_repeticiones := 1;
+			
+			END IF;
+			
+			--+
+			
+			FOR v_i IN 1..v_repeticiones LOOP 
+				
+				g_secuencia			:=	NULL;
+				g_ciclo_sencuencia	:=	NULL;
+				
+					--+
+				
+					IF v_repeticiones = 2 THEN   
+						--   
+						IF v_i = 1 THEN   
+							   
+							g_secuencia := NULL;   
+							g_ciclo_sencuencia := 'SUELDOS';   
+							v_tipo_regimen := '02';   
+							v_tipocontrato := '01';   
+							   
+						ELSE   
+							   
+							g_secuencia := '2';   
+							g_ciclo_sencuencia := 'INDEMNIZACION';   
+							v_tipo_regimen := '13';   
+							v_tipocontrato := '99';   
+							   
+						END IF;   
+						   
+					ELSE   
+						   
+						IF v_tipo_nomina <> 'FINIQUITO' OR (v_tipo_nomina = 'FINIQUITO' AND v_existe_elemento_sueldo > 0) THEN   
+							   
+							g_secuencia := NULL;   
+							g_ciclo_sencuencia := 'SUELDOS';   
+							v_tipo_regimen := '02';   
+							v_tipocontrato := '01';   
+							   
+						ELSE   
+							   
+							g_secuencia := NULL;   
+							g_ciclo_sencuencia := 'INDEMNIZACION';   
+							v_tipo_regimen := '13';   
+							v_tipocontrato := '99';   
+							   
+						END IF;   
+											   
+					END IF; 
+					
+					--+
+			
+					IF v_tipo_nomina = 'RETIRO VOLUNTARIO' THEN   
+						  
+						BEGIN   
+							   
+							SELECT    DISTINCT   
+									  DECODE(  clave   
+											 , 'FP054', '13'   
+											 , 'FP056', '12'   
+											 , '--'   
+											)   
+									, '10'   
+							INTO      v_tipo_regimen   
+									, v_tipocontrato   
+							FROM      grg_acum_isr_per   
+							WHERE     1 = 1   
+							AND       clave IN ('FP054', 'FP056')   
+							AND       payroll_rel_action_id = header.payroll_rel_action_id    
+							AND       process_id = p_process_id;   
+							
+						EXCEPTION   
+							WHEN OTHERS THEN   
+								--   
+								v_tipo_regimen := '--';   
+								v_tipocontrato := '--';   
+						END;   
+
+					END IF;  
+					
+					--+
+					
+					SELECT    NVL(SUM(diastrabajados), 0)    
+					INTO      v_diastrabajados    
+					FROM      grg_acum_isr_diastrab    
+					WHERE     1 = 1    
+					AND       payroll_rel_action_id = header.payroll_rel_action_id    
+					AND       process_id = p_process_id;
+					
+					SELECT    NVL(SUM(cantidad), 0)    
+					INTO      v_np003_np033    
+					FROM      grg_acum_isr_per    
+					WHERE     1 = 1    
+					AND       clave IN ('NP003', 'NP033')   
+					AND       payroll_rel_action_id = header.payroll_rel_action_id    
+					AND       process_id = p_process_id; 
+					
+					--Total percepciones
+					SELECT    NVL(SUM(xpalp.importe), 0)    
+							, NVL(SUM(xpalp.importegravado), 0)    
+							, NVL(SUM(xpalp.importeexento), 0)    
+					INTO      v_total_percepciones    
+							, v_totalgravado_percepciones    
+							, v_totalexento_percepciones    
+					FROM      grg_acum_isr_per xpalp   
+					WHERE     1 = 1    
+					AND       xpalp.payroll_rel_action_id = header.payroll_rel_action_id    
+					AND       xpalp.process_id = p_process_id   
+					AND       (     v_tipo_nomina <> 'FINIQUITO'   
+								OR (   
+										v_tipo_nomina = 'FINIQUITO'   
+									AND g_ciclo_sencuencia = 'SUELDOS'   
+									AND NOT EXISTS(   
+													SELECT    1   
+													FROM      xxgrg_elementos_finiquitos_ati xefa   
+													WHERE     1 = 1   
+													AND       xefa.element_name = xpalp.clave   
+												  )   
+								   )   
+								OR (   
+										v_tipo_nomina = 'FINIQUITO'   
+									AND g_ciclo_sencuencia = 'INDEMNIZACION'   
+									AND EXISTS(   
+												SELECT    1   
+												FROM      xxgrg_elementos_finiquitos_ati xefa   
+												WHERE     1 = 1   
+												AND       xefa.element_name = xpalp.clave   
+											  )   
+								   )   
+							  );
+							  
+					--Total otros pagos    
+					SELECT    NVL(SUM(xpalo.importe), 0)    
+					INTO      v_total_otros_pagos    
+					FROM      grg_acum_isr_otrspagos xpalo   
+					WHERE     1 = 1    
+					AND       xpalo.payroll_rel_action_id = header.payroll_rel_action_id    
+					AND       xpalo.process_id = p_process_id   
+					AND       (     v_tipo_nomina <> 'FINIQUITO'   
+								OR (   
+										v_tipo_nomina = 'FINIQUITO'   
+									AND g_ciclo_sencuencia = 'SUELDOS'   
+									AND NOT EXISTS(   
+													SELECT    1   
+													FROM      xxgrg_elementos_finiquitos_ati xefa   
+													WHERE     1 = 1   
+													AND       xefa.element_name = xpalo.clave   
+												  )   
+								   )   
+								OR (   
+										v_tipo_nomina = 'FINIQUITO'   
+									AND g_ciclo_sencuencia = 'INDEMNIZACION'   
+									AND EXISTS(   
+												SELECT    1   
+												FROM      xxgrg_elementos_finiquitos_ati xefa   
+												WHERE     1 = 1   
+												AND       xefa.element_name = xpalo.clave   
+											  )   
+								   )   
+							  );
+
+					--Total deducciones    
+					SELECT    NVL(SUM(xpald.importe), 0)    
+							, NVL(SUM(xpald.importegravado), 0)    
+							, NVL(SUM(xpald.importeexento), 0)    
+					INTO      v_total_deducciones    
+							, v_totalgravado_deducciones    
+							, v_totalexento_deducciones    
+					FROM      grg_acum_isr_ded xpald   
+					WHERE     1 = 1    
+					AND       xpald.payroll_rel_action_id = header.payroll_rel_action_id    
+					AND       xpald.process_id = p_process_id   
+					AND       (     v_tipo_nomina <> 'FINIQUITO'   
+								OR (   
+										v_tipo_nomina = 'FINIQUITO'   
+									AND g_ciclo_sencuencia = 'SUELDOS'   
+									AND NOT EXISTS(   
+													SELECT    1   
+													FROM      xxgrg_elementos_finiquitos_ati xefa   
+													WHERE     1 = 1   
+													AND       xefa.element_name = xpald.clave   
+												  )   
+								   )   
+								OR (   
+										v_tipo_nomina = 'FINIQUITO'   
+									AND g_ciclo_sencuencia = 'INDEMNIZACION'   
+									AND EXISTS(   
+												SELECT    1   
+												FROM      xxgrg_elementos_finiquitos_ati xefa   
+												WHERE     1 = 1   
+												AND       xefa.element_name = xpald.clave   
+											  )   
+								   )   
+							  );
+				
+				v_neto_pagado := ABS(v_total_percepciones + v_total_otros_pagos) - ABS(v_total_deducciones);
+
+				--SDI    
+				SELECT    NVL(SUM(sdi), 0)    
+				INTO      v_sdi    
+				FROM      grg_acum_isr_sdi    
+				WHERE     1 = 1    
+				AND       payroll_rel_action_id = header.payroll_rel_action_id    
+				AND       process_id = p_process_id;
+
+				--Validamos si es el periodo 18 2021 y si es correcto tomamos el SDI de la tabla temporal   
+				BEGIN   
+
+					SELECT    sdi   
+					INTO      v_sdi_v2   
+					FROM      grg_sdi_correctos_2021   
+					WHERE     1 = 1   
+					AND       estafeta = header.numero_empleado   
+					AND       periodo = header.periodo_nomina;   
+					  
+					v_sdi := v_sdi_v2;   
+					   
+				EXCEPTION   
+					WHEN OTHERS THEN   
+						v_sdi_v2 := 0;   
+				END;
+
+				--Horas Extra    
+				SELECT    NVL(SUM(horasextra), 0)    
+				INTO      v_horasextra    
+				FROM      grg_acum_isr_hextra    
+				WHERE     1 = 1    
+				AND       payroll_rel_action_id = header.payroll_rel_action_id    
+				AND       process_id = p_process_id;
+
+				--Ausentismos    
+				SELECT    NVL(SUM(ausentismo), 0)    
+				INTO      v_ausentismo    
+				FROM      grg_acum_isr_ausentism    
+				WHERE     1 = 1    
+				AND       payroll_rel_action_id = header.payroll_rel_action_id    
+				AND       process_id = p_process_id;  
+
+				IF v_tipo_nomina = 'VALES DE DESPENSA' THEN   
+
+					v_ausentismo := 0;   
+
+				END IF;
+
+				--Incapacidades    
+				SELECT    NVL(SUM(dias), 0)    
+				INTO      v_incapacidad    
+				FROM      grg_acum_isr_inc    
+				WHERE     1 = 1    
+				AND       payroll_rel_action_id = header.payroll_rel_action_id    
+				AND       process_id = p_process_id;
+
+				IF v_tipo_nomina = 'VALES DE DESPENSA' THEN   
+						   
+						v_incapacidad := 0;   
+						   
+				END IF;		
+				
+				--Separaci?n 
+				SELECT    NVL(SUM(xpals.totalpagado), 0)    
+				INTO      v_totalpagado    
+				FROM      grg_acum_isr_separacio xpals   
+				WHERE     1 = 1    
+				AND       xpals.payroll_rel_action_id = header.payroll_rel_action_id    
+				AND       xpals.process_id = p_process_id   
+				AND       (     v_tipo_nomina <> 'FINIQUITO'   
+							OR (   
+									v_tipo_nomina = 'FINIQUITO'   
+								AND g_ciclo_sencuencia = 'INDEMNIZACION'   
+							   )   
+						  );
+
+				--Impuestos Retenidos    
+				SELECT    NVL(SUM(xpali.impuestosretenidos), 0)    
+				INTO      v_totalimpuestosretenidos    
+				FROM      grg_acum_isr_impuestos xpali   
+				WHERE     1 = 1    
+				AND       xpali.payroll_rel_action_id = header.payroll_rel_action_id    
+				AND       xpali.process_id = p_process_id   
+				AND       (     v_tipo_nomina <> 'FINIQUITO'   
+							OR (   
+									v_tipo_nomina = 'FINIQUITO'   
+								AND g_ciclo_sencuencia = 'SUELDOS'   
+								AND NOT EXISTS(   
+												SELECT    1   
+												FROM      xxgrg_elementos_finiquitos_ati xefa   
+												WHERE     1 = 1   
+												AND       xefa.element_name = xpali.element_name_reporte   
+											  )   
+							   )   
+							OR (   
+									v_tipo_nomina = 'FINIQUITO'   
+								AND g_ciclo_sencuencia = 'INDEMNIZACION'   
+								AND EXISTS(   
+											SELECT    1   
+											FROM      xxgrg_elementos_finiquitos_ati xefa   
+											WHERE     1 = 1   
+											AND       xefa.element_name = xpali.element_name_reporte   
+										  )   
+							   )   
+						  ); 
+
+				--Acumulados    
+				SELECT    NVL(SUM(DISTINCT isrretenidoacumulado), 0)    
+						, NVL(SUM(DISTINCT percepciongravableacumulada), 0)    
+						, NVL(SUM(DISTINCT fondodeahorrodepositado), 0)    
+				INTO      v_isrretenidoacumulado    
+						, v_percepciongravableacumulada    
+						, v_fondodeahorrodepositado    
+				FROM      grg_acum_isr_acumulado    
+				WHERE     1 = 1    
+				AND       payroll_rel_action_id = header.payroll_rel_action_id    
+				AND       process_id = p_process_id;
+				
+				IF	v_total_percepciones	=	0	AND	v_total_deducciones	=	0	AND v_neto_pagado	=	0	THEN
+
+					v_isrretenidoacumulado			:=	0;
+                    v_percepciongravableacumulada   :=	0;
+                    v_fondodeahorrodepositado    	:=	0;
+
+				END IF;
+				
+				IF v_tipo_nomina = 'VALES DE DESPENSA' THEN   
+					   
+					v_diastrabajados := 30;   
+					   
+				END IF;
+				
+				v_diastrabajados := v_diastrabajados - v_ausentismo - v_incapacidad + v_np003_np033;
+				
+				IF header.nomina = 'SS HR SEMANAL' AND v_tipo_nomina <> 'VALES DE DESPENSA' THEN   
+
+					v_diastrabajados := 7;   
+
+				END IF;
+				
+				v_totalseparacionindemnizacion 	:= v_totalpagado;    
+				v_totalsueldos 					:= v_total_percepciones - v_totalseparacionindemnizacion; 
+
+				IF v_totalgravado_percepciones = 0 AND v_totalexento_percepciones = 0 THEN
+				
+					v_totalexento_percepciones := v_total_percepciones;
+					
+				ELSIF (v_totalexento_percepciones + v_totalgravado_percepciones) > v_total_percepciones OR (v_totalexento_percepciones + v_totalgravado_percepciones) < v_total_percepciones THEN
+				
+					v_totalexento_percepciones := ROUND((v_total_percepciones - v_totalgravado_percepciones), 2);
+					
+				END IF;
+
+				IF v_totalgravado_deducciones = 0 AND v_totalexento_deducciones = 0 THEN    
+					
+					v_totalexento_deducciones := v_total_deducciones;    
+				
+				END IF; 
+
+				v_totalotrasdeducciones := v_total_deducciones - v_totalimpuestosretenidos;
+				
+				IF NVL(v_diastrabajados,0) <= 0 AND v_tipo_nomina = 'FINIQUITO'  THEN    
+						
+					v_diastrabajados := 1;   
+											
+				ELSIF NVL(v_diastrabajados,0) <= 0 AND v_tipo_nomina <> 'FINIQUITO'  THEN   
+						 
+					v_diastrabajados := 0;   
+					   
+				END IF;
+				
+				v_totaljubilacionpensionretiro	:= 0;
+				
+				IF v_tipo_regimen = '12' THEN   
+
+					v_totaljubilacionpensionretiro := v_totalsueldos;   
+					v_totalsueldos := 0;   
+
+				END IF;
+				
+				--+
+				v_subsidiocausado := 0;
+				
+				FOR	otropago	IN	c_otrospagos(	p_payroll_rel_action_id	=>	header.payroll_rel_action_id,
+													p_process_id			=>	p_process_id,
+													p_tipo_nomina			=>  v_tipo_nomina)	LOOP
+				
+					IF otropago.tipootropago = '002' THEN
+					
+						v_subsidiocausado := v_subsidiocausado + otropago.subsidiocausado;
+					
+					END IF;
+					
+				END LOOP;
+				
+				--+
+
+				SELECT    NVL(SUM(DISTINCT isrretenidomensual), 0)
+						, NVL(SUM(DISTINCT subsidiomensual), 0)    
+						, NVL(SUM(DISTINCT subsidiocausadomensual), 0)    
+						, NVL(SUM(DISTINCT gravablemensual), 0)    
+				INTO      v_isrretenidomensual
+						, v_subsidiomensual		
+                        , v_subsidiocausadomensual
+                        , v_gravablemensual		
+				FROM      grg_acum_isr_acumulado_mensual    
+				WHERE     1 = 1    
+				AND       payroll_rel_action_id = header.payroll_rel_action_id    
+				AND       process_id = p_process_id;
+				
+				v_totalgravable	:=	v_totalgravado_percepciones - v_totalgravado_deducciones; --*151122
+				v_totalexento	:=	v_totalexento_percepciones; --*151122	+ v_totalexento_deducciones;
+				 
+				--Actualizacion
+				 UPDATE 	grg_acum_isr_header
+				 SET	totalpercepciones				=	NVL(totalpercepciones, 0) + v_total_percepciones,
+				 		totaldeducciones				=	NVL(totaldeducciones, 0) + v_total_deducciones,
+				 		netopagado						=	NVL(netopagado, 0) + v_neto_pagado,
+				 		totaldescuentos					=	NVL(totaldescuentos, 0) + v_total_deducciones,
+				 		horasextra						=	v_horasextra,
+				 		isrretenidoacumulado			=	v_isrretenidoacumulado,
+				 		percepciongravableacumulada		=	v_percepciongravableacumulada,
+				 		fondodeahorrodepositado			=	v_fondodeahorrodepositado,
+				 		totalsueldos					=	NVL(totalsueldos, 0) + v_totalsueldos,
+				 		totalseparacionindemnizacion	=	v_totalseparacionindemnizacion,
+				 		totaljubilacionpensionretiro	=	v_totaljubilacionpensionretiro,
+				 		totalgravado_per				=	NVL(totalgravado_per, 0) + v_totalgravado_percepciones,
+				 		totalexento_per					=	NVL(totalexento_per, 0) + v_totalexento_percepciones,
+				 		totalgravado_ded				=	NVL(totalgravado_ded, 0) + v_totalgravado_deducciones,
+				 		totalexento_ded					=	NVL(totalexento_ded, 0) + v_totalexento_deducciones,
+				 		totalotrospagos					=	NVL(totalotrospagos, 0) + v_total_otros_pagos,
+				 		subsidiocausado					=	NVL(subsidiocausado, 0) + v_subsidiocausado,
+				 		tiporegimen						=	v_tipo_regimen,
+				 		numerorecibo					=	header.numerorecibo,
+				 		totaldiastrabajados				=	v_diastrabajados,
+				 		isrretenidomensual				=	v_isrretenidomensual,
+				 		subsidiomensual					=	v_subsidiomensual,
+				 		subsidiocausadomensual			=	v_subsidiocausadomensual,
+				 		gravablemensual					=	v_gravablemensual,
+				 		totalgravable					=	v_totalgravable,
+				 		totalexento						=	v_totalexento
+				
+				 WHERE	1 = 1
+				 AND 		process_id			  = p_process_id
+				 AND		payroll_rel_action_id = header.payroll_rel_action_id;
+
+
+				v_contador_7 := v_contador_7 + 1;
+                IF MOD(v_contador_7, 500) = 0 THEN
+				
+                    COMMIT; 
+					
+                END IF;
+
+			END LOOP;
+					
+		END LOOP;
+	EXCEPTION
+		WHEN OTHERS THEN
+			v_error := SQLERRM;    
+			
+			INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+														 , error    
+														 , fecha    
+														 , created_by    
+														 , creation_date    
+														 , last_updated_by    
+														 , last_update_date ) VALUES(   p_process_id    
+																					 , 'Ocurrio un error principal en el proceso carga_totales:'||v_error    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24 );    
+	END	carga_totales;
+	
+-----------------------------------------------------------------------------------------
+
+	PROCEDURE carga_elementos_totales( p_process_id	IN	NUMBER)
+	IS
+		v_error         				VARCHAR2(200);
+		v_contador1						NUMBER := 0;
+		v_contador2						NUMBER := 0;
+		
+		CURSOR c_empleados
+		IS
+		SELECT	numero_empleado
+		FROM	grg_acum_isr_header
+		WHERE 1=1
+		AND process_id	=	p_process_id
+		GROUP BY numero_empleado;
+		
+		--+
+		
+		CURSOR c_percepcion_total(	p_process_id		IN NUMBER,
+									p_numero_empleado	IN VARCHAR2
+								 )
+		IS
+		WITH 	grg_pay_acum_isr_percepcion AS( 
+										   
+				SELECT 	tipopercepcion         		AS	tipopercepcion,   
+						clave                  		AS	clave,   
+						descripcion            		AS	descripcion,   
+						importeexento          		AS	importeexento,   
+						importegravado         		AS	importegravado,   
+						importe                		AS	importe,   
+						cantidad			   		AS	cantidad,   
+						process_id             		AS	process_id,   
+						payroll_rel_action_id  		AS	payroll_rel_action_id  
+						
+				FROM grg_acum_isr_per
+				WHERE 1=1
+				AND process_id	=	p_process_id
+				AND payroll_rel_action_id	IN	(
+													SELECT	payroll_rel_action_id
+													FROM	grg_acum_isr_header	head
+													WHERE 1=1
+													AND process_id		=	p_process_id
+													AND numero_empleado	=	p_numero_empleado											
+												)
+				
+			UNION ALL   
+				
+				SELECT 	tipootropago           		AS	tipopercepcion,   
+						clave                  		AS	clave,   
+						concepto               		AS	descripcion,   
+						importe                		AS	importeexento,   
+						null                   		AS	importegravado,   
+						importe                		AS	importe,   
+						null 				   		AS	cantidad,   
+						process_id             		AS	process_id,   
+						payroll_rel_action_id  		AS	payroll_rel_action_id   
+						
+				FROM grg_acum_isr_otrspagos   
+				WHERE 1=1 
+				AND process_id	=	p_process_id
+				AND payroll_rel_action_id	IN	(
+													SELECT	payroll_rel_action_id
+													FROM	grg_acum_isr_header	head
+													WHERE 1=1
+													AND process_id		=	p_process_id
+													AND numero_empleado	=	p_numero_empleado											
+												)		
+				AND importe > 0   
+
+		)
+		SELECT	tipopercepcion,
+				clave,
+				descripcion,
+				SUM(importeexento)		importeexento,
+				SUM(importegravado)		importegravado,
+				SUM(importe)			importe,
+				SUM(cantidad)			cantidad
+				
+		FROM	grg_pay_acum_isr_percepcion
+		WHERE 1=1
+		GROUP BY 	tipopercepcion,
+					clave,
+					descripcion;
+
+		--+
+		CURSOR c_deduccion_total(	p_process_id		IN 	NUMBER,
+									p_numero_empleado	IN	VARCHAR2
+		                         )
+		IS
+		SELECT	tipodeduccion,
+				clave,
+				descripcion,
+				SUM(importeexento)		importeexento,
+				SUM(importegravado)		importegravado,
+				SUM(importe)			importe,
+				SUM(cantidad)			cantidad
+				
+		FROM	grg_acum_isr_ded
+		WHERE 1=1
+		AND process_id				=	p_process_id
+		AND payroll_rel_action_id	IN (
+											SELECT	head.payroll_rel_action_id
+											FROM	grg_acum_isr_header	head
+											WHERE 1=1
+											AND head.process_id			=	p_process_id
+											AND head.numero_empleado	=	p_numero_empleado
+										)
+		GROUP BY 	tipodeduccion,
+					clave,
+					descripcion;
+		
+	BEGIN
+	
+		FOR	emp IN c_empleados	LOOP
+			
+			--Insertamos Totales Percepciones
+			FOR per	IN c_percepcion_total (	p_process_id		=>	p_process_id,
+											p_numero_empleado	=> 	emp.numero_empleado	)	LOOP
+				--
+				v_contador1 := v_contador1 + 1;
+				--					
+				BEGIN
+
+					INSERT INTO grg_acum_isr_perc_totales (	tipopercepcion,
+															clave,
+															descripcion,
+															importeexento,
+															importegravado,
+															importe,
+															cantidad,
+															numero_empleado,
+															process_id	)VALUES	(	per.tipopercepcion,
+																					per.clave,
+																					per.descripcion,
+																					per.importeexento,
+																					per.importegravado,
+																					per.importe,
+																					per.cantidad,
+																					emp.numero_empleado,
+																					p_process_id
+																				);
+	
+				EXCEPTION
+					WHEN OTHERS THEN 
+						v_error := SQLERRM;
+						INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																	 , error    
+																	 , fecha    
+																	 , created_by    
+																	 , creation_date    
+																	 , last_updated_by    
+																	 , last_update_date ) VALUES(   p_process_id    
+																								 , 'Ocurrio un error al insertar en grg_acum_isr_perc_totales empleado: '||emp.numero_empleado||' .Error:'||v_error   
+																								 , SYSDATE - 6/24    
+																								 , '-1'    
+																								 , SYSDATE - 6/24    
+																								 , '-1'    
+																								 , SYSDATE - 6/24 );
+					
+				END;
+				--
+				IF MOD(v_contador1,200)	= 0	THEN
+					COMMIT;
+				END IF;
+				--
+			END LOOP;
+			
+		
+			--+
+			
+			--Insertamos Totales Deducciones
+			
+			FOR ded	IN c_deduccion_total (	p_process_id		=>	p_process_id,
+											p_numero_empleado	=> 	emp.numero_empleado	)	LOOP
+				--
+				v_contador2 := v_contador2 + 1;
+				--
+				BEGIN
+
+					INSERT INTO grg_acum_isr_ded_totales (	tipodeduccion,
+															clave,
+															descripcion,
+															importeexento,
+															importegravado,
+															importe,
+															cantidad,
+															numero_empleado,
+															process_id	)VALUES	(	ded.tipodeduccion,
+																					ded.clave,
+																					ded.descripcion,
+																					ded.importeexento,
+																					ded.importegravado,
+																					ded.importe,
+																					ded.cantidad,
+																					emp.numero_empleado,
+																					p_process_id
+																				);
+	
+				EXCEPTION
+					WHEN OTHERS THEN 
+						v_error := SQLERRM;
+						INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+																	 , error    
+																	 , fecha    
+																	 , created_by    
+																	 , creation_date    
+																	 , last_updated_by    
+																	 , last_update_date ) VALUES(   p_process_id    
+																								 , 'Ocurrio un error al insertar en grg_acum_isr_ded_totales empleado: '||emp.numero_empleado||' .Error:'||v_error   
+																								 , SYSDATE - 6/24    
+																								 , '-1'    
+																								 , SYSDATE - 6/24    
+																								 , '-1'    
+																								 , SYSDATE - 6/24 );
+					
+				END;
+				--
+				IF MOD(v_contador2,200)	= 0	THEN
+					COMMIT;
+				END IF;	
+				--
+			END LOOP;
+
+		
+		END LOOP;
+	
+		
+	EXCEPTION
+		WHEN OTHERS THEN
+			v_error := SQLERRM;    
+			
+			INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+														 , error    
+														 , fecha    
+														 , created_by    
+														 , creation_date    
+														 , last_updated_by    
+														 , last_update_date ) VALUES(   p_process_id    
+																					 , 'Ocurrio un error principal en el proceso carga_elementos_totales:'||v_error    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24 );    
+	
+	END carga_elementos_totales;
+
+--------------------------------------------------------------------------------------------
+
+	PROCEDURE crear_archivo( p_process_id	IN	NUMBER)
+	IS
+		v_contenido_cabe	CLOB;
+		v_contenido			CLOB;
+		l_max_perception	NUMBER;
+		l_max_deduction		NUMBER;
+		v_inc_contador		NUMBER;
+		--
+		l_per_enc        	VARCHAR2 (32767);
+		l_ded_enc        	VARCHAR2 (32767);
+		l_hora_enc       	VARCHAR2 (32767);
+		l_inc_enc        	VARCHAR2 (32767);
+		v_error				VARCHAR2(200); 
+		
+		--+
+		
+		CURSOR	c_xml_data	IS
+		WITH	grg_elem_per 	AS	(
+
+				SELECT	DISTINCT clave,process_id 
+				FROM	grg_acum_isr_perc_totales
+				WHERE 1=1
+				AND process_id	=	p_process_id	
+
+		)
+		,	grg_elem_ded 	AS	(
+
+				SELECT	DISTINCT clave,process_id 
+				FROM	grg_acum_isr_ded_totales
+				WHERE 1=1
+				AND process_id	=	p_process_id	
+
+		)
+		,	grg_emp_percepciones	AS	(
+
+					SELECT	base.periodo,
+							--+
+							(
+								SELECT	gaih.numero_sucursal
+								FROM	grg_acum_isr_header	gaih
+								WHERE 1=1
+								AND gaih.process_id			=	p_process_id
+								AND gaih.numero_empleado	=	base.numero_empleado
+								AND gaih.date_earned		=	TO_CHAR(base.fecha_nomina, 'YYYY-MM-DD')
+								AND ROWNUM					=	1
+							)	AS	numero_sucursal,
+							--+
+							base.numero_empleado,
+							base.nombre,
+							base.isrretenidomensual,
+							base.subsidiomensual,		
+							base.subsidiocausadomensual,
+							base.gravablemensual,	
+							base.totalpercepciones,		
+							base.totaldeducciones,		
+							base.netopagado,		
+							base.fondodeahorrodepositado,
+							base.totalgravable,	
+							base.totalexento,			
+							base.subsidiocausado,		
+							base.totalgravado_per,		
+							base.totalexento_per,		
+							base.totalotrospagos,
+							base.totalgravado_ded,
+							base.totalexento_ded,
+							base.process_id
+							
+					FROM	(				
+									SELECT	periodo,
+											numero_empleado,
+											nombre,
+											--+
+											SUM(isrretenidomensual)						AS	isrretenidomensual,
+											SUM(subsidiomensual)						AS	subsidiomensual,		
+											SUM(subsidiocausadomensual)     			AS	subsidiocausadomensual,
+											SUM(gravablemensual)	        			AS	gravablemensual,	
+											SUM(totalpercepciones)		    			AS	totalpercepciones,		
+											SUM(totaldeducciones)		    			AS	totaldeducciones,		
+											SUM(netopagado)		            			AS	netopagado,		
+											SUM(fondodeahorrodepositado)    			AS	fondodeahorrodepositado,
+											SUM(totalgravable)              			AS	totalgravable,	
+											SUM(totalexento)		        			AS	totalexento,			
+											SUM(subsidiocausado)		   				AS	subsidiocausado,		
+											SUM(totalgravado_per)		    			AS	totalgravado_per,		
+											SUM(totalexento_per)	        			AS	totalexento_per,		
+											SUM(totalotrospagos)            			AS	totalotrospagos,
+											--+
+											SUM(totalgravado_ded)						AS	totalgravado_ded,
+											SUM(totalexento_ded)						AS	totalexento_ded,
+											--+
+											process_id,
+											MAX(TO_DATE(date_earned, 'YYYY-MM-DD'))		AS 	fecha_nomina
+											
+									FROM	(
+
+												SELECT	('DEL '||	(
+																					SELECT	fecha_inicial
+																					FROM	grg_acum_isr_process
+																					WHERE 1=1
+																					AND process_id	=	p_process_id
+																				)||	' AL '	||(
+																								SELECT	fecha_final
+																								FROM	grg_acum_isr_process
+																								WHERE 1=1
+																								AND process_id	=	p_process_id
+																								)
+														)	periodo,
+														--+
+														numero_empleado,
+														nombre,
+														--+
+														isrretenidomensual,
+														subsidiomensual,		
+														subsidiocausadomensual,
+														gravablemensual,	
+														totalpercepciones,		
+														totaldeducciones,		
+														netopagado,		
+														fondodeahorrodepositado,
+														totalgravable,	
+														totalexento,			
+														subsidiocausado,		
+														totalgravado_per,		
+														totalexento_per,		
+														totalotrospagos,
+														--+
+														totalgravado_ded,
+														totalexento_ded,
+														--+
+														process_id,
+														numerorecibo,
+														date_earned,
+														payroll_rel_action_id		
+
+												FROM	grg_acum_isr_header
+												WHERE 1=1
+												AND process_id 			=	p_process_id
+												
+
+												ORDER BY numerorecibo
+
+											)
+											
+									WHERE 1=1
+									GROUP BY 	periodo,
+												numero_empleado,
+												nombre,
+												process_id
+
+							)				base
+							
+		)
+		,	grg_pay_acum_isr_percepciones	AS	(
+
+				SELECT	cabe.cabecero||'|'||LISTAGG(cabe.tipopercepcion||'|'||cabe.clave||'|'||cabe.cantidad||'|'||cabe.descripcion||'|'||cabe.importeexento||'|'||cabe.importegravado||'|'||cabe.importe,'|') WITHIN GROUP (ORDER BY cabe.clave_all ASC) contenido_per,
+						cabe.process_id,
+						cabe.numero_sucursal,
+						cabe.numero_empleado,
+						cabe.nombre,
+						COUNT(cabe.clave_all) total_per
+						
+				FROM	(
+
+							SELECT	emp.periodo						||'|'||
+									emp.numero_sucursal				||'|'||
+									emp.numero_empleado				||'|'||
+									emp.nombre						||'|'||
+									emp.isrretenidomensual			||'|'||
+									emp.subsidiomensual				||'|'||
+									emp.subsidiocausadomensual		||'|'||
+									emp.gravablemensual				||'|'||
+									emp.totalpercepciones			||'|'||
+									emp.totaldeducciones			||'|'||
+									emp.netopagado					||'|'||
+									emp.fondodeahorrodepositado		||'|'||
+									emp.totalgravable				||'|'||
+									emp.totalexento					||'|'||
+									emp.subsidiocausado				||'|'||
+									emp.totalgravado_per			||'|'||
+									emp.totalexento_per				||'|'||
+									emp.totalotrospagos								AS	cabecero,
+									--+
+									emp.numero_sucursal,
+									emp.numero_empleado,
+									emp.process_id,
+									emp.nombre,
+									--+
+									per.tipopercepcion,    
+									per.clave,                
+									per.descripcion,        
+									per.importeexento,        
+									per.importegravado,       
+									per.importe,   
+									per.cantidad,  
+									perc.clave clave_all 		
+
+							FROM	grg_emp_percepciones			emp,
+									grg_acum_isr_perc_totales		per,
+									grg_elem_per					perc
+									
+							WHERE	1=1
+							AND emp.process_id		=	per.process_id(+)
+							AND emp.numero_empleado	=	per.numero_empleado(+)
+							AND per.clave(+)		=	perc.clave
+
+										
+							ORDER BY perc.clave ASC
+						
+						)											cabe
+
+				WHERE 1=1
+				GROUP BY	cabe.cabecero,   
+							cabe.process_id,
+							cabe.numero_sucursal,
+							cabe.numero_empleado, 
+							cabe.nombre
+
+		)
+		,	grg_pay_acum_isr_deducciones	AS	(
+
+				SELECT	deduc.numero_empleado,
+						deduc.nombre,
+						deduc.process_id,
+						LISTAGG(deduc.tipodeduccion||'|'||deduc.clave||'|'||deduc.cantidad||'|'||deduc.descripcion||'|'||deduc.importeexento||'|'||deduc.importegravado||'|'||deduc.importe,'|') WITHIN GROUP (ORDER BY deduc.clave_all ASC) contenido_ded,
+						COUNT(deduc.clave_all) total_ded,
+						deduc.totalgravado_ded,
+						deduc.totalexento_ded
+						
+				FROM	(
+
+							SELECT	enc.numero_empleado,
+									enc.nombre,
+									enc.process_id,
+									--+
+									ded.tipodeduccion,
+									ded.clave,
+									ded.descripcion,
+									ded.importeexento,
+									ded.importegravado,
+									ded.importe,
+									ded.cantidad,
+									elem.clave clave_all,
+									--+
+									enc.totalgravado_ded,
+									enc.totalexento_ded
+									
+							FROM	grg_emp_percepciones		enc,
+									grg_acum_isr_ded_totales	ded,
+									grg_elem_ded				elem
+							WHERE 1=1
+							AND enc.process_id				=	p_process_id
+							AND enc.process_id				=	ded.process_id(+)
+							AND enc.numero_empleado			=	ded.numero_empleado(+)
+							AND ded.clave(+)				=	elem.clave
+							ORDER BY 	elem.clave ASC		
+						
+						)		deduc
+						
+				GROUP BY	deduc.numero_empleado,  
+							deduc.nombre,   
+							deduc.process_id,    
+							deduc.totalgravado_ded,   
+							deduc.totalexento_ded
+							
+		)
+		,	grg_pay_acum_isr	AS	(
+
+				SELECT	perc.numero_sucursal,
+						perc.numero_empleado,
+						perc.nombre,
+						perc.process_id,
+						dedu.totalgravado_ded,
+						dedu.totalexento_ded,
+						perc.contenido_per,
+						dedu.contenido_ded
+							
+				FROM	grg_pay_acum_isr_percepciones		perc
+						
+					FULL OUTER JOIN
+						
+						grg_pay_acum_isr_deducciones		dedu
+
+					ON  perc.numero_empleado = dedu.numero_empleado
+						
+					AND perc.process_id = dedu.process_id
+
+		)
+		SELECT	isr.numero_empleado,
+				isr.totalgravado_ded,
+				isr.totalexento_ded,
+				isr.contenido_per||'|'||TO_CHAR(isr.totalgravado_ded)||'|'||TO_CHAR(isr.totalexento_ded)||'|'||isr.contenido_ded	AS contenido
+		FROM	grg_pay_acum_isr	isr
+		WHERE 1=1
+		ORDER BY	isr.numero_sucursal,isr.numero_empleado;
+		
+	BEGIN
+	
+	v_contenido_cabe:=	'periodo'||'|'||'numeroSucursal'||'|'||'numero_emp'||'|'||'nombre_emp'||'|'||'ND514 ISR Retenido mensual'||'|'||'NP052 Subsidio mensual'||'|'||' Subsidio Causado mensual'||'|'||'Gravable mensual'
+								||'|'||'Total Percepciones'||'|'||'Total Deducciones'||'|'||'Neto Pagado'||'|'||'Acumulado Fondo De Ahorro Depositado'||'|'||'Total de Gravables del período actual'||'|'||'Total de Exentos del período actual'||'|'||'subsidio_causado'  
+								||'|'||'totalgravado_per'||'|'||'totalexento_per'||'|'||'otro_pagos'; 
+
+
+	SELECT COUNT(DISTINCT clave)    
+	INTO l_max_perception    
+	FROM grg_acum_isr_perc_totales   
+	WHERE process_id = p_process_id;	
+	
+	SELECT COUNT(DISTINCT clave)    
+	INTO l_max_deduction    
+	FROM grg_acum_isr_ded_totales    
+	WHERE process_id = p_process_id;
+
+
+
+	FOR x IN 1 .. l_max_perception LOOP    
+		IF x = 1 THEN    
+			l_per_enc := '|tipo_percep|clave_percep|cantidad|descripcion_percep|importe_exento_percep|importe_gravado_percep|importe_percep';     
+		ELSE    
+			l_per_enc := '|tipo_percep|clave_percep|cantidad|descripcion_percep|importe_exento_percep|importe_gravado_percep|importe_percep'||l_per_enc;    
+		END IF;    
+	END LOOP;
+	
+	FOR x IN 1 .. l_max_deduction LOOP    
+		IF x = 1 THEN     
+			l_ded_enc := '|tipo_dedu|clave_dedu|cantidad|descripcion_dedu|importe_exento_dedu|importe_gravado_dedu|importe_dedu';    
+		ELSE     
+			l_ded_enc := '|tipo_dedu|clave_dedu|cantidad|descripcion_dedu|importe_exento_dedu|importe_gravado_dedu|importe_dedu'||l_ded_enc;    
+		END IF;    
+	END LOOP;
+
+	v_contenido_cabe 	:=  v_contenido_cabe||l_per_enc||'|'||'totalgravado_ded'||'|'||'totalexento_ded'||l_ded_enc;
+	
+	v_contenido			:=	v_contenido || v_contenido_cabe;
+	
+	FOR r_data IN c_xml_data LOOP
+
+		v_contenido:= v_contenido||CHR(10)||r_data.contenido;
+
+	END LOOP;
+	
+	INSERT INTO	grg_pay_acumulado_isr_clob_data(contenido,id)	VALUES (v_contenido,p_process_id);	
+		
+	COMMIT;
+	
+	EXCEPTION
+		WHEN OTHERS THEN
+			v_error := SQLERRM;    
+			
+			INSERT INTO grg_acumulado_isr_error_tracing(   process_id    
+														 , error    
+														 , fecha    
+														 , created_by    
+														 , creation_date    
+														 , last_updated_by    
+														 , last_update_date ) VALUES(   p_process_id    
+																					 , 'Ocurrio un error principal en el proceso crear_archivo:'||v_error    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24    
+																					 , '-1'    
+																					 , SYSDATE - 6/24 );    
+		 
+	END crear_archivo;
+	
+-----------------------------------------------------------------------------------------------------
+
+PROCEDURE retry_org_err (p_process_id IN NUMBER) 
+	IS    
+
+		v_error             VARCHAR2(500);    
+        v_ids               VARCHAR2(512); 
+        v_val               NUMBER; 
+
+	BEGIN    
+ 
+        BEGIN
+			SELECT  1 
+			INTO    v_val 
+			FROM    grg_acumulado_isr_error_tracing 
+			WHERE	1=1		
+			AND process_id = p_process_id 
+			AND error LIKE 'Error al crear el XML2. ORG_ID:%' ;
+		EXCEPTION WHEN OTHERS THEN
+			v_val := 0;
+		END;
+         
+        WHILE v_val > 0 LOOP 
+ 
+            FOR x IN (
+			
+                SELECT  TO_NUMBER(TRIM(SUBSTR(ERROR,32,15))) AS id,id_error 
+                FROM    grg_acumulado_isr_error_tracing 
+                WHERE	1=1  
+				AND process_id = p_process_id 
+                AND error LIKE 'Error al crear el XML2. ORG_ID:%'
+				
+            ) LOOP 
+                -- 
+                BEGIN 
+                    -- 
+                    DELETE  grg_acumulado_isr_error_tracing 
+                    WHERE   process_id = p_process_id 
+					AND error LIKE 'Error al crear el XML2. ORG_ID:%' 
+                    AND id_error = x.id_error ;
+					
+                    COMMIT;    
+                    -- 
+                    SELECT  DISTINCT id 
+                    INTO    v_ids  
+                    FROM    grg_acum_isr_organizations    
+                    WHERE   1 = 1    
+                    AND process_id = p_process_id 
+					AND organization_id = x.id; 
+                    --      
+                    pay.xxgrg_pay_cfdi_v2_file_pkg.get_result_values(  v_ids , v_ids ); 
+                    -- 
+                EXCEPTION     
+                    WHEN OTHERS THEN    
+                        v_error := SQLERRM;    
+                        INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+                                                                    , error    
+                                                                    , fecha    
+                                                                    , created_by    
+                                                                    , creation_date    
+                                                                    , last_updated_by    
+                                                                    , last_update_date    
+                                                                    ) VALUES(  p_process_id    
+                                                                            , 'Error al crear el XML2. ORG_ID:'||x.id|| ' Error: '||v_error    
+                                                                            , SYSDATE - 6/24    
+                                                                            , '-1'    
+                                                                            , SYSDATE - 6/24    
+                                                                            , '-1'    
+                                                                            , SYSDATE - 6/24    
+                                                                            ); 
+ 
+                END; 
+                -- 
+            END LOOP; 
+ 
+            BEGIN
+				SELECT  1 
+				INTO    v_val 
+				FROM    grg_acumulado_isr_error_tracing 
+				WHERE   1=1
+				AND process_id = p_process_id 
+				AND error LIKE 'Error al crear el XML2. ORG_ID:%' ;
+			EXCEPTION WHEN OTHERS THEN
+				v_val := 0;
+			END;
+            -- 
+        END LOOP;
+		
+	EXCEPTION
+		WHEN OTHERS THEN 
+			v_error := SQLERRM;    
+			INSERT INTO grg_acumulado_isr_error_tracing(  process_id    
+                                                        , error    
+                                                        , fecha    
+                                                        , created_by    
+                                                        , creation_date    
+                                                        , last_updated_by    
+                                                        , last_update_date    
+                                                        ) VALUES(  p_process_id    
+                                                                , 'Error principal en retry_org_err. Error: '||v_error    
+                                                                , SYSDATE - 6/24    
+                                                                , '-1'    
+                                                                , SYSDATE - 6/24    
+                                                                , '-1'    
+                                                                , SYSDATE - 6/24    
+                                                                ); 			
+		
+	END retry_org_err; 
+	
+    PROCEDURE delete_acum_isr
+    IS
+    BEGIN
+
+			DELETE FROM grg_acum_isr_organizations    
+			COMMIT; --+    
+
+			DELETE FROM grg_acum_isr_header    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_per    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_ded    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_hextra    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_inc    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_otrspagos    
+			COMMIT; --+
+    
+			DELETE FROM xxtoks_pay_ati_lines_diastrab    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_diastrab    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_sdi    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_ausentism    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_separacio    
+			COMMIT; --+
+    
+			DELETE FROM grg_acum_isr_impuestos     
+            COMMIT; 
+			
+			DELETE FROM grg_acum_isr_acumulado      
+            COMMIT;
+			
+			DELETE FROM grg_acum_isr_acumulado_mensual      
+            COMMIT;
+			--+
+    END delete_acum_isr;
+
+END GRG_ACUM_ISR_PKG;
