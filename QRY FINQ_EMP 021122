@@ -1,0 +1,206 @@
+--QRY FINQ_EMP 021122
+SELECT  /*+FISRT_ROWS*/
+        papf.person_id              AS person_id,
+        papf.person_number          AS emp_number,
+        CONVERT(
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            TRIM(
+                                UPPER (
+                                    ppnf.full_name
+                                )
+                            )
+                        ,'?'
+                        ,'N'
+                        )
+                    , 'Ñ'
+                    , 'N'
+                    )
+                ,','
+                )
+            , 'ñ'
+            , 'n'
+            )
+        , 'us7ascii'
+        , 'al32utf8'
+        )                           AS emp_nombre,
+        pplf.sex                    AS emp_sexo,
+        paaf.assignment_id          AS assignment_id,
+        paaf.assignment_number      AS assignment_number,
+        pj.name                     AS emp_puesto,
+        pnir.national_identifier_number AS emp_rfc,
+        pnii.national_identifier_number AS emp_imss,
+        pnic.national_identifier_number AS emp_curp,
+        paypd.payroll_id                AS payroll_id,
+        paypf.payroll_name              AS payroll_name,
+        hoi.org_information1            AS emp_unidad_id,
+        pl.location_id                  AS organization_id,
+        paaf.legal_entity_id,
+        CONVERT(pldft.location_name, 'us7ascii', 'al32utf8') AS emp_local,
+        TO_CHAR(
+            NVL( 
+                (SELECT MIN(ppei.pei_information_date1) 
+                FROM   per_people_extra_info_f ppei 
+                WHERE  ppei.person_id = ppnf.person_id
+                AND    ppei.information_type = 'Cambio de Empleador Legal'
+                AND    ppei.PEI_INFORMATION1 = 'Fecha de Inicio de Base Salarial'
+                AND    TRUNC(SYSDATE) BETWEEN ppei.effective_start_date AND ppei.effective_end_date
+                ),
+                (SELECT psdf.seniority_date
+                FROM   per_seniority_dates_f  psdf, -- Seniority Date
+                        per_seniority_dates_setup   psds
+                WHERE  psdf.person_id = papf.person_id
+                AND    psdf.seniority_field = 'ORA_ENT'
+                AND    psds.seniority_date_code = psdf.seniority_date_code
+                AND    psds.active_flag = 'Y'
+                AND    TRUNC(SYSDATE) BETWEEN psdf.effective_start_date AND psdf.effective_end_date
+                AND    ROWNUM = 1
+                )
+            ), 'DD-MON-YYYY'
+        ) AS emp_fecha_ing,
+        TO_CHAR(ppos.actual_termination_date,'DD-MON-YYYY','NLS_DATE_LANGUAGE = SPANISH') AS emp_fecha_baja,
+        TO_CHAR(ppos.notified_termination_date,'DD-MON-YYYY','NLS_DATE_LANGUAGE = SPANISH') AS emp_fecha_notificacion,
+        CONVERT(hr_general.decode_lookup('ORA_HRX_MX_SS_LEAVE_REASON',ppos.pds_information1), 'us7ascii', 'al32utf8') AS sub_motivo_baja,
+        CONVERT(pa.action_name, 'us7ascii', 'al32utf8' ) action_name,
+        CONVERT(par.action_reason,'us7ascii', 'al32utf8') action_reason,
+        pa.action_type_code,
+        pa.action_code,
+        -- NVL((
+        --     SELECT pat.action_name
+        --     FROM    per_actions_tl pat,
+        --             per_actions_b pab,
+        --             per_action_occurrences pao1
+        --     WHERE   1=1
+        --             AND pao1.action_occurrence_id = ppos.action_occurrence_id
+        --             AND pab.action_id = pao1.action_id
+        --             AND pab.action_id = pat.action_id
+        --             AND pat.language = SYS_CONTEXT ('USERENV', 'LANG')
+        --             AND pab.action_code IN ('TKS_DEFUNCION','TKS_RECISION') --Defunción / Rescisión de Contrato
+        --             AND TRUNC(ppos.actual_termination_date) BETWEEN pab.start_date AND pab.end_date
+        -- ),1) AS per_action_code,
+        --+NULL AS per_action_code,
+        -- NVL((
+        --     SELECT  CONVERT (UPPER (flv.meaning),'us7ascii', 'UTF8') motivo_baja
+        --     FROM    fnd_lookup_values_vl flv
+        --     WHERE   1=1
+        --             AND ppos.pds_information1 = flv.lookup_code
+        --             AND flv.lookup_code IN ('ORA_SSLR_4','ORA_SSLR_8') --ORA_SSLR_4 = Defunción / ORA_SSLR_8 = Rescisión de contrato
+        --             AND flv.lookup_type = 'ORA_HRX_MX_SS_LEAVE_REASON'
+        --             AND flv.enabled_flag = 'Y'
+        -- ),1) AS per_baja_imss --
+        --+NULL AS per_baja_imss, --+
+        -- ,NVL((
+        --     SELECT  par1.action_reason
+        --     FROM    per_action_reasons_vl par1
+        --     WHERE   par1.action_reason_code IN ('TOKS_B_DE','TOKS_B_RC') --Defunción / Rescisión de Contrato
+        --             AND TRUNC(ppos.actual_termination_date) BETWEEN par1.start_date AND par1.end_date
+        -- ),1) AS per_action_reason,
+        --+NULL AS per_action_reason, --+
+        CASE 
+            WHEN  MONTHS_BETWEEN(SYSDATE,ppos.actual_termination_date) < 12 
+            THEN 'BAJA_CORRECTA'
+            ELSE 'NO_SOLICITAR' 
+        END AS bandera_solicitud
+
+FROM    PER_ALL_PEOPLE_F            papf,
+        PER_PERSON_NAMES_F          ppnf,
+        PER_ALL_ASSIGNMENTS_F       paaf,
+        PER_PERIODS_OF_SERVICE      ppos,
+        PER_JOBS_F_TL               pj,
+        PER_PEOPLE_LEGISLATIVE_F    pplf,
+        PER_NATIONAL_IDENTIFIERS    pnii,
+        PER_NATIONAL_IDENTIFIERS    pnir,
+        PER_NATIONAL_IDENTIFIERS    pnic,
+        PAY_PAY_RELATIONSHIPS_DN    pprd,
+        PAY_REL_GROUPS_DN           prgdn,
+        PAY_PAYROLL_TERMS           ppt,
+        PAY_ASSIGNED_PAYROLLS_DN    paypd,
+        PAY_ALL_PAYROLLS_F          paypf,
+        HR_ORGANIZATION_INFORMATION hoi,
+        PER_LOCATION_SECURED_LIST_V pl,
+        PER_LOCATION_DETAILS_F      pldf,
+        PER_LOCATION_DETAILS_F_TL   pldft,
+        PER_ACTION_OCCURRENCES      pao,
+        PER_ACTIONS_VL              pa,
+        PER_ACTION_REASONS_VL       par
+
+WHERE   1 = 1
+        AND papf.person_id = ppnf.person_id
+        AND ppnf.name_type = 'MX'
+        AND papf.person_id = paaf.person_id
+        AND paaf.assignment_type            = 'E'
+        AND paaf.primary_flag               = 'Y'
+        AND paaf.assignment_status_type     = 'ACTIVE'
+        AND ppos.person_id                  = paaf.person_id
+        AND ppos.period_of_service_id       = paaf.period_of_service_id
+        AND ppos.legal_entity_id            = paaf.legal_entity_id
+        AND ppos.actual_termination_date    IS NOT NULL
+        AND pj.JOB_ID                       = paaf.JOB_ID
+        AND pj.language                     = SYS_CONTEXT('USERENV','LANG')
+        AND pplf.person_id                  = papf.person_id
+        AND pplf.legislation_code           = 'MX'
+        AND pnir.person_id(+)                   = papf.person_id
+        AND pnir.national_identifier_type(+)    = 'RFC'
+        AND pnii.person_id(+)                   = papf.person_id
+        AND pnii.national_identifier_type(+)    = 'IMSS'
+        AND pnic.person_id(+)                   = papf.person_id
+        AND pnic.national_identifier_type(+)    = 'CURP'
+        --+
+        AND pprd.person_id(+)   = paaf.person_id
+        AND prgdn.assignment_id = paaf.assignment_id 
+        AND ppt.hr_term_id      = prgdn.term_id
+        AND ppt.payroll_relationship_id(+)  = pprd.payroll_relationship_id
+        AND pprd.payroll_relationship_id    = prgdn.payroll_relationship_id --+
+        AND paypd.payroll_term_id(+)        = ppt.payroll_term_id
+        AND paypf.payroll_id(+)             = paypd.payroll_id
+        AND paypf.payroll_id                IS NOT NULL   
+        --+
+        AND hoi.organization_id(+)          = paaf.organization_id
+        AND hoi.org_information_context(+)  = 'PER_GL_COST_CENTER_INFO'
+        AND pl.location_id                  = paaf.location_id
+        AND pldf.location_id                = pl.location_id
+        AND pldft.location_details_id       = pldf.location_details_id
+        AND pldft.language                  = sys_context('USERENV','LANG')
+        --+
+        AND pao.action_occurrence_id    = ppos.action_occurrence_id
+        AND pa.action_id                = pao.action_id
+        AND par.action_reason_id(+)     = pao.action_reason_id --+
+        AND par.action_reason(+)        NOT IN ('Reestructura de Empresas 2021','TOKS_B_DE','TOKS_B_RC') --+
+        AND NOT EXISTS (
+                SELECT  1
+                FROM    fnd_lookup_values_vl flv
+                WHERE   1=1
+                        AND ppos.pds_information1 = flv.lookup_code
+                        AND flv.lookup_code IN ('ORA_SSLR_4','ORA_SSLR_8') --ORA_SSLR_4 = Defunción / ORA_SSLR_8 = Rescisión de contrato
+                        AND flv.lookup_type = 'ORA_HRX_MX_SS_LEAVE_REASON'
+                        AND flv.enabled_flag = 'Y'
+            )
+        AND NOT EXISTS (
+                SELECT pat.action_name
+                FROM    per_actions_tl pat,
+                        per_actions_b pab,
+                        per_action_occurrences pao1
+                WHERE   1=1
+                        AND pao1.action_occurrence_id = ppos.action_occurrence_id
+                        AND pab.action_id = pao1.action_id
+                        AND pab.action_id = pat.action_id
+                        AND pat.language = SYS_CONTEXT ('USERENV', 'LANG')
+                        AND pab.action_code IN ('TKS_DEFUNCION','TKS_RECISION','GLB_TRANSFER') --Defunción / Rescisión de Contrato
+                        AND ppos.actual_termination_date BETWEEN pab.start_date AND pab.end_date
+            )
+        --+
+        AND papf.person_number = '141647'
+        --+ FECHAS
+        AND ppos.actual_termination_date BETWEEN nvl(fnd_date.canonical_to_date (:FECHA_1), ppos.actual_termination_date)
+                                            AND nvl(fnd_date.canonical_to_date (:FECHA_2), ppos.actual_termination_date) 
+        AND ppos.actual_termination_date BETWEEN paaf.effective_start_date  AND paaf.effective_end_date
+        AND ppos.actual_termination_date BETWEEN papf.effective_start_date  AND papf.effective_end_date
+        AND ppos.actual_termination_date BETWEEN ppnf.effective_start_date  AND ppnf.effective_end_date
+        AND ppos.actual_termination_date BETWEEN pj.effective_start_date    AND pj.effective_end_date
+        AND ppos.actual_termination_date BETWEEN pplf.effective_start_date  AND pplf.effective_end_date
+        AND ppos.actual_termination_date BETWEEN paypd.start_date           AND paypd.end_date
+        AND ppos.actual_termination_date BETWEEN paypf.effective_start_date AND paypf.effective_end_date
+        AND ppos.actual_termination_date BETWEEN pldf.effective_start_date  AND pldf.effective_end_date
+        AND ppos.actual_termination_date BETWEEN pldft.effective_start_date AND pldft.effective_end_date
