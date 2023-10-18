@@ -1,0 +1,261 @@
+--QRY G_1 GRG_REP_CUOTA_IMSS_INF 200623
+WITH GRG_ELEMENTOS AS (                           
+    SELECT  CONVERT(
+                REPLACE(
+                    REPLACE(
+                    TRIM(
+                        UPPER (pettl.element_name||' - '||TRIM (pivtl.name))
+                    )
+                    , 'Ñ'
+                    , 'N'
+                )
+                , 'ñ'
+                , 'n'
+            )
+            , 'us7ascii'
+            , 'al32utf8'
+        ) element_name
+        , prrv.result_value AS result_value
+        , 'SOCIAL INSURANCE DEDUCTIONS' AS element_classification
+        , ppra.payroll_rel_action_id
+    FROM      pay_payroll_rel_actions         ppra
+            , pay_run_types_f                 prtf
+            , pay_run_results                 prr
+            , pay_run_result_values           prrv
+            , pay_element_types_f             pet
+            , pay_element_types_tl            pettl
+            , fusion.pay_ele_classifications  pec
+            , fusion.pay_input_values_f       piv
+            , pay_input_values_tl             pivtl
+    WHERE     1 = 1
+            AND ppra.run_type_id = prtf.run_type_id
+            AND ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+            --+
+            AND ppra.action_status = 'C'
+            AND ppra.retro_component_id IS NULL
+            AND ppra.chunk_number IS NOT NULL
+            --+
+            AND prr.run_result_id = prrv.run_result_id
+            AND prr.status IN ('P', 'PA')
+            AND prr.element_type_id = pet.element_type_id
+            AND pet.element_type_id = pettl.element_type_id
+            AND pet.classification_id = pec.classification_id
+            AND pet.element_type_id = piv.element_type_id
+            AND prrv.input_value_id = piv.input_value_id
+            AND piv.input_value_id = pivtl.input_value_id
+            AND piv.user_display_flag = 'Y'
+            AND UPPER(pettl.element_name) = 'MEXICO SOCIAL SECURITY'
+            AND TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+            AND TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+            AND TRUNC (SYSDATE) BETWEEN prtf.effective_start_date AND prtf.effective_end_date
+            AND pettl.language = 'US'
+            AND pivtl.language = 'E'
+),
+GRG_SDI_INFO AS (
+    SELECT  
+          pvdf2.base_name          tabla
+        , pvdf3.base_name           factor
+        , ptru.estab_name           tru_name
+        , prdf.base_name            tabla_sdi
+        , pdrc.tax_unit_id          tru_id
+        , pdc.payroll_relationship_id
+        , reg.registration_number   reg_patronal
+    FROM  pay_value_definitions_tl  pvdt
+        , pay_value_definitions_f   pvdf
+        , pay_value_groups          pvg
+        , pay_value_groups_tl       pvgtl
+        , pay_value_definitions_f   pvdf2
+        , pay_value_definitions_f   pvdf3
+        , pay_range_items_f         prif
+        , pay_range_items_f         prif2
+        , pay_rate_definitions_f    prdf
+        , xle_registrations         reg
+        , pay_dir_cards_f           pdc
+        , pay_dir_rep_cards_f       pdrc
+        , per_tax_reporting_units   ptru
+    WHERE 1 = 1
+        AND pvdt.value_defn_id = pvdf.value_defn_id
+        AND pvdf.value_group_id = pvg.value_group_id
+        AND pvg.value_group_id = pvgtl.value_group_id
+        AND prif.value_defn_id = pvdf2.value_defn_id
+        AND prif2.value_defn_id = pvdf3.value_defn_id
+        AND prdf.rate_definition_id = prif2.value1
+        AND pvdf.value_defn_id = pvdf2.parent_value_defn_id
+        AND pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+        AND pvgtl.language = 'US' --USERENV ('LANG')
+        AND pvdt.name = 'Fixed SDI Calculation'
+        AND pvdt.language = 'US' --USERENV ('LANG')
+        AND pdc.dir_card_id = pdrc.dir_card_id
+        AND ptru.organization_id = pdrc.tax_unit_id
+        AND ptru.establishment_id = reg.source_id
+        AND reg.identifying_flag = 'Y'
+        AND pdrc.tax_unit_id = prif.low_value_text
+        AND trunc (SYSDATE) BETWEEN pvdf.effective_start_date AND pvdf.effective_end_date
+        AND trunc (SYSDATE) BETWEEN pvdf2.effective_start_date AND pvdf2.effective_end_date
+        AND trunc (SYSDATE) BETWEEN pvdf3.effective_start_date AND pvdf3.effective_end_date
+        AND trunc (SYSDATE) BETWEEN prif.effective_start_date AND prif.effective_end_date
+        AND trunc (SYSDATE) BETWEEN prif2.effective_start_date AND prif2.effective_end_date
+        AND trunc (SYSDATE) BETWEEN prdf.effective_start_date AND prdf.effective_end_date
+        AND trunc (SYSDATE) BETWEEN ptru.effective_from AND COALESCE   (ptru.effective_to, SYSDATE + 1)
+        AND trunc (SYSDATE) BETWEEN pdc.effective_start_date(+) AND pdc.effective_end_date(+)
+        AND trunc (SYSDATE) BETWEEN pdrc.effective_start_date(+) AND pdrc.effective_end_date(+)
+)
+SELECT  lemp.name AS emp_leg,
+        TO_CHAR(hoi_unidad.org_information1) AS unidad,
+        CONVERT(REPLACE(REPLACE(TRIM(UPPER(haou_unidad.name))
+                    , 'Ñ'
+                    , 'N'
+                    )
+                , 'ñ'
+                , 'n'
+                )
+            , 'us7ascii'
+            , 'al32utf8'
+        ) AS descripcion,
+        pap.person_number AS estafeta,
+        CONVERT(REPLACE(REPLACE(TRIM(UPPER((ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)))
+                    , 'Ñ'
+                    , 'N'
+                    )
+                , 'ñ'
+                , 'n'
+                )
+            , 'us7ascii'
+            , 'al32utf8'
+        ) AS nombre,
+        CONVERT(REPLACE(REPLACE(TRIM(UPPER(pj.name))
+                    , 'Ñ'
+                    , 'N'
+                    )
+                , 'ñ'
+                , 'n'
+                )
+            , 'us7ascii'
+            , 'al32utf8'
+        ) AS puesto,
+        hr_general.decode_lookup('EMPLOYEE_CATG',paa.employee_category) AS categoria_empleado,
+        (
+            SELECT    TO_CHAR(MIN(pposx.date_start), 'yyyy-mm-dd')
+            FROM      per_periods_of_service pposx
+            WHERE     1 = 1
+            AND       pposx.person_id = pap.person_id
+            AND       pposx.period_type = 'E'
+        ) AS fecha_ingreso,
+        TO_CHAR (
+            ppos.actual_termination_date, 
+            'yyyy-mm-dd'
+        ) AS fecha_baja,
+        (
+            SELECT    pei_information1
+            FROM      per_people_extra_info_f 
+            WHERE     1 = 1
+            AND       person_id = pap.person_id
+            AND       information_type = 'Empresa Origen'
+            AND       TRUNC (ppa.effective_date) BETWEEN effective_start_date AND effective_end_date
+        ) AS empresa_origen,
+        ppra.payroll_rel_action_id,
+        --+
+        (
+            SELECT  nomina
+            FROM    (
+                        SELECT  py.payroll_name             AS nomina,
+                                payrgd.legal_employer_id,
+                                papd.start_date
+
+                        FROM    pay_pay_relationships_dn    payprd,
+                                pay_rel_groups_dn           payrgd,
+                                pay_assigned_payrolls_dn    papd,
+                                pay_all_payrolls_f          py
+
+                        WHERE   pap.person_id                       = payprd.person_id
+                                AND payprd.payroll_relationship_id  = payrgd.payroll_relationship_id
+                                AND payrgd.group_type               = 'T'
+                                AND payrgd.relationship_group_id    = papd.payroll_term_id
+                                AND payrgd.legal_employer_id        = lemp.organization_id
+                                AND papd.payroll_id                 = py.payroll_id
+                        ORDER BY    papd.start_date DESC
+                    )
+            WHERE   rownum = 1
+        ) AS nomina,
+        tef.element_name,
+        tef.result_value,
+        COALESCE   (SUBSTR (pni.national_identifier_number, 1, 2), '000') 
+        || '-'
+        || COALESCE   (SUBSTR (pni.national_identifier_number, 3, 2), '000')
+        || '-'
+        || COALESCE   (SUBSTR (pni.national_identifier_number, 5, 2), '000')
+        || '-'
+        || COALESCE   (SUBSTR (pni.national_identifier_number, 7, 4), '000')
+        || '-'
+        || COALESCE   (SUBSTR (pni.national_identifier_number, 11, 1), '000') AS nss,
+        gsi.tabla_sdi AS tabla_factor,
+        gsi.reg_patronal AS reg_patronal,
+        gsi.tru_name AS tru,
+        count(pap.person_number) over (PARTITION by hoi_unidad.org_information1) num_emp
+FROM    pay_payroll_actions             ppa,
+        pay_payroll_rel_actions         ppra,
+        pay_rel_groups_dn               prg,
+        per_all_assignments_m           paa, --PER_ASSIGNMENT_SECURED_LIST_V   ,
+        per_all_people_f                pap, --PER_PERSON_SECURED_LIST_V       ,
+        per_person_names_f              ppn,
+        per_periods_of_service          ppos,
+        per_jobs_f_tl                   pj,
+        hr_organization_information_f   hoi_unidad,
+        hr_all_organization_units       haou_unidad,
+        per_legal_employers             lemp,
+        GRG_ELEMENTOS                   tef,
+        pay_run_types_f                 prtf,
+        per_national_identifiers        pni,
+        grg_sdi_info                    gsi
+WHERE   1 = 1
+        --+ Parametros
+        And ppa.payroll_id              = NVL(:nomina, ppa.payroll_id) --Nomina
+        And paa.legal_entity_id         = NVL(:empLegal, paa.legal_entity_id) --Empleador Legal
+        And hoi_unidad.organization_id  = NVL(:unidad, hoi_unidad.organization_id) --Unidad (hilos)
+        And ppa.consolidation_set_id    = NVL(:juegoconsolidacion, ppa.consolidation_set_id ) -- Juego Consolidacion
+        And pap.person_number           = NVL(:estafeta,pap.person_number) -- '162396'
+        And TRUNC (ppa.date_earned)     BETWEEN TO_DATE ( :fechainicio, 'yyyy-mm-dd') -- Fecha Inicio
+                                        AND TO_DATE ( :fechafin, 'yyyy-mm-dd') -- Fecha Fin
+        --+ Parametros
+        And ppa.payroll_action_id                   = ppra.payroll_action_id
+        And ppa.action_type                         IN ('R', 'Q', 'B','V')
+        And ppra.payroll_relationship_id            = prg.payroll_relationship_id
+        And ppra.action_status                      = 'C'
+        And ppra.retro_component_id                 IS NULL
+        And ppra.chunk_number                       IS NOT NULL
+        And ppra.run_type_id                        = prtf.run_type_id
+        And prg.assignment_id                       = paa.assignment_id
+        And prg.group_type                          = 'A'
+        And paa.assignment_type                     = 'E'
+        And paa.effective_latest_change             = 'Y'
+        And paa.person_id                           = pap.person_id
+        And pap.person_id                           = ppn.person_id
+        And ppn.name_type                           = 'MX'
+        And pni.person_id(+)                        = pap.person_id
+        And TRIM(UPPER(pni.national_identifier_type(+))) = 'IMSS'
+        And pap.person_id                           = ppos.person_id
+        And paa.period_of_service_id                = ppos.period_of_service_id
+        And paa.job_id                              = pj.job_id
+        And pj.language                             = SYS_CONTEXT ('USERENV', 'LANG')
+        And paa.organization_id                     = hoi_unidad.organization_id(+)
+        And hoi_unidad.org_information_context(+)   = 'PER_GL_COST_CENTER_INFO'
+        And hoi_unidad.org_information7(+)          = '1'
+        And paa.organization_id                     = haou_unidad.organization_id
+        And lemp.organization_id                    = paa.legal_entity_id
+        And tef.payroll_rel_action_id               = ppra.payroll_rel_action_id
+        AND prg.payroll_relationship_id             = gsi.payroll_relationship_id(+)
+        --+ Fechas
+        And ppa.effective_date                  BETWEEN prg.start_date 
+                                                AND prg.end_date
+        And TRUNC (ppa.effective_date)          BETWEEN pj.effective_start_date 
+                                                AND pj.effective_end_date
+        And TO_DATE ( :fechafin, 'yyyy-mm-dd')  BETWEEN paa.effective_start_date 
+                                                AND paa.effective_end_date
+        And TO_DATE ( :fechafin, 'yyyy-mm-dd')  BETWEEN pap.effective_start_date 
+                                                AND pap.effective_end_date
+        And TO_DATE ( :fechafin, 'yyyy-mm-dd')  BETWEEN ppn.effective_start_date 
+                                                AND ppn.effective_end_date
+        And TO_DATE ( :fechafin, 'yyyy-mm-dd')  BETWEEN hoi_unidad.effective_start_date 
+                                                AND hoi_unidad.effective_end_date
+        And TO_DATE ( :fechafin, 'yyyy-mm-dd')  BETWEEN prtf.effective_start_date 
+                                                AND prtf.effective_end_date
