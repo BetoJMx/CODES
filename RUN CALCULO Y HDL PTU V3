@@ -1,0 +1,25 @@
+--RUN CALCULO Y HDL PTU V3
+DECLARE 
+    p_status NUMBER; 
+    v_error_msg VARCHAR2(512);
+    x_tempname          CLOB;
+    x_tempnamezip       CLOB;
+    x_base64encode      CLOB;
+    x_tempname2         CLOB;
+    x_tempnamezip2      CLOB;
+    x_base64encode2     CLOB;
+
+BEGIN 
+    GRG_PROCESO_PTU_V3.calculo_ptu (300000009674083,NULL,NULL,'2022-05-01','2021',220325112249,p_status); 
+
+    GRG_PROCESO_PTU_V3.hdl_files('2022-05-01','2021','300000009674083',220325112249,x_tempname
+                                        ,x_tempnamezip
+                                        ,x_base64encode
+                                        ,x_tempname2
+                                        ,x_tempnamezip2
+                                        ,x_base64encode2
+                                );
+EXCEPTION WHEN OTHERS THEN 
+    v_error_msg := SQLERRM;
+    INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES ('ERROR EN API HDL: '||v_error_msg);
+END;
