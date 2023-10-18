@@ -1,0 +1,414 @@
+-- QRY REP MOVXPER V3 MOVS CHNG 171121
+WITH TRU AS (
+    SELECT  prgd.assignment_id,
+            ptru.estab_name AS NAME,
+            prgd.start_date,
+            prgd.end_date,
+            pdc.effective_start_date,
+            pdc.effective_end_date,
+            pdrc.effective_start_date AS effective_start_date1,
+            pdrc.effective_end_date AS effective_end_date1
+
+    FROM    PAY_DIR_CARDS_F pdc,
+            PAY_DIR_REP_CARDS_F pdrc,
+            PER_TAX_REPORTING_UNITS ptru,
+            PAY_REL_GROUPS_DN prgd
+
+    WHERE   prgd.payroll_relationship_id = pdc.payroll_relationship_id
+            AND pdc.DIR_CARD_ID = pdrc.DIR_CARD_ID
+            AND ptru.ORGANIZATION_ID = pdrc.TAX_UNIT_ID
+            --AND (SELECT MAX(start_date) FROM pay_rel_groups_dn where assignment_id = prgd.assignment_id) = prgd.start_date
+    GROUP BY    prgd.assignment_id,
+                ptru.estab_name,
+                prgd.start_date,
+                prgd.end_date,
+                pdc.effective_start_date,
+                pdc.effective_end_date,
+                pdrc.effective_start_date,
+                pdrc.effective_end_date
+),
+MOVIMIENTOS AS (
+    SELECT  pap.person_number AS ESTAFETA
+            ,CONVERT(ppn.list_name,'UTF8') AS NOMBRE
+            ,NVL(
+                (SELECT UPPER(flv.description)
+                    FROM fnd_lookup_values flv
+                    WHERE 1 = 1
+                        AND flv.lookup_code = CAST(pap.person_number AS VARCHAR2(30))
+                        AND flv.lookup_type = 'GRG_EMP_INGRESO'
+                        AND flv.LANGUAGE = USERENV('LANG')
+                )
+                ,(SELECT TO_CHAR(MIN(ppos.date_start),'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=SPANISH')
+                    FROM per_periods_of_service ppos
+                    WHERE 1=1
+                        AND ppos.person_id = pap.person_id
+                        AND ppos.period_type = 'E'
+                )
+            ) AS FECHA_INGRESO 
+            --,pay.payroll_name AS NOMINA
+            ,(
+                SELECT  nomina
+                FROM    (
+                            SELECT
+                                    PAPF.PAYROLL_NAME AS NOMINA
+                            FROM
+                                    PER_ALL_ASSIGNMENTS_F    PAA
+                                    , PAY_ALL_PAYROLLS_F       PAPF
+                                    , PAY_ASSIGNED_PAYROLLS_DN PAPD
+                                    , PAY_PAYROLL_TERMS        PPT
+                                    , PAY_REL_GROUPS_DN        PRGD
+                                    --, PER_PERIODS_OF_SERVICE   PPOS
+                                    , PAY_DIR_CARDS_F          PDCF
+                                    , PAY_DIR_REP_CARDS_F      PDRC
+                                    , PER_TAX_REPORTING_UNITS  PTRU
+                                    --, PER_ALL_PEOPLE_F         PAPFP
+                            WHERE
+                                    1                                  = 1
+                                    AND PPT.PAYROLL_TERM_ID            = PAPD.PAYROLL_TERM_ID
+                                    AND PAPF.PAYROLL_ID                = PAPD.PAYROLL_ID
+                                    --AND PPOS.PERIOD_OF_SERVICE_ID      = PAAM.PERIOD_OF_SERVICE_ID
+                                    --AND PPOS.PERIOD_TYPE               = 'E'
+                                    AND PAA.ASSIGNMENT_ID             = PRGD.ASSIGNMENT_ID
+                                    AND PPT.HR_TERM_ID                 = PRGD.TERM_ID
+                                    AND PAA.PRIMARY_FLAG              = 'Y'
+                                    AND PAA.ASSIGNMENT_STATUS_TYPE_ID = 1
+                                    AND PAA.ASSIGNMENT_TYPE           = 'E'
+                                    AND PRGD.GROUP_TYPE                = 'A'
+                                    AND PAP.PERSON_ID                  = PAA.PERSON_ID
+                                    AND PRGD.PAYROLL_RELATIONSHIP_ID   = PDCF.PAYROLL_RELATIONSHIP_ID
+                                    AND PDCF.DIR_CARD_ID               = PDRC.DIR_CARD_ID
+                                    AND PTRU.ORGANIZATION_ID           = PDRC.TAX_UNIT_ID
+                                    --AND PAPFP.PERSON_NUMBER = :ESTAFETA
+                                    --AND PAPD.LSED                IS NULL
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PDRC.EFFECTIVE_START_DATE AND PDRC.EFFECTIVE_END_DATE
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PDCF.EFFECTIVE_START_DATE AND PDCF.EFFECTIVE_END_DATE
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PAPD.FSED AND NVL(PAPD.LSED,SYSDATE)
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PAPF.EFFECTIVE_START_DATE AND PAPF.EFFECTIVE_END_DATe
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PAA.EFFECTIVE_START_DATE AND PAA.EFFECTIVE_END_DATE
+                        )
+                WHERE   rownum = 1
+            ) AS nomina
+            ,TO_CHAR(paam.effective_start_date, 'DD-MM-YYYY') AS FECHA_MOVIMIENTO
+            ,paam.effective_start_date AS FECHA_MOVIMIENTO_OR
+            ,hou.name AS UNIDAD_ACTUAL
+            ,hou_ant.name AS UNIDAD_ANTERIOR
+            ,(  SELECT  s.org_information1 
+                FROM    hr_organization_information_f  s
+                WHERE   1=1 
+                        AND paam.organization_id = s.organization_id
+                        AND s.org_information_context = 'PER_GL_COST_CENTER_INFO'
+                        AND paam.effective_start_date BETWEEN s.effective_start_date AND s.effective_end_date
+            ) AS COD_UNIDAD_ACTUAL
+            ,( SELECT  s.org_information1 
+                FROM    hr_organization_information_f  s
+                WHERE   1=1 
+                        AND paam_ant.organization_id = s.organization_id
+                        AND s.org_information_context = 'PER_GL_COST_CENTER_INFO'
+                    --AND TRUNC(SYSDATE) BETWEEN s.effective_start_date AND s.effective_end_date
+            ) AS COD_UNIDAD_ANTERIOR
+            ,CONVERT(hle.name,'UTF8') AS LEMP_ACTUAL
+            ,CONVERT(hle_ant.name,'UTF8') AS LEMP_ANTERIOR
+            ,CONVERT(pjft.name, 'UTF8') AS PUESTO_ACTUAL
+            ,CONVERT(pjft_ant.name, 'UTF8') AS PUESTO_ANTERIOR
+            ,HR_GENERAL.DECODE_LOOKUP ('EMPLOYEE_CATG', paam.employee_category) AS CAT_EMP_ACTUAL
+            ,HR_GENERAL.DECODE_LOOKUP ('EMPLOYEE_CATG', paam_ant.employee_category) AS CAT_EMP_ANTERIOR
+            --,TO_CHAR(cs.date_from,'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=SPANISH') AS FECHA_SALARIO_ACTUAL
+            --,(TRIM (TO_CHAR (cs.salary_amount * 30, '999,999,999,999.99'))) AS SALARIO_ACTUAL
+            --,(
+            --    SELECT  (TRIM (TO_CHAR (csh.salary_amount * 30, '999,999,999,999.99')))
+            --    FROM    cmp_salary_history_v csh
+            --    WHERE   csh.assignment_id = paam_ant.assignment_id
+            --    AND     csh.date_to = cs.date_from - 1 
+            --) AS SALARIO_ANTERIOR
+            ,(
+                SELECT  CONVERT(tru.name,'UTF8')
+                FROM    TRU TRU
+                WHERE   tru.assignment_id = paam.assignment_id
+                        AND paam.effective_start_date BETWEEN tru.start_date AND tru.end_date
+                        AND paam.effective_start_date BETWEEN tru.effective_start_date AND tru.effective_end_date
+                        AND paam.effective_start_date BETWEEN tru.effective_start_date1 AND tru.effective_end_date1
+            ) AS TRU_ACTUAL
+            ,(
+                SELECT  CONVERT(tru_ant.name,'UTF8')
+                FROM    TRU TRU_ANT
+                WHERE   tru_ant.assignment_id = paam_ant.assignment_id
+                        AND paam_ant.effective_start_date BETWEEN tru_ant.start_date AND tru_ant.end_date
+                        AND paam_ant.effective_start_date BETWEEN tru_ant.effective_start_date AND tru_ant.effective_end_date
+                        AND paam_ant.effective_start_date BETWEEN tru_ant.effective_start_date1 AND tru_ant.effective_end_date1
+            ) AS TRU_ANTERIOR
+
+    FROM    per_person_secured_list_v       pap
+            ,per_all_assignments_m          paam -- per_assignment_secured_list_v
+            ,per_all_assignments_m          paam_ant -- per_assignment_secured_list_v
+            ,per_person_names_f         	ppn
+            ,per_periods_of_service     	pps
+            --,per_departments            	pd
+            ,hr_organization_units         	hou
+            ,hr_organization_units         	hou_ant
+            ,per_jobs_f_tl                	pjft
+            ,per_jobs_f_tl                	pjft_ant
+            ,cmp_salary 			        cs
+            ,hr_legal_entities              hle
+            ,hr_legal_entities              hle_ant
+            --+
+            ,pay_assigned_payrolls_dn       papd
+            ,pay_payroll_assignments        ppa
+            ,pay_all_payrolls_f             pay -- pay_payroll_secured_list_v
+
+    WHERE   1= 1
+            AND pap.person_number        = NVL(:estafeta, pap.person_number)           --= '130083' --'101612' --IN ('163104','164142','164706')
+            AND pjft.job_id                         = paam.job_id
+            AND paam.person_id                      = pps.person_id   
+            AND pap.person_id                       = paam.person_id
+            AND pap.person_id                       = ppn.person_id
+            --AND paam.organization_id 	            = pd.organization_id
+            AND paam.organization_id 	            = hou.organization_id
+            AND pps.period_of_service_id            = paam.period_of_service_id
+            AND cs.assignment_id                    = paam.assignment_id
+            --AND paam.person_id                      = cs.person_id
+            --AND cs.salary_approved                  = 'Y'
+            AND paam.assignment_status_type_id      = 1
+            AND ppn.name_type 		                = 'GLOBAL'
+            AND paam.assignment_type 	            = 'E'
+            AND paam.assignment_status_type         = 'ACTIVE'
+            AND paam.primary_assignment_flag 	    = 'Y'
+            AND paam.effective_latest_change 	    = 'Y'
+            AND pps.primary_flag 				    = 'Y'
+            AND pjft.LANGUAGE 					    = USERENV('LANG') 
+            AND paam.legal_entity_id                = hle.organization_id
+            AND hle.classification_code             = 'HCM_LEMP'
+            AND UPPER(TRIM(paam.action_code))       IN ('GLB_TRANSFER','PROMOTION','TRANSFER','POSITION_CHANGE','JOB_CHANGE','ORA_POS_SYNC')
+            --AND TRUNC(paam.effective_start_date)    > TRUNC(paam.effective_end_date)
+            --AND paam.assignment_id                = tru.assignment_id
+            --+
+            --AND paam_ant.legal_entity_id            = paam.legal_entity_id
+            AND paam_ant.person_id 			        = paam.person_id
+            AND paam_ant.assignment_type    	    = 'E'
+            AND paam_ant.primary_flag    		    = 'Y'
+            AND paam_ant.assignment_status_type     = 'ACTIVE'
+            AND trunc(paam.effective_start_date) -1 BETWEEN paam_ant.effective_start_date(+) 
+                                                    AND paam_ant.effective_end_date(+)
+            AND pjft_ant.job_id 				    = paam_ant.job_id
+            AND pjft_ant.LANGUAGE 					= USERENV('LANG') 
+            AND paam_ant.organization_id 	        = hou_ant.organization_id
+            AND paam_ant.legal_entity_id            = hle_ant.organization_id
+            AND hle_ant.classification_code         = 'HCM_LEMP'
+            --AND paam_ant.assignment_id              = tru_ant.assignment_id
+            --+
+            AND (
+                    (
+                        :fecha_cambio IS NOT NULL 
+                        AND paam.effective_start_date = :fecha_cambio
+                    )
+                    OR
+                    (
+                        :fecha_inicio IS NOT NULL
+                        AND :fecha_fin IS NOT NULL
+                        AND paam.effective_start_date BETWEEN :fecha_inicio AND :fecha_fin
+                    )
+                )
+            --+
+            AND pap.person_id           = ppa.person_id
+            AND ppa.payroll_term_id     = papd.payroll_term_id
+            AND ppa.legal_employer_id   = paam.legal_entity_id
+            AND papd.payroll_id         = pay.payroll_id
+            --+
+            AND paam.effective_start_date BETWEEN paam.effective_start_date AND paam.effective_end_date
+            AND paam.effective_start_date BETWEEN pap.effective_start_date  AND pap.effective_end_date
+            AND paam.effective_start_date BETWEEN ppn.effective_start_date  AND ppn.effective_end_date
+            --AND paam.effective_start_date BETWEEN pd.effective_start_date   AND pd.effective_end_date
+            AND paam.effective_start_date BETWEEN pjft.effective_start_date AND pjft.effective_end_date
+            --AND paam.effective_start_date BETWEEN cs.date_from              AND cs.date_to
+            AND paam.effective_start_date BETWEEN hle.effective_start_date  AND hle.effective_end_date
+            AND paam.effective_start_date BETWEEN papd.start_date           AND papd.end_date
+            AND paam.effective_start_date BETWEEN ppa.start_date            AND ppa.end_date
+
+UNION 
+
+SELECT  pap.person_number AS ESTAFETA
+            ,CONVERT(ppn.list_name,'UTF8') AS NOMBRE
+            ,NVL(
+                (SELECT UPPER(flv.description)
+                    FROM fnd_lookup_values flv
+                    WHERE 1 = 1
+                        AND flv.lookup_code = CAST(pap.person_number AS VARCHAR2(30))
+                        AND flv.lookup_type = 'GRG_EMP_INGRESO'
+                        AND flv.LANGUAGE = USERENV('LANG')
+                )
+                ,(SELECT TO_CHAR(MIN(ppos.date_start),'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=SPANISH')
+                    FROM per_periods_of_service ppos
+                    WHERE 1=1
+                        AND ppos.person_id = pap.person_id
+                        AND ppos.period_type = 'E'
+                )
+            ) AS FECHA_INGRESO 
+            --,pay.payroll_name AS NOMINA
+            ,(
+                SELECT  nomina
+                FROM    (
+                            SELECT
+                                    PAPF.PAYROLL_NAME AS NOMINA
+                            FROM
+                                    PER_ALL_ASSIGNMENTS_F    PAA
+                                    , PAY_ALL_PAYROLLS_F       PAPF
+                                    , PAY_ASSIGNED_PAYROLLS_DN PAPD
+                                    , PAY_PAYROLL_TERMS        PPT
+                                    , PAY_REL_GROUPS_DN        PRGD
+                                    --, PER_PERIODS_OF_SERVICE   PPOS
+                                    , PAY_DIR_CARDS_F          PDCF
+                                    , PAY_DIR_REP_CARDS_F      PDRC
+                                    , PER_TAX_REPORTING_UNITS  PTRU
+                                    --, PER_ALL_PEOPLE_F         PAPFP
+                            WHERE
+                                    1                                  = 1
+                                    AND PPT.PAYROLL_TERM_ID            = PAPD.PAYROLL_TERM_ID
+                                    AND PAPF.PAYROLL_ID                = PAPD.PAYROLL_ID
+                                    --AND PPOS.PERIOD_OF_SERVICE_ID      = PAAM.PERIOD_OF_SERVICE_ID
+                                    --AND PPOS.PERIOD_TYPE               = 'E'
+                                    AND PAA.ASSIGNMENT_ID             = PRGD.ASSIGNMENT_ID
+                                    AND PPT.HR_TERM_ID                 = PRGD.TERM_ID
+                                    AND PAA.PRIMARY_FLAG              = 'Y'
+                                    AND PAA.ASSIGNMENT_STATUS_TYPE_ID = 1
+                                    AND PAA.ASSIGNMENT_TYPE           = 'E'
+                                    AND PRGD.GROUP_TYPE                = 'A'
+                                    AND PAP.PERSON_ID                  = PAA.PERSON_ID
+                                    AND PRGD.PAYROLL_RELATIONSHIP_ID   = PDCF.PAYROLL_RELATIONSHIP_ID
+                                    AND PDCF.DIR_CARD_ID               = PDRC.DIR_CARD_ID
+                                    AND PTRU.ORGANIZATION_ID           = PDRC.TAX_UNIT_ID
+                                    --AND PAPFP.PERSON_NUMBER = :ESTAFETA
+                                    --AND PAPD.LSED                IS NULL
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PDRC.EFFECTIVE_START_DATE AND PDRC.EFFECTIVE_END_DATE
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PDCF.EFFECTIVE_START_DATE AND PDCF.EFFECTIVE_END_DATE
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PAPD.FSED AND NVL(PAPD.LSED,SYSDATE)
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PAPF.EFFECTIVE_START_DATE AND PAPF.EFFECTIVE_END_DATe
+                                    AND TRUNC(NVL(pps.actual_termination_date, SYSDATE)) BETWEEN PAA.EFFECTIVE_START_DATE AND PAA.EFFECTIVE_END_DATE
+                        )
+                WHERE   rownum = 1
+            ) AS nomina
+            ,TO_CHAR(paam.effective_start_date, 'DD-MM-YYYY') AS FECHA_MOVIMIENTO
+            ,paam.effective_start_date AS FECHA_MOVIMIENTO_OR
+            ,hou.name AS UNIDAD_ACTUAL
+            ,hou_ant.name AS UNIDAD_ANTERIOR
+            ,(  SELECT  s.org_information1 
+                FROM    hr_organization_information_f  s
+                WHERE   1=1 
+                        AND paam.organization_id = s.organization_id
+                        AND s.org_information_context = 'PER_GL_COST_CENTER_INFO'
+                        AND paam.effective_start_date BETWEEN s.effective_start_date AND s.effective_end_date
+            ) AS COD_UNIDAD_ACTUAL
+            ,( SELECT  s.org_information1 
+                FROM    hr_organization_information_f  s
+                WHERE   1=1 
+                        AND paam_ant.organization_id = s.organization_id
+                        AND s.org_information_context = 'PER_GL_COST_CENTER_INFO'
+                    --AND TRUNC(SYSDATE) BETWEEN s.effective_start_date AND s.effective_end_date
+            ) AS COD_UNIDAD_ANTERIOR
+            ,CONVERT(hle.name,'UTF8') AS LEMP_ACTUAL
+            ,CONVERT(hle_ant.name,'UTF8') AS LEMP_ANTERIOR
+            ,CONVERT(pjft.name, 'UTF8') AS PUESTO_ACTUAL
+            ,CONVERT(pjft_ant.name, 'UTF8') AS PUESTO_ANTERIOR
+            ,HR_GENERAL.DECODE_LOOKUP ('EMPLOYEE_CATG', paam.employee_category) AS CAT_EMP_ACTUAL
+            ,HR_GENERAL.DECODE_LOOKUP ('EMPLOYEE_CATG', paam_ant.employee_category) AS CAT_EMP_ANTERIOR
+            --,TO_CHAR(cs.date_from,'DD-MON-YYYY', 'NLS_DATE_LANGUAGE=SPANISH') AS FECHA_SALARIO_ACTUAL
+            --,(TRIM (TO_CHAR (cs.salary_amount * 30, '999,999,999,999.99'))) AS SALARIO_ACTUAL
+            --,(
+            --    SELECT  (TRIM (TO_CHAR (csh.salary_amount * 30, '999,999,999,999.99')))
+            --    FROM    cmp_salary_history_v csh
+            --    WHERE   csh.assignment_id = paam_ant.assignment_id
+            --    AND     csh.date_to = cs.date_from - 1 
+            --) AS SALARIO_ANTERIOR
+            ,(
+                SELECT  CONVERT(tru.name,'UTF8')
+                FROM    TRU TRU
+                WHERE   tru.assignment_id = paam.assignment_id
+                        AND paam.effective_start_date BETWEEN tru.start_date AND tru.end_date
+                        AND paam.effective_start_date BETWEEN tru.effective_start_date AND tru.effective_end_date
+                        AND paam.effective_start_date BETWEEN tru.effective_start_date1 AND tru.effective_end_date1
+            ) AS TRU_ACTUAL
+            ,(
+                SELECT  CONVERT(tru_ant.name,'UTF8')
+                FROM    TRU TRU_ANT
+                WHERE   tru_ant.assignment_id = paam_ant.assignment_id
+                        AND paam_ant.effective_start_date BETWEEN tru_ant.start_date AND tru_ant.end_date
+                        AND paam_ant.effective_start_date BETWEEN tru_ant.effective_start_date AND tru_ant.effective_end_date
+                        AND paam_ant.effective_start_date BETWEEN tru_ant.effective_start_date1 AND tru_ant.effective_end_date1
+            ) AS TRU_ANTERIOR
+
+    FROM    per_person_secured_list_v       pap
+            ,per_all_assignments_m          paam -- per_assignment_secured_list_v
+            ,per_all_assignments_m          paam_ant -- per_assignment_secured_list_v
+            ,per_person_names_f         	ppn
+            ,per_periods_of_service     	pps
+            --,per_departments            	pd
+            ,hr_organization_units         	hou
+            ,hr_organization_units         	hou_ant
+            ,per_jobs_f_tl                	pjft
+            ,per_jobs_f_tl                	pjft_ant
+            ,cmp_salary 			        cs
+            ,hr_legal_entities              hle
+            ,hr_legal_entities              hle_ant
+            --+
+            ,pay_assigned_payrolls_dn       papd
+            ,pay_payroll_assignments        ppa
+            ,pay_all_payrolls_f             pay -- pay_payroll_secured_list_v
+
+    WHERE   1= 1
+            AND pap.person_number        = NVL(:estafeta, pap.person_number)
+            --AND pap.person_number                   = '130083' --'101612' --IN ('163104','164142','164706')
+            AND pjft.job_id                         = paam.job_id
+            AND paam.person_id                      = pps.person_id   
+            AND pap.person_id                       = paam.person_id
+            AND pap.person_id                       = ppn.person_id
+            --AND paam.organization_id 	            = pd.organization_id
+            AND paam.organization_id 	            = hou.organization_id
+            AND pps.period_of_service_id            = paam.period_of_service_id
+            AND cs.assignment_id                    = paam.assignment_id
+            --AND paam.person_id                      = cs.person_id
+            --AND cs.salary_approved                  = 'Y'
+            AND paam.assignment_status_type_id      = 1
+            AND ppn.name_type 		                = 'GLOBAL'
+            AND paam.assignment_type 	            = 'E'
+            AND paam.assignment_status_type         = 'ACTIVE'
+            AND paam.primary_assignment_flag 	    = 'Y'
+            AND paam.effective_latest_change 	    = 'Y'
+            AND pps.primary_flag 				    = 'Y'
+            AND pjft.LANGUAGE 					    = USERENV('LANG') 
+            AND paam.legal_entity_id                = hle.organization_id
+            AND hle.classification_code             = 'HCM_LEMP'
+            AND UPPER(TRIM(paam.action_code))       ='MANAGER_CHANGE'
+            --AND TRUNC(paam.effective_start_date)    > TRUNC(paam.effective_end_date)
+            --AND paam.assignment_id                = tru.assignment_id
+            --+
+            --AND paam_ant.legal_entity_id            = paam.legal_entity_id
+            AND paam_ant.person_id 			        = paam.person_id
+            AND paam_ant.assignment_type    	    = 'E'
+            AND paam_ant.primary_flag    		    = 'Y'
+            AND paam_ant.assignment_status_type     = 'ACTIVE'
+            AND trunc(paam.effective_start_date) -1 BETWEEN paam_ant.effective_start_date(+) 
+                                                    AND paam_ant.effective_end_date(+)
+            AND pjft_ant.job_id 				    = paam_ant.job_id
+            AND pjft_ant.LANGUAGE 					= USERENV('LANG') 
+            AND paam_ant.organization_id 	        = hou_ant.organization_id
+            AND paam_ant.legal_entity_id            = hle_ant.organization_id
+            AND hle_ant.classification_code         = 'HCM_LEMP'
+            --AND paam_ant.assignment_id              = tru_ant.assignment_id
+            --+
+            AND (
+                    (
+                        :fecha_cambio IS NOT NULL 
+                        AND paam.effective_start_date = :fecha_cambio
+                    )
+                    OR
+                    (
+                        :fecha_inicio IS NOT NULL
+                        AND :fecha_fin IS NOT NULL
+                        AND paam.effective_start_date BETWEEN :fecha_inicio AND :fecha_fin
+                    )
+                )
+            --+
+            AND pap.person_id           = ppa.person_id
+            AND ppa.payroll_term_id     = papd.payroll_term_id
+            AND ppa.legal_employer_id   = paam.legal_entity_id
+            AND papd.payroll_id         = pay.payroll_id
+            --+
+            AND UPPER(TRIM(pjft.name))  <> UPPER(TRIM(pjft_ant.name)) -- 140622 PARA LIMITAR A CAMBIOS DE PUESTO
