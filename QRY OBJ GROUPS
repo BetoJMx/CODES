@@ -1,0 +1,11 @@
+SELECT
+        pap1.person_id
+FROM
+        pay_object_group_amends poga,
+        pay_payroll_assignments ppassg,
+        pay_payroll_secured_list_v pap1
+WHERE
+        poga.include_or_exclude = 'I'
+        AND poga.object_group_id =: p_assignment_set_id
+        AND poga.object_id = ppassg.payroll_assignment_id
+        AND ppassg.person_id = pap1.person_id
