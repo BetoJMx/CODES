@@ -1,0 +1,2026 @@
+--PKGB ACT CUENTAS CORTAS BKP 030823
+create or replace PACKAGE BODY     XXTOKS_ACT_CUEN_BAN_CORTA_PKG
+AS
+ 
+    FUNCTION BASE64_ENCODE_F (p_blob IN BLOB)
+    RETURN CLOB
+    IS
+        l_clob   CLOB;
+        l_step   PLS_INTEGER := 12000;
+        err_num    NUMBER;
+        err_msg    VARCHAR2(255);
+    BEGIN
+        FOR i IN 0 .. TRUNC ((DBMS_LOB.getlength (p_blob) - 1) / l_step)
+        LOOP
+            BEGIN
+                l_clob :=
+                       l_clob
+                    || UTL_RAW.cast_to_varchar2 (
+                           UTL_ENCODE.base64_encode (
+                               DBMS_LOB.SUBSTR (p_blob, l_step, i * l_step + 1)));
+            EXCEPTION
+                WHEN OTHERS THEN
+                dbms_output.put_line('Error ocurrido en Base64: ' || SQLERRM);
+            END;
+        END LOOP;
+ 
+        RETURN l_clob;
+    END BASE64_ENCODE_F;
+------------------------------------------------------
+    PROCEDURE get_person_number_sin
+    AS
+    
+        l_user_name          VARCHAR2 (100);
+        l_password           VARCHAR2 (100);
+        l_ws_url             VARCHAR2 (500);
+        l_ws_action          VARCHAR2 (500)
+            := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar
+        l_ws_response_clob   CLOB;
+        l_ws_envelope        CLOB;
+        l_ws_resp_xml        XMLTYPE;
+        l_ws_resp_xml2       XMLTYPE;
+        v_cdata              CLOB;
+        l_clob               CLOB;
+        v_val                PLS_INTEGER;
+        v_v_datos            NUMBER;
+        p_status             NUMBER;
+      
+        
+    --  bloque que llena la tabla de payroll
+    BEGIN
+        
+        l_ws_envelope :=
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+	   <soap:Body>
+		  <pub:runReport>
+			 <pub:reportRequest>
+				   <pub:parameterNameValues>
+				   </pub:parameterNameValues>
+				<pub:reportAbsolutePath>/Reportes Custom/PAY/toks_actualiza_cuentas_bancarias_cortas/Actualiza_Cuentas_Sin_Metodo_Pago.xdo</pub:reportAbsolutePath>
+				<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+			 </pub:reportRequest>
+		  </pub:runReport>
+	   </soap:Body>
+	</soap:Envelope>';                   --Este es el XML que se manda al servicio   
+ 
+    ---REQUEST TOKEN---
+GRG_COMMON_CONNECTIONS.get_otbi_report(
+    l_ws_envelope => l_ws_envelope,
+    l_user_token  => null,
+    x_ws_response => l_clob,
+    p_instance_name => 'DEV2');
+ 
+l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+ 
+ 
+    DELETE FROM XXGRG_CREA_CTASBAN_CORTAS_T;
+    COMMIT;
+        FOR i
+            IN (SELECT xml_data.PERSON_NUMBER,
+                       xml_data.PERSON_ID,
+                       xml_data.EFFECTIVE_START_DATE,
+                       xml_data.NOMBRE_METODO_PAGO,
+                       xml_data.FULL_NAME,
+                       xml_data.NUMERO_TARJERA,
+                       xml_data.ASSINGMENT_NUMBER,
+                       xml_data.NATIONAL_IDENTIFIER_NUMBER,
+                       xml_data.IBAN_NUMBER,
+                       xml_data.PPM_START_DATE
+                       ,xml_data.CHEQUE_ID
+                       ,xml_data.SOURCE_SYSTEM_OWNER
+                       ,xml_data.ACTUAL_TERMINATION_DATE
+                  FROM XMLTABLE (
+                           '/DATA_DS/G_1'
+                           PASSING xmltype.createxml (l_clob)
+                           COLUMNS PERSON_NUMBER              VARCHAR2 (250) PATH 'PERSON_NUMBER',
+                                   PERSON_ID                  NUMBER PATH 'PERSON_ID',
+                                   EFFECTIVE_START_DATE       VARCHAR2 (250) PATH 'EFFECTIVE_START_DATE',
+                                   NOMBRE_METODO_PAGO         VARCHAR2 (250) PATH 'NOMBRE_METODO_PAGO',
+                                   FULL_NAME                  VARCHAR2 (250) PATH 'FULL_NAME',
+                                   NUMERO_TARJERA             VARCHAR2 (250) PATH 'NUMERO_TARJERA',
+                                   ASSINGMENT_NUMBER          VARCHAR2 (250) PATH 'ASSINGMENT_NUMBER',
+                                   NATIONAL_IDENTIFIER_NUMBER VARCHAR2 (250) PATH 'NATIONAL_IDENTIFIER_NUMBER'
+                                   ,IBAN_NUMBER               VARCHAR2(250) PATH 'IBAN_NUMBER'
+                                   ,PPM_START_DATE            VARCHAR2(250) PATH 'PPM_START_DATE'
+                                   ,CHEQUE_ID                 VARCHAR2(250) PATH 'CHEQUE_ID'
+                                   ,SOURCE_SYSTEM_OWNER       VARCHAR2(250) PATH 'SOURCE_SYSTEM_OWNER' 
+                                   ,ACTUAL_TERMINATION_DATE   VARCHAR2 (250) PATH 'ACTUAL_TERMINATION_DATE'
+                                   )
+                       xml_data) -- Aquí se crea el XML de respuesta por nodos, es como formatear.
+        LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX.
+            
+ 
+            SELECT COUNT (*)
+              INTO v_val
+              FROM PAY.XXGRG_CREA_CTASBAN_CORTAS_T
+             WHERE PERSON_NUMBER = i.PERSON_NUMBER;
+ 
+            IF v_val = 0
+            THEN
+                INSERT INTO PAY.XXGRG_CREA_CTASBAN_CORTAS_T (
+                                PERSON_NUMBER
+                                ,PERSON_ID
+                                ,EFFECTIVE_START_DATE
+                                ,NOMBRE_METODO_PAGO
+                                ,FULL_NAME
+                                ,NUMERO_TARJERA
+                                ,ASSINGMENT_NUMBER
+                                ,NATIONAL_IDENTIFIER_NUMBER
+                                ,ATRIBUTO1
+                                ,ATRIBUTO2
+                                ,ATRIBUTO3
+                                ,ATRIBUTO4
+                                ,ATRIBUTO5
+                                )
+                         VALUES (
+                                 i.PERSON_NUMBER,
+                                 i.PERSON_ID,
+                                 i.EFFECTIVE_START_DATE,
+                                 i.NOMBRE_METODO_PAGO,
+                                 REPLACE(i.FULL_NAME,','),
+                                 i.NUMERO_TARJERA,
+                                 i.ASSINGMENT_NUMBER,
+                                 i.NATIONAL_IDENTIFIER_NUMBER
+                                 ,i.IBAN_NUMBER
+                                 ,i.PPM_START_DATE
+                                 ,i.CHEQUE_ID
+                                 ,i.SOURCE_SYSTEM_OWNER
+                                 ,i.ACTUAL_TERMINATION_DATE
+                                 );
+            END IF;
+        END LOOP;
+        COMMIT;
+        
+        
+    EXCEPTION
+        WHEN OTHERS
+        THEN
+          apex_json.open_object;
+          apex_json.write('error', SQLERRM);
+          apex_json.close_object;
+    END get_person_number_sin;
+ -------------------------------------------------------------------   
+    PROCEDURE get_person_number
+    AS
+    
+        l_user_name          VARCHAR2 (100);
+        l_password           VARCHAR2 (100);
+        l_ws_url             VARCHAR2 (500);
+        l_ws_action          VARCHAR2 (500)
+            := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar
+        l_ws_response_clob   CLOB;
+        l_ws_envelope        CLOB;
+        l_ws_resp_xml        XMLTYPE;
+        l_ws_resp_xml2       XMLTYPE;
+        v_cdata              CLOB;
+        l_clob               CLOB;
+        v_val                PLS_INTEGER;
+        v_v_datos            NUMBER;
+        p_status             NUMBER;
+      
+        
+    --  bloque que llena la tabla de payroll
+    BEGIN
+        
+        l_ws_envelope :=
+            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+	   <soap:Body>
+		  <pub:runReport>
+			 <pub:reportRequest>
+				   <pub:parameterNameValues>
+				   </pub:parameterNameValues>
+				<pub:reportAbsolutePath>/Reportes Custom/PAY/toks_actualiza_cuentas_bancarias_cortas/Actualiza_Cuentas_Cortas_Emp.xdo</pub:reportAbsolutePath>
+				<pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+			 </pub:reportRequest>
+		  </pub:runReport>
+	   </soap:Body>
+	</soap:Envelope>';                   --Este es el XML que se manda al servicio   
+ 
+--    ---REQUEST TOKEN---
+--GRG_COMMON_CONNECTIONS.get_otbi_report(
+--    l_ws_envelope => l_ws_envelope,
+--    l_user_token  => null,
+--    x_ws_response => l_clob );
+--
+--l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+--
+--
+--    DELETE FROM XXGRG_ACT_CTASBAN_CORTAS_T;
+--    COMMIT;
+--        FOR i
+--            IN (SELECT xml_data.PERSON_NUMBER,
+--                       xml_data.PERSON_ID,
+--                       xml_data.NATIONAL_IDENTIFIER_NUMBER,
+--                       xml_data.BANK_ACCOUNT_ID,
+--                       xml_data.BANK_ACCOUNT_NUM,
+--                       xml_data.MASKED_ACCOUNT_NUM,
+--                       xml_data.CURRENCY_CODE,
+--                       xml_data.BANK_ID,
+--                       xml_data.BANK_NAME,
+--                       xml_data.BANK_NUMBER,
+--                       xml_data.BRANCH_NUMBER,
+--                       xml_data.BRANCH_ID,
+--                       xml_data.CHECK_DIGITS,
+--                       xml_data.SECONDARY_ACCOUNT_REFERENCE,
+--                       xml_data.BANK_ACCOUNT_NAME,
+--                       xml_data.CLEAR_BANK_ACCOUNT_NUMBER,
+--                       xml_data.BANK_ACCOUNT_TYPE,
+--                       xml_data.BANK_ACCOUNT_NAME_ALT,
+--                       xml_data.IBAN_NUMBER,
+--                       xml_data.FULL_NAME
+--                  FROM XMLTABLE (
+--                           '/DATA_DS/G_1'
+--                           PASSING xmltype.createxml (l_clob)
+--                           COLUMNS PERSON_NUMBER VARCHAR2 (250) PATH 'PERSON_NUMBER',
+--                                   PERSON_ID NUMBER PATH 'PERSON_ID',
+--                                   NATIONAL_IDENTIFIER_NUMBER VARCHAR2 (250) PATH 'NATIONAL_IDENTIFIER_NUMBER',
+--                                   BANK_ACCOUNT_ID NUMBER PATH 'BANK_ACCOUNT_ID',
+--                                   BANK_ACCOUNT_NUM VARCHAR2(250) PATH 'BANK_ACCOUNT_NUM',
+--                                   MASKED_ACCOUNT_NUM VARCHAR2 (250) PATH 'MASKED_ACCOUNT_NUM',
+--                                   CURRENCY_CODE VARCHAR2 (250) PATH 'CURRENCY_CODE',
+--                                   BANK_ID NUMBER PATH 'BANK_ID',
+--                                   BANK_NAME VARCHAR2(250) PATH 'BANK_NAME',
+--                                   BANK_NUMBER VARCHAR2(250) PATH 'BANK_NUMBER',
+--                                   BRANCH_NUMBER NUMBER PATH 'BRANCH_NUMBER',
+--                                   BRANCH_ID VARCHAR2(250) PATH 'BRANCH_ID',
+--                                   CHECK_DIGITS VARCHAR2(250) PATH 'CHECK_DIGITS',
+--                                   SECONDARY_ACCOUNT_REFERENCE VARCHAR2(250) PATH 'SECONDARY_ACCOUNT_REFERENCE',
+--                                   BANK_ACCOUNT_NAME VARCHAR2(250) PATH 'BANK_ACCOUNT_NAME',
+--                                   CLEAR_BANK_ACCOUNT_NUMBER VARCHAR2(250) PATH 'CLEAR_BANK_ACCOUNT_NUMBER'
+--                                   --+
+--                                   ,BANK_ACCOUNT_TYPE VARCHAR2(250) PATH 'BANK_ACCOUNT_TYPE'
+--                                   ,BANK_ACCOUNT_NAME_ALT VARCHAR2(250) PATH 'BANK_ACCOUNT_NAME_ALT'
+--                                   ,IBAN_NUMBER VARCHAR2(250) PATH 'IBAN_NUMBER'
+--                                   ,FULL_NAME VARCHAR2(250) PATH 'FULL_NAME'
+--                                   )
+--                       xml_data) -- Aquí se crea el XML de respuesta por nodos, es como formatear.
+--        LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX.
+--            
+--
+--            SELECT COUNT (*)
+--              INTO v_val
+--              FROM XXGRG_ACT_CTASBAN_CORTAS_T
+--             WHERE PERSON_NUMBER = i.PERSON_NUMBER;
+--
+--            IF v_val = 0
+--            THEN
+--                INSERT INTO XXGRG_ACT_CTASBAN_CORTAS_T (
+--                                PERSON_NUMBER
+--                                ,PERSON_ID
+--                                ,NATIONAL_IDENTIFIER_NUMBER
+--                                ,BANK_ACCOUNT_ID
+--                                ,BANK_ACCOUNT_NUM
+--                                ,MASKED_ACCOUNT_NUM
+--                                ,CURRENCY_CODE
+--                                ,BANK_ID
+--                                ,BANK_NAME
+--                                ,BANK_NUMBER
+--                                ,BRANCH_NUMBER
+--                                ,BRANCH_ID
+--                                ,CHECK_DIGITS
+--                                ,SECONDARY_ACCOUNT_REFERENCE
+--                                ,BANK_ACCOUNT_NAME
+--                                ,CLEAR_BANK_ACCOUNT_NUMBER
+--                                ,BANK_ACCOUNT_TYPE
+--                                ,BANK_ACCOUNT_NAME_ALT
+--                                ,IBAN_NUMBER
+--                                ,NAME
+--                                )
+--                         VALUES (
+--                                 i.PERSON_NUMBER,
+--                                 i.PERSON_ID,
+--                                 i.NATIONAL_IDENTIFIER_NUMBER,
+--                                 i.BANK_ACCOUNT_ID,
+--                                 i.BANK_ACCOUNT_NUM,
+--                                 i.MASKED_ACCOUNT_NUM,
+--                                 i.CURRENCY_CODE,
+--                                 i.BANK_ID,
+--                                 i.BANK_NAME,
+--                                 i.BANK_NUMBER,
+--                                 i.BRANCH_NUMBER,
+--                                 i.BRANCH_ID,
+--                                 i.CHECK_DIGITS,
+--                                 i.SECONDARY_ACCOUNT_REFERENCE,
+--                                 i.BANK_ACCOUNT_NAME,
+--                                 i.CLEAR_BANK_ACCOUNT_NUMBER
+--                                 ,i.BANK_ACCOUNT_TYPE
+--                                 ,i.BANK_ACCOUNT_NAME_ALT
+--                                 ,i.IBAN_NUMBER
+--                                 ,i.FULL_NAME
+--                                 );
+--            END IF;
+--        END LOOP;
+--        COMMIT;
+        
+        
+    EXCEPTION
+        WHEN OTHERS
+        THEN
+          apex_json.open_object;
+          apex_json.write('error', SQLERRM);
+          apex_json.close_object;
+    END get_person_number;
+--------------------------------------------------------------
+	procedure get_lookup_correos_unidades
+	IS 
+	    l_user_name          VARCHAR2(100); 
+        l_password           VARCHAR2(100); 
+        l_ws_url             VARCHAR2(500); 
+        l_ws_action          VARCHAR2(500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; 
+        l_ws_response_clob   CLOB; 
+        l_ws_envelope        CLOB; 
+        l_ws_resp_xml        XMLTYPE; 
+        l_ws_resp_xml2       XMLTYPE; 
+        v_cdata              CLOB; 
+        l_clob               CLOB; 
+        v_val                PLS_INTEGER; 
+		-- 
+		v_error              VARCHAR2(500); 
+        v_contador_8         NUMBER;
+    BEGIN 
+        v_contador_8 := 1;
+        l_ws_envelope :=    '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+                                <soap:Body> 
+                                    <pub:runReport> 
+                                        <pub:reportRequest> 
+                                            <pub:parameterNameValues> 
+													 
+ 
+                                            </pub:parameterNameValues> 
+                                            <pub:reportAbsolutePath>/Reportes Custom/PAY/toks_actualiza_cuentas_bancarias_cortas/Correos Unidades - REP.xdo</pub:reportAbsolutePath> 
+                                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+                                        </pub:reportRequest> 
+                                    </pub:runReport> 
+                                </soap:Body> 
+                            </soap:Envelope>';    
+							 
+        --------------------------------------------------- 
+        -------------------TOKEN--------------------------- 
+        		GRG_COMMON_CONNECTIONS_ATI_PKG.get_otbi_report( 
+                    l_ws_envelope    => l_ws_envelope, 
+                    l_user_token     => null,  --p_user_token
+                    x_ws_response    => l_clob,
+					p_instance_name  => 'DEV2'
+        			); 
+        ------------------------------------------------- 
+        ------------------------------------------------- 
+        l_ws_resp_xml2 := xmltype.createxml (l_clob);  
+ 
+        BEGIN 
+        EXECUTE IMMEDIATE ('TRUNCATE TABLE GRG_MAIL_LISTA_RESP');
+		
+ 
+			FOR i  
+					IN (SELECT  xml_data.UNIDAD, 
+								xml_data.LOCATION_ID, 
+								xml_data.CORREO_UNIDAD
+						FROM XMLTABLE (
+										'/DATA_DS/G_1'  
+										PASSING xmltype.createxml(l_clob) 
+										COLUMNS UNIDAD    VARCHAR2(250) PATH 'UNIDAD', 
+										        LOCATION_ID    VARCHAR2(250) PATH 'LOCATION_ID', 
+										        CORREO_UNIDAD  VARCHAR2(250) PATH 'CORREO_UNIDAD'
+									  )  
+						xml_data )  
+					LOOP 
+		 
+						INSERT INTO GRG_MAIL_LISTA_RESP(DESC_UNIDAD,
+														UNIDAD,
+														CORREO_UNIDAD 
+																			) VALUES (i.UNIDAD, 
+																	    			  i.LOCATION_ID, 
+																					  i.CORREO_UNIDAD); 						 
+					END LOOP;                                           
+				COMMIT;
+				
+		EXCEPTION
+		    WHEN OTHERS THEN 
+				v_error := SQLERRM;
+				   
+				INSERT INTO GRG_CALC_EMP_ERROR(PROCESS_ID,
+												ERROR,
+												FECHA,
+												CREATED_BY,
+												CREATION_DATE,
+												LAST_UPDATED_BY,
+												LAST_UPDATE_DATE) VALUES ( null,
+																		   'Ocurrio un error en el procedimiento get_empleados_rp:  ' ||v_error,
+																		   SYSDATE - 5/24,
+																		   '-1',
+																		   SYSDATE - 5/24,
+																		   '-1',
+																		   SYSDATE - 5/24);	
+	END;
+	END get_lookup_correos_unidades;
+--------------------------------------------------------------
+	procedure get_empleados_activos
+	IS 
+	 
+	    l_user_name          VARCHAR2(100); 
+        l_password           VARCHAR2(100); 
+        l_ws_url             VARCHAR2(500); 
+        l_ws_action          VARCHAR2(500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; 
+        l_ws_response_clob   CLOB; 
+        l_ws_envelope        CLOB; 
+        l_ws_resp_xml        XMLTYPE; 
+        l_ws_resp_xml2       XMLTYPE; 
+        v_cdata              CLOB; 
+        l_clob               CLOB; 
+        v_val                PLS_INTEGER; 
+		-- 
+		v_error              VARCHAR2(500); 
+        v_contador_8         NUMBER;
+    BEGIN 
+        v_contador_8 := 1;
+        l_ws_envelope :=    '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+                                <soap:Body> 
+                                    <pub:runReport> 
+                                        <pub:reportRequest> 
+                                            <pub:parameterNameValues> 
+													 
+ 
+                                            </pub:parameterNameValues> 
+                                            <pub:reportAbsolutePath>/Reportes Custom/PAY/toks_actualiza_cuentas_bancarias_cortas/Empleados Activos - REP.xdo</pub:reportAbsolutePath> 
+                                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+                                        </pub:reportRequest> 
+                                    </pub:runReport> 
+                                </soap:Body> 
+                            </soap:Envelope>';    
+							 
+        --------------------------------------------------- 
+        -------------------TOKEN--------------------------- 
+        		GRG_COMMON_CONNECTIONS_ATI_PKG.get_otbi_report( 
+                    l_ws_envelope    => l_ws_envelope, 
+                    l_user_token     => null,  --p_user_token
+                    x_ws_response    => l_clob,
+					p_instance_name  => 'DEV2'
+        			); 
+        ------------------------------------------------- 
+        ------------------------------------------------- 
+        l_ws_resp_xml2 := xmltype.createxml (l_clob);  
+ 
+        BEGIN 
+        EXECUTE IMMEDIATE ('TRUNCATE TABLE GRG_EMP_BASE');
+ 
+			FOR i  
+ 
+					IN (SELECT  xml_data.NUMERO_EMPLEADO,
+								xml_data.FULL_NAME,
+								xml_data.NATIONAL_IDENTIFIER_NUMBER,
+								xml_data.ASSIGNMENT_NUMBER,
+								xml_data.LEGAL_ENTITY,
+								xml_data.LEGAL_ENTITY_ID,
+								xml_data.DESCRIPCION,
+								xml_data.LOCATION_ID,
+								xml_data.UNIDAD,
+								xml_data.NOMBRE_METODO_PAGO_ACTUAL
+								
+							FROM XMLTABLE ('/DATA_DS/G_1'  
+								PASSING xmltype.createxml(l_clob) 
+								COLUMNS NUMERO_EMPLEADO						VARCHAR2(250) PATH 'NUMERO_EMPLEADO', 
+										FULL_NAME							VARCHAR2(250) PATH 'FULL_NAME', 
+										NATIONAL_IDENTIFIER_NUMBER			VARCHAR2(250) PATH 'NATIONAL_IDENTIFIER_NUMBER', 
+										ASSIGNMENT_NUMBER					VARCHAR2(250) PATH 'ASSIGNMENT_NUMBER',
+										LEGAL_ENTITY						VARCHAR2(250) PATH 'LEGAL_ENTITY',
+										LEGAL_ENTITY_ID						VARCHAR2(250) PATH 'LEGAL_ENTITY_ID',
+										DESCRIPCION							VARCHAR2(250) PATH 'DESCRIPCION',
+										LOCATION_ID							VARCHAR2(250) PATH 'LOCATION_ID',
+										UNIDAD								VARCHAR2(250) PATH 'UNIDAD',
+										NOMBRE_METODO_PAGO_ACTUAL			VARCHAR2(250) PATH 'NOMBRE_METODO_PAGO_ACTUAL'
+										
+										  )  
+								xml_data )  
+					LOOP 
+ 
+					INSERT INTO GRG_EMP_BASE(PERSON_NUMBER,
+											 FULL_NAME,
+											 NATIONAL_IDENTIFIER_NUMBER,
+											 ASSINGMENT_NUMBER,
+											 EMPRESA,
+											 LEGAL_ENTITY_ID,
+											 UNIDAD,
+											 LOCATION_ID,
+											 CODIGO_UNIDAD,
+											 NOMBRE_METODO_PAGO
+											 )	VALUES (i.NUMERO_EMPLEADO, 
+														i.FULL_NAME,
+														i.NATIONAL_IDENTIFIER_NUMBER,
+														i.ASSIGNMENT_NUMBER,
+														i.LEGAL_ENTITY,
+														i.LEGAL_ENTITY_ID,
+														i.DESCRIPCION,
+														i.LOCATION_ID,
+														i.UNIDAD,
+														i.NOMBRE_METODO_PAGO_ACTUAL); 				 
+          	 
+					END LOOP;                                           
+				COMMIT;
+				
+		EXCEPTION
+		    WHEN OTHERS THEN 
+				v_error := SQLERRM;
+				   
+				INSERT INTO GRG_CALC_EMP_ERROR(PROCESS_ID,
+												ERROR,
+												FECHA,
+												CREATED_BY,
+												CREATION_DATE,
+												LAST_UPDATED_BY,
+												LAST_UPDATE_DATE) VALUES ( null,
+																		   'Ocurrio un error en el procedimiento get_empleados_rp:  ' ||v_error,
+																		   SYSDATE - 5/24,
+																		   '-1',
+																		   SYSDATE - 5/24,
+																		   '-1',
+																		   SYSDATE - 5/24);	
+	END;
+	END get_empleados_activos;
+--------------------------------------------------------------
+    PROCEDURE act_cuentas_bancarias_cortas (
+        p_nombre_archivo       IN     VARCHAR2
+        ,p_tipo_archivo         IN     VARCHAR2
+        )
+    IS
+        v_linea             VARCHAR2 (32767);
+        v_num_cuenta        VARCHAR2 (250);
+        v_num_empl          VARCHAR2 (250);
+        bandera             BOOLEAN;
+        v_nombre            VARCHAR2 (250);
+        v_apaterno          VARCHAR2 (250);
+        v_amaterno          VARCHAR2 (250);
+        v_nombre_completo   VARCHAR2 (250);
+        v_check VARCHAR2(250);
+        v_second VARCHAR2(250);
+        l_curp              VARCHAR2 (250);
+        num_empl            VARCHAR2 (250);
+        v_error             VARCHAR2 (2000);
+        v_error_no_update   VARCHAR2 (250);
+        ERROR_NOT_FOUND     EXCEPTION;
+        p_status NUMBER;
+        
+		v_total_actualizados1 NUMBER:= 0;
+        v_total_error1 NUMBER := 0;
+        
+		v_total_actualizados NUMBER:= 0;
+        v_total_error NUMBER := 0;
+        x_tempname CLOB;
+        x_tempname_zip CLOB;
+        l_base64enconde  CLOB;
+		
+        l_file_exists BOOLEAN;
+        l_file_len    NUMBER;
+        l_blocksize   BINARY_INTEGER;
+        l_all_metadatas        CLOB;
+        l_zipped_blob          BLOB;
+		
+        
+		v_num_emplc  varchar2(250);
+        
+        --Insert into (v_national_identifier_number )
+        --values (v_national_identifier_number)
+		
+		---+alegaspi 29/12/2020
+		l_directory_path   VARCHAR2(500);
+		l_zip_file         VARCHAR2(3650);		
+		
+		--VAR- TEMPLATE--
+		v_lines_arr        apex_t_varchar2;
+		l_tempname              CLOB;
+		l_metadata_h            CLOB;
+		l_all_metadatas_h       CLOB;
+		l_metadata_l            CLOB;
+		l_all_metadatas_l       CLOB;
+		p_archivo               CLOB;
+		l_log                   CLOB;
+		v_lines                 VARCHAR2(1000);
+		l_tipo_archivo          VARCHAR2(50);
+		l_full_name             VARCHAR2(250);
+		
+		PERSON_NUMBER           VARCHAR2(50);
+        PERSON_ID               VARCHAR2(50);
+		
+		---EDI
+		BANK_ACCOUNT_ID                 VARCHAR2(50);
+		BANK_ACCOUNT_NUM                VARCHAR2(50);
+		BANK_ID                         VARCHAR2(50);
+		BANK_NUMBER                     VARCHAR2(50);
+		BRANCH_NUMBER                   VARCHAR2(50);
+		BRANCH_ID                       VARCHAR2(50);
+		CHECK_DIGITS                    VARCHAR2(50);
+		SECONDARY_ACCOUNT_REFERENCE     VARCHAR2(50);
+		BANK_ACCOUNT_NAME               VARCHAR2(250);
+		
+		BANK_ACCOUNT_TYPE               VARCHAR2(250);
+        BANK_ACCOUNT_NAME_ALT           VARCHAR2(250);
+        IBAN_NUMBER                     VARCHAR2(250);
+        
+        l_total                         NUMBER := 0;
+        l_total_actualizados            NUMBER := 0;
+        l_total_error                   NUMBER := 0;
+        
+        status_carga                    VARCHAR2(10);
+		
+		
+    BEGIN
+--    
+--    IF p_tipo_archivo = '1' THEN    
+--        l_all_metadatas_h := 
+--            'METADATA|ExternalBankAccount|ExternalBankAccountId|BankName|BankId|BankBranchName|AccountNumber|AccountType|SecondaryAccountReference|AccountName|CountryCode|CurrencyCode|BankNumber|BankBranchNumber|BankBranchId|IBAN|InactiveFlag|CheckDigit|AlternateAccountName|AccountSuffix|SourceRefTableName=<source-table-name>|SourceRef001=<source-column-001>|SourceRef002=<source-column-002>|SourceRef003=<source-column-003>|SourceRef004=<source-column-004>|SourceRef005=<source-column-005>|SourceRef006=<source-column-006>|SourceRef007=<source-column-007>|SourceRef008=<source-column-008>|SourceRef009=<source-column-009>|SourceRef010=<source-column-010>';
+--        l_all_metadatas_l :=
+--        'METADATA|ExternalBankAccountOwner|PersonNumber|PersonId|BankName|BankBranchName|AccountNumber|CountryCode|CurrencyCode|PrimaryFlag|ExternalBankAccountOwnerId|ExternalBankAccountId|BankId|BankBranchId|BankNumber|BankBranchNumber|AccountType|SecondaryAccountReference|ThirdPartyNumber|ExpensePrimaryFlag|SourceRefTableName=<source-table-name>|SourceRef001=<source-column-001>|SourceRef002=<source-column-002>|SourceRef003=<source-column-003>|SourceRef004=<source-column-004>|SourceRef005=<source-column-005>|SourceRef006=<source-column-006>|SourceRef007=<source-column-007>|SourceRef008=<source-column-008>|SourceRef009=<source-column-009>|SourceRef010=<source-column-010>';
+--
+--        BEGIN
+--            SELECT LINEAS_ARCHIVO,TIPO_ARCHIVO
+--            INTO p_archivo, l_tipo_archivo
+--            FROM ARCHIVOS_CUENTAS_CORTAS
+--            WHERE 1 =1 
+--            AND NOMBRE_ARCHIVO = p_nombre_archivo;
+--        EXCEPTION WHEN OTHERS THEN
+--            p_archivo := NULL;
+--            l_tipo_archivo := NULL;
+--        END;
+--        
+--        v_lines_arr := apex_string.split (p_archivo);
+--    
+--        FOR i IN 2 .. v_lines_arr.COUNT  LOOP
+--            
+--            IF SUBSTR (v_lines_arr (i), 1, 2) = '02' THEN
+--                    --dbms_output.put_line ('Codigo linea: ' ||v_lines_arr);
+--                    IF l_tipo_archivo = 'LARGAS' THEN
+--                    
+--                            v_num_empl := TRIM (SUBSTR (v_lines_arr (i), 206, 8));
+--                            dbms_output.put_line ('numero empleado: ' ||v_num_empl );
+--                            v_num_cuenta := TRIM (SUBSTR (v_lines_arr (i), 449, 10));
+--                            dbms_output.put_line ('numero cuenta: '||v_num_cuenta );
+--                            v_error := TRIM (SUBSTR (v_lines_arr (i), 511, 2) );
+--                            v_error_no_update := TRIM (SUBSTR (v_lines_arr (i), 511, 49) );
+--                    
+--                    BEGIN
+--                              SELECT xacct.BANK_ACCOUNT_ID 
+--                                    ,xacct.BANK_ID
+--                                    ,xacct.SECONDARY_ACCOUNT_REFERENCE
+--                                    ,xacct.BANK_ACCOUNT_NAME
+--                                    ,xacct.BANK_NUMBER
+--                                    ,xacct.BRANCH_NUMBER
+--                                    ,xacct.BRANCH_ID
+--                                    ,xacct.CHECK_DIGITS
+--                                    ,xacct.PERSON_NUMBER
+--                                    ,xacct.PERSON_ID
+--                                    ,xacct.BANK_ACCOUNT_TYPE
+--                                    ,xacct.BANK_ACCOUNT_NAME_ALT
+--                                    ,xacct.IBAN_NUMBER
+--                                    ,xacct.NAME
+--                                  INTO BANK_ACCOUNT_ID
+--                                  ,BANK_ID
+--                                  ,SECONDARY_ACCOUNT_REFERENCE
+--                                  ,BANK_ACCOUNT_NAME
+--                                  ,BANK_NUMBER
+--                                  ,BRANCH_NUMBER
+--                                  ,BRANCH_ID
+--                                  ,CHECK_DIGITS
+--                                  ,PERSON_NUMBER
+--                                  ,PERSON_ID
+--                                  ,BANK_ACCOUNT_TYPE
+--                                  ,BANK_ACCOUNT_NAME_ALT
+--                                  ,IBAN_NUMBER
+--                                  ,l_full_name
+--                                  FROM XXGRG_ACT_CTASBAN_CORTAS_T xacct
+--                                 WHERE TO_NUMBER(xacct.PERSON_NUMBER) = TO_NUMBER(v_num_empl);
+--                                EXCEPTION WHEN OTHERS THEN
+--                                        BANK_ACCOUNT_ID := NULL;
+--                                  BANK_ID  := NULL;
+--                                  SECONDARY_ACCOUNT_REFERENCE := NULL;
+--                                  BANK_ACCOUNT_NAME := NULL;
+--                                  BANK_NUMBER := NULL;
+--                                  BRANCH_NUMBER := NULL;
+--                                  BRANCH_ID := NULL;
+--                                  CHECK_DIGITS := NULL;
+--                                  PERSON_NUMBER := NULL;
+--                                  PERSON_ID := NULL;
+--                                END;
+--                        
+--                                IF
+--                                   v_error = 'OK'
+--                                   AND v_error_no_update not like 
+--                                       '%OKCLIENTECONCUENTAYPLASTICOEXISTENTE%'
+--                                   AND v_num_cuenta != '0000000000'
+--                                   and BANK_ACCOUNT_ID IS NOT NULL
+--                                THEN
+--                                                DBMS_OUTPUT.put_line(  v_total_actualizados1 + 1);
+--                                l_metadata_h := 
+--                                           'MERGE|ExternalBankAccount|'||BANK_ACCOUNT_ID||'|BBVA BANCOMER, S.A.|'||BANK_ID||'|NOMINA|'||v_num_cuenta||'|P|'||SECONDARY_ACCOUNT_REFERENCE||'|'||BANK_ACCOUNT_NAME||'|MX|MXN|'||BANK_NUMBER||'|'||BRANCH_NUMBER||'|'||BRANCH_ID||'||N|'||CHECK_DIGITS||'|||||||||||||';
+--                                l_all_metadatas_h := l_all_metadatas_h || CHR (10) ||
+--                                l_metadata_h;
+--                                
+--                                l_metadata_l := 
+--                                           'MERGE|ExternalBankAccountOwner|'||PERSON_NUMBER||'|'||PERSON_ID||'|BBVA BANCOMER, S.A.|NOMINA|'||v_num_cuenta||'|MX|MXN|N|'||BANK_ACCOUNT_ID||'|'||BANK_ACCOUNT_ID||'|'||BANK_ID||'|'||BRANCH_ID||'|'||BANK_NUMBER||'|'||BRANCH_NUMBER||'|EFT|'||SECONDARY_ACCOUNT_REFERENCE||'|||||||||||||';
+--                                l_all_metadatas_l := l_all_metadatas_l || CHR (10) ||
+--                                l_metadata_l;
+--                                    
+--                                    l_log := l_log ||'Actualiza Cuenta del Empleado: '||PERSON_NUMBER||' | '||' | CUENTA '||v_num_cuenta ||'|' ||CHR (10);
+--                                ELSE 
+--                                    l_log := l_log ||'Empleado con Error: ' ||PERSON_NUMBER||' - '||v_error_no_update|| CHR (10);
+--                                END IF;
+--                        
+--
+--                    ELSIF l_tipo_archivo = 'CORTAS' THEN
+--                            l_total := l_total + 1;
+--                            l_curp := TRIM (SUBSTR (v_lines_arr (i), 3, 18));
+--                            dbms_output.put_line ('CURP: ' ||l_curp );
+--                            v_error := TRIM (SUBSTR (v_lines_arr (i), 234, 2));
+--                            v_error_no_update :=TRIM (REPLACE (SUBSTR (v_lines_arr (i), 234, 55), ' ', ''));
+--                            v_num_cuenta := TRIM (SUBSTR (v_lines_arr (i), 190, 10));
+--                              
+--                              dbms_output.put_line ('v_error: ' ||v_error ); 
+--                              dbms_output.put_line ('v_error_no_update: ' ||v_error_no_update);
+--                              dbms_output.put_line ('v_num_cuenta: ' ||v_num_cuenta);             
+--                              BEGIN
+--                              SELECT xacct.BANK_ACCOUNT_ID 
+--                                    ,xacct.BANK_ID
+--                                    ,xacct.SECONDARY_ACCOUNT_REFERENCE
+--                                    ,xacct.BANK_ACCOUNT_NAME
+--                                    ,xacct.BANK_NUMBER
+--                                    ,xacct.BRANCH_NUMBER
+--                                    ,xacct.BRANCH_ID
+--                                    ,xacct.CHECK_DIGITS
+--                                    ,xacct.PERSON_NUMBER
+--                                    ,xacct.PERSON_ID
+--                                    ,xacct.BANK_ACCOUNT_TYPE
+--                                    ,xacct.BANK_ACCOUNT_NAME_ALT
+--                                    ,xacct.IBAN_NUMBER
+--                                    ,xacct.NAME
+--                                  INTO BANK_ACCOUNT_ID
+--                                  ,BANK_ID
+--                                  ,SECONDARY_ACCOUNT_REFERENCE
+--                                  ,BANK_ACCOUNT_NAME
+--                                  ,BANK_NUMBER
+--                                  ,BRANCH_NUMBER
+--                                  ,BRANCH_ID
+--                                  ,CHECK_DIGITS
+--                                  ,PERSON_NUMBER
+--                                  ,PERSON_ID
+--                                  ,BANK_ACCOUNT_TYPE
+--                                  ,BANK_ACCOUNT_NAME_ALT
+--                                  ,IBAN_NUMBER
+--                                  ,l_full_name
+--                                  FROM XXGRG_ACT_CTASBAN_CORTAS_T xacct
+--                                 WHERE xacct.national_identifier_number = l_curp;
+--                                EXCEPTION WHEN OTHERS THEN
+--                                        BANK_ACCOUNT_ID := NULL;
+--                                  BANK_ID  := NULL;
+--                                  SECONDARY_ACCOUNT_REFERENCE := NULL;
+--                                  BANK_ACCOUNT_NAME := NULL;
+--                                  BANK_NUMBER := NULL;
+--                                  BRANCH_NUMBER := NULL;
+--                                  BRANCH_ID := NULL;
+--                                  CHECK_DIGITS := NULL;
+--                                  PERSON_NUMBER := NULL;
+--                                  PERSON_ID := NULL;
+--                                  l_full_name := NULL;
+--                                END;
+--                        
+--                                IF
+--                                   v_error = 'OK'
+--                                   AND v_error_no_update not like 
+--                                       '%OKCLIENTECONCUENTAYPLASTICOEXISTENTE%'
+--                                   AND v_num_cuenta != '0000000000'
+--                                   and BANK_ACCOUNT_ID IS NOT NULL
+--                                THEN
+--                                              --  DBMS_OUTPUT.put_line(  v_total_actualizados1 + 1);
+--                                l_metadata_h := 
+--                                           'MERGE|ExternalBankAccount|'||BANK_ACCOUNT_ID||'|BBVA BANCOMER, S.A.|'||BANK_ID||'|NOMINA|'||v_num_cuenta||'|'||''||'|'||SECONDARY_ACCOUNT_REFERENCE||'|'||BANK_ACCOUNT_NAME||'|MX|MXN|'||BANK_NUMBER||'|'||BRANCH_NUMBER||'|'||BRANCH_ID||'|'||IBAN_NUMBER||'|N|'||CHECK_DIGITS||'|'||BANK_ACCOUNT_NAME_ALT||'||||||||||||';
+--                                l_all_metadatas_h := l_all_metadatas_h || CHR (10) ||
+--                                l_metadata_h;
+--                                
+--                                l_metadata_l := 
+--                                           'MERGE|ExternalBankAccountOwner|'||PERSON_NUMBER||'|'||PERSON_ID||'|BBVA BANCOMER, S.A.|NOMINA|'||v_num_cuenta||'|MX|MXN|N|'||BANK_ACCOUNT_ID||'|'||BANK_ACCOUNT_ID||'|'||BANK_ID||'|'||BRANCH_ID||'|'||BANK_NUMBER||'|'||BRANCH_NUMBER||'|'||BANK_ACCOUNT_TYPE||'|'||SECONDARY_ACCOUNT_REFERENCE||'|||||||||||||';
+--                                l_all_metadatas_l := l_all_metadatas_l || CHR (10) ||
+--                                l_metadata_l;
+--                                
+--                                    l_log := l_log ||'Actualiza Cuenta del Empleado: '||PERSON_NUMBER||'  '||' Nombre: ' ||l_full_name||'  CUENTA '||v_num_cuenta ||'' ||CHR (10);
+--                                
+--                                    l_total_actualizados := l_total_actualizados + 1;
+--                                ELSE 
+--                                    
+--                                    IF v_error = 'OK' THEN 
+--                                        l_log := l_log ||'Empleado con Error ya cuenta con numero de cuenta: ' ||PERSON_NUMBER||' - '||v_error_no_update|| CHR (10);
+--                                    ELSE
+--                                        l_log := l_log ||'Empleado con Error: ' ||PERSON_NUMBER||' - '||v_error_no_update|| CHR (10);
+--                                    END IF;
+--                                    
+--                                    l_total_error := l_total_error + 1;
+--
+--
+--                                END IF;
+--                        END IF; --TIPO ARCHIVO
+--                END IF; --="02"    
+--                
+--                --
+--                BANK_ID  := NULL;
+--                SECONDARY_ACCOUNT_REFERENCE := NULL;
+--                BANK_ACCOUNT_NAME := NULL;
+--                BANK_NUMBER := NULL;
+--                BRANCH_NUMBER := NULL;
+--                BRANCH_ID := NULL;
+--                CHECK_DIGITS := NULL;
+--                PERSON_NUMBER := NULL;
+--                PERSON_ID := NULL;
+--                BANK_ACCOUNT_TYPE   := NULL;
+--                BANK_ACCOUNT_NAME_ALT := NULL;
+--                IBAN_NUMBER := NULL;
+--                l_curp := NULL;
+--                l_full_name := NULL;
+--      END LOOP; 
+--    dbms_output.put_line ('l_log: ' ||l_log);
+--        l_all_metadatas_h := l_all_metadatas_h || CHR (10) || l_all_metadatas_l;
+--
+--       as_zip.add1file (l_zipped_blob,
+--                   'ExternalBankAccount.dat',
+--                   UTL_RAW.cast_to_raw (l_all_metadatas_h));
+--        as_zip.finish_zip (l_zipped_blob);
+--        AS_ZIP.SAVE_ZIP (l_zipped_blob,
+--                             'XXTOKS_OUTGOING',
+--                             'ActualizaCuentas1.zip');
+--        
+--        l_tempname :='ActualizaCuentas' || TO_CHAR (SYSDATE, 'YYYYMMDDHHMISS');
+--        x_tempname := l_tempname;
+--        x_tempname_zip := 'ActualizaCuentas' || TO_CHAR (SYSDATE, 'YYYYMMDDHHMISS') || '.zip';
+--        
+--        l_base64enconde := BASE64_ENCODE_F (l_zipped_blob);
+--
+--        l_log := l_log ||'Total Empleados: '|| l_total || CHR (10);
+--        l_log := l_log ||'Total empleados con error: '|| l_total_error || CHR (10);
+--        l_log := l_log ||'Total empleados actualizados: '|| l_total_actualizados || CHR (10);
+--    
+--        UPDATE PAY.ARCHIVOS_CUENTAS_CORTAS 
+--        SET LINEAS_LOG = l_log
+--        , ID_LOG = 'Y'
+--        , ATRIBUTO1 = ATRIBUTO1 ||p_tipo_archivo
+--        WHERE 1 = 1
+--        AND NOMBRE_ARCHIVO = p_nombre_archivo;
+--        COMMIT;
+--    
+--    END IF; -- IF DE p_tipo_archivo
+--    
+    p_status := 20;
+    apex_json.open_object;
+    apex_json.write('status', p_status);
+    apex_json.write('v_total_actualizados', v_total_actualizados);
+    apex_json.write('status_carga', status_carga);
+    apex_json.write('nombre_archivo', x_tempname);
+    apex_json.write('nombre_archivo_zip', x_tempname_zip);
+    apex_json.write('archivo_base64', l_base64enconde);
+    apex_json.close_object;
+--
+    EXCEPTION
+        WHEN ERROR_NOT_FOUND
+        THEN
+        p_status := 10;
+        apex_json.open_object;
+       apex_json.write('status', p_status);
+	    apex_json.write('v_total_actualizados', v_total_actualizados);
+        apex_json.write('status_carga', 'N');
+       apex_json.close_object;
+   
+       --     DBMS_OUTPUT.put_line ('No se encontraron datos');
+ 
+    END act_cuentas_bancarias_cortas;
+    
+    ----------------------------------------------------------------------------
+    ----------CREAR METODO DE PAGO ---------------------------------------------
+    ----------------------------------------------------------------------------
+    
+    PROCEDURE crear_cuentas_bancarias_cortas (
+        p_nombre_archivo       IN     VARCHAR2
+        ,p_tipo_archivo         IN     VARCHAR2
+        )
+    IS
+        v_linea             VARCHAR2 (32767);
+        v_num_cuenta        VARCHAR2 (250);
+        v_num_empl          VARCHAR2 (250);
+        bandera             BOOLEAN;
+        v_nombre            VARCHAR2 (250);
+        v_apaterno          VARCHAR2 (250);
+        v_amaterno          VARCHAR2 (250);
+        v_nombre_completo   VARCHAR2 (250);
+        v_check VARCHAR2(250);
+        v_second VARCHAR2(250);
+        l_curp              VARCHAR2 (250);
+        num_empl            VARCHAR2 (250);
+        v_error             VARCHAR2 (2000);
+        v_error_no_update   VARCHAR2 (250);
+        v_error_no_update_v1   VARCHAR2 (1000);
+        ERROR_NOT_FOUND     EXCEPTION;
+        p_status NUMBER;
+        
+		v_total_actualizados1 NUMBER:= 0;
+        v_total_error1 NUMBER := 0;
+        
+		v_total_actualizados NUMBER:= 0;
+        v_total_error NUMBER := 0;
+        x_tempname CLOB;
+        x_tempname_zip CLOB;
+        l_base64enconde  CLOB;
+		
+        l_file_exists BOOLEAN;
+        l_file_len    NUMBER;
+        l_blocksize   BINARY_INTEGER;
+        l_all_metadatas        CLOB;
+        l_zipped_blob          BLOB;
+		
+        
+		v_num_emplc  varchar2(250);
+        
+        --Insert into (v_national_identifier_number )
+        --values (v_national_identifier_number)
+		
+		---+alegaspi 29/12/2020
+		l_directory_path   VARCHAR2(500);
+		l_zip_file         VARCHAR2(3650);		
+		
+		--VAR- TEMPLATE--
+		v_lines_arr        apex_t_varchar2;
+		l_tempname              CLOB;
+		l_metadata_h            CLOB;
+		l_all_metadatas_h       CLOB;
+		l_metadata_l            CLOB;
+		l_all_metadatas_l       CLOB;
+		p_archivo               CLOB;
+		l_log                   CLOB;
+		v_lines                 VARCHAR2(1000);
+		l_tipo_archivo          VARCHAR2(50);
+		
+		PERSON_NUMBER           VARCHAR2(50);
+        PERSON_ID               VARCHAR2(50);
+		
+		---EDI
+		BANK_ACCOUNT_ID                 VARCHAR2(50);
+		BANK_ACCOUNT_NUM                VARCHAR2(50);
+		BANK_ID                         VARCHAR2(50);
+		BANK_NUMBER                     VARCHAR2(50);
+		BRANCH_NUMBER                   VARCHAR2(50);
+		BRANCH_ID                       VARCHAR2(50);
+		CHECK_DIGITS                    VARCHAR2(50);
+		SECONDARY_ACCOUNT_REFERENCE     VARCHAR2(50);
+		BANK_ACCOUNT_NAME               VARCHAR2(250);
+		
+		BANK_ACCOUNT_TYPE               VARCHAR2(250);
+        BANK_ACCOUNT_NAME_ALT           VARCHAR2(250);
+        IBAN_NUMBER                     VARCHAR2(250);
+        
+        l_total                         NUMBER := 0;
+        l_total_actualizados            NUMBER := 0;
+        l_total_error                   NUMBER := 0;
+        status_carga                    VARCHAR2(10);
+        l_nombre_archivo_p              VARCHAR2(100);
+        l_tipo_empleado_activo_baja     VARCHAR2(100);
+        
+        L_PERSON_NUMBER               VARCHAR2(100) := NULL;
+        L_FULL_NAME                   VARCHAR2(100) := NULL;
+        L_PERSON_NUMBER2              VARCHAR2(100) := NULL; --+
+        L_FULL_NAME2                  VARCHAR2(100) := NULL; --+
+        L_PERSON_ID                   VARCHAR2(100) := NULL;
+        L_NOMBRE_METODO_PAGO          VARCHAR2(100) := NULL;
+        L_BANK_NUMBER                 VARCHAR2(100) := NULL;
+        L_EFFECTIVE_START_DATE        VARCHAR2(100) := NULL;
+        L_EFFECTIVE_START_DATE_METODO VARCHAR2(100) := NULL;
+        L_NUMERO_TARJERA              VARCHAR2(100) := NULL;
+        L_ASSINGMENT_NUMBER           VARCHAR2(100) := NULL;
+        L_CHEQUE_ID                   VARCHAR2(100) := NULL;
+        SOURCE_SYSTEM_OWNER           VARCHAR2(100) := NULL;
+		l_sequence                    NUMBER := 0;
+		l_numero_tarjeta			  VARCHAR2(100);
+        
+
+            CURSOR act_cuentas_c IS
+	
+            	SELECT xacct.PERSON_NUMBER 
+                      ,xacct.FULL_NAME
+                      ,xacct.PERSON_ID
+                      ,xacct.NOMBRE_METODO_PAGO
+                      ,xacct.EFFECTIVE_START_DATE
+                      ,xacct.NUMERO_TARJERA
+                      ,xacct.ATRIBUTO1
+                      ,xacct.ATRIBUTO5
+                INTO L_PERSON_NUMBER
+                    ,L_FULL_NAME
+                    ,L_PERSON_ID
+                    ,L_NOMBRE_METODO_PAGO
+                    ,L_EFFECTIVE_START_DATE
+                    ,L_NUMERO_TARJERA
+                    ,IBAN_NUMBER
+                    ,l_tipo_empleado_activo_baja
+                FROM XXGRG_CREA_CTASBAN_CORTAS_T xacct
+                WHERE xacct.NATIONAL_IDENTIFIER_NUMBER = l_curp;
+		
+		
+    BEGIN
+		-- ---+ INVOCACION REPORTES PROCEDIMIENTO ENVIO DE CORREOS
+		-- XXTOKS_ACT_CUEN_BAN_CORTA_PKG.get_lookup_correos_unidades;
+		-- XXTOKS_ACT_CUEN_BAN_CORTA_PKG.get_empleados_activos;
+       	-- ---+ INVOCACION DE PROCEDIMIENTO DE ENVIO DE CORREOS  
+		-- XXTOKS_ACT_CUEN_BAN_CORTA_PKG.envio_notificaciones_ctas( p_nombre_archivo 	=> p_nombre_archivo,
+		-- 											   		 	 p_tipo_archivo 	=> p_tipo_archivo);
+ 
+       
+        BEGIN
+                SELECT LINEAS_ARCHIVO,TIPO_ARCHIVO
+                INTO p_archivo, l_tipo_archivo
+                FROM ARCHIVOS_CUENTAS_CORTAS
+                WHERE 1 =1 
+                AND NOMBRE_ARCHIVO = p_nombre_archivo;
+        EXCEPTION WHEN OTHERS THEN
+            p_archivo      := NULL;
+            l_tipo_archivo := NULL;
+        END;
+        
+       IF p_tipo_archivo = '1' AND p_archivo IS NOT NULL THEN
+            l_nombre_archivo_p := 'ExternalBankAccount';
+            l_all_metadatas_h := 
+                'METADATA|ExternalBankAccount|ExternalBankAccountId|BankName|BankId|BankBranchName|AccountNumber|AccountType|SecondaryAccountReference|AccountName|CountryCode|CurrencyCode|BankNumber|BankBranchNumber|BankBranchId|IBAN|InactiveFlag|CheckDigit|AlternateAccountName|AccountSuffix|SourceRefTableName=<source-table-name>|SourceRef001=<source-column-001>|SourceRef002=<source-column-002>|SourceRef003=<source-column-003>|SourceRef004=<source-column-004>|SourceRef005=<source-column-005>|SourceRef006=<source-column-006>|SourceRef007=<source-column-007>|SourceRef008=<source-column-008>|SourceRef009=<source-column-009>|SourceRef010=<source-column-010>';
+            l_all_metadatas_l :=
+            'METADATA|ExternalBankAccountOwner|PersonNumber|PersonId|BankName|BankBranchName|AccountNumber|CountryCode|CurrencyCode|PrimaryFlag|ExternalBankAccountOwnerId|ExternalBankAccountId|BankId|BankBranchId|BankNumber|BankBranchNumber|AccountType|SecondaryAccountReference|ThirdPartyNumber|ExpensePrimaryFlag|SourceRefTableName=<source-table-name>|SourceRef001=<source-column-001>|SourceRef002=<source-column-002>|SourceRef003=<source-column-003>|SourceRef004=<source-column-004>|SourceRef005=<source-column-005>|SourceRef006=<source-column-006>|SourceRef007=<source-column-007>|SourceRef008=<source-column-008>|SourceRef009=<source-column-009>|SourceRef010=<source-column-010>';
+ 
+        
+    
+        v_lines_arr := apex_string.split (p_archivo);
+    
+        FOR i IN 2 .. v_lines_arr.COUNT  LOOP
+            
+            IF SUBSTR (v_lines_arr (i), 1, 2) = '02' THEN
+                    
+                        
+ 
+                    IF l_tipo_archivo = 'CORTAS' THEN
+                            l_total                     := l_total + 1;
+                            l_curp                      := TRIM (SUBSTR (v_lines_arr (i), 3, 18));
+                            dbms_output.put_line ('CURP: ' ||l_curp );
+                            v_error                     := TRIM (SUBSTR (v_lines_arr (i), 234, 2));
+                            v_error_no_update           := TRIM (REPLACE (SUBSTR (v_lines_arr (i), 234, 55), ' ', ''));
+                            v_error_no_update_v1        := TRIM(SUBSTR (v_lines_arr (i), 234, 55));
+                            v_num_cuenta                := TRIM (SUBSTR (v_lines_arr (i), 190, 10));
+                            SECONDARY_ACCOUNT_REFERENCE := TRIM (SUBSTR (v_lines_arr (i), 216, 18));
+							l_numero_tarjeta			:= TRIM (SUBSTR (v_lines_arr (i), 85, 16));
+                              
+                              dbms_output.put_line ('v_error: ' ||v_error ); 
+                              dbms_output.put_line ('v_error_no_update: ' ||v_error_no_update);
+                              dbms_output.put_line ('v_num_cuenta: ' ||v_num_cuenta);   
+
+
+                                 FOR i IN act_cuentas_c LOOP
+                                  dbms_output.put_line('Estafeta: '||i.PERSON_NUMBER);
+                            	  dbms_output.put_line('Nombre Empleado: '||i.FULL_NAME);
+                            	  dbms_output.put_line('+------------------------------+');
+                                
+                                        
+                            --   BEGIN
+                            --   SELECT xacct.PERSON_NUMBER 
+                            --         ,xacct.FULL_NAME
+                            --         ,xacct.PERSON_ID
+                            --         ,xacct.NOMBRE_METODO_PAGO
+                            --         ,xacct.EFFECTIVE_START_DATE
+                            --         ,xacct.NUMERO_TARJERA
+                            --         ,xacct.ATRIBUTO1
+                            --         ,xacct.ATRIBUTO5
+                            --       INTO L_PERSON_NUMBER
+                            --       ,L_FULL_NAME
+                            --       ,L_PERSON_ID
+                            --       ,L_NOMBRE_METODO_PAGO
+                            --       ,L_EFFECTIVE_START_DATE
+                            --       ,L_NUMERO_TARJERA
+                            --       ,IBAN_NUMBER
+                            --       ,l_tipo_empleado_activo_baja
+                            --       FROM XXGRG_CREA_CTASBAN_CORTAS_T xacct
+                            --      WHERE xacct.NATIONAL_IDENTIFIER_NUMBER = l_curp;
+                            --     EXCEPTION WHEN OTHERS THEN
+                            --             L_PERSON_NUMBER := NULL;
+                            --     END;
+                        
+                                IF
+                                   v_error = 'OK'
+                                   AND v_error_no_update not like 
+                                       '%OKCLIENTECONCUENTAYPLASTICOEXISTENTE%'
+                                   AND v_num_cuenta != '0000000000'
+                                   and L_PERSON_NUMBER IS NOT NULL
+                                   AND (IBAN_NUMBER IS NULL
+                                    OR UPPER(IBAN_NUMBER) LIKE '%CHEQUE%'
+                                   )
+                                 THEN
+                                              --  DBMS_OUTPUT.put_line(  v_total_actualizados1 + 1);
+                                 l_metadata_h := 
+                                           'MERGE|ExternalBankAccount|'||NULL||'|BBVA BANCOMER, S.A.|'||NULL||'|NOMINA|'||v_num_cuenta||'|'||'DEBIT'||'|'||SECONDARY_ACCOUNT_REFERENCE||'|'||L_FULL_NAME||'|MX|MXN|'||'012'||'|'||'0012'||'|'||NULL||'|'||NULL||'||'||L_NUMERO_TARJERA||'|'||NULL||'||||||||||||';
+                                 l_all_metadatas_h := l_all_metadatas_h || CHR (10) ||
+                                 l_metadata_h;
+                                
+                                 l_metadata_l := 
+                                           'MERGE|ExternalBankAccountOwner|'||L_PERSON_NUMBER||'|'||L_PERSON_ID||'|BBVA BANCOMER, S.A.|NOMINA|'||v_num_cuenta||'|MX|MXN|Y|'||NULL||'|'||NULL||'|'||NULL||'|'||NULL||'|'||'012'||'|'||'0012'||'|'||'DEBIT'||'|'||SECONDARY_ACCOUNT_REFERENCE||'|||||||||||||';
+                                 l_all_metadatas_l := l_all_metadatas_l || CHR (10) ||
+                                 l_metadata_l;
+                                
+                                    l_log := l_log ||'Actualiza Cuenta del Empleado: |'||L_PERSON_NUMBER||' | '||' Nombre: |' ||l_full_name||' | CUENTA |'||v_num_cuenta ||'|' ||' Fecha aplicación: |' ||L_EFFECTIVE_START_DATE ||' | Empleado: | '||CASE WHEN l_tipo_empleado_activo_baja IS NULL THEN 'ACTIVO' ELSE 'BAJA | '|| l_tipo_empleado_activo_baja END||CHR (10);
+                                    l_total_actualizados := l_total_actualizados + 1;
+                                ELSE 
+                                    
+                                    IF v_error = 'OK' AND IBAN_NUMBER LIKE '%EFT%' THEN 
+                                        l_log := l_log ||'Empleado con Error ya cuenta con numero de cuenta: |' ||L_PERSON_NUMBER||' | '||' Nombre: |' ||l_full_name||' | '||v_error_no_update_v1 ||' | Fecha aplicación: |' ||L_EFFECTIVE_START_DATE ||' | Empleado: | '||CASE WHEN l_tipo_empleado_activo_baja IS NULL THEN 'ACTIVO' ELSE 'BAJA | '|| l_tipo_empleado_activo_baja END||CHR (10);
+                                    --
+                                    ELSE
+                                      --+ 27/07/2023 se agrega consulta para resolver detalle de nombre en el log en la parte de "Empleado con Error"
+                                    --    Select ESTAFETA,
+                                    --          replace(NOMBRE,'/',' ')
+                                    --  into    L_PERSON_NUMBER,
+                                    --          l_full_name
+                                    --  from toks_ae_oracle_v
+                                    --  where 1=1
+                                    --  and CURP = l_curp;
+
+                                    --   SELECT xacct.PERSON_NUMBER 
+                                    --         ,xacct.FULL_NAME
+                                    --   INTO L_PERSON_NUMBER2
+                                    --    ,L_FULL_NAME2
+                                    --   FROM XXGRG_CREA_CTASBAN_CORTAS_T xacct
+                                    --   WHERE xacct.NATIONAL_IDENTIFIER_NUMBER = l_curp;
+
+                                        l_log := l_log ||'Empleado con Error: |' ||L_PERSON_NUMBER2||' | '||' Nombre: ' ||l_full_name2||' | '||v_error_no_update_v1 ||' | Fecha aplicación: |' ||L_EFFECTIVE_START_DATE ||' | Empleado: | '||CASE WHEN l_tipo_empleado_activo_baja IS NULL THEN 'ACTIVO' ELSE 'BAJA | '|| l_tipo_empleado_activo_baja END||CHR (10);
+                                      
+                                     
+                                    END IF;
+
+                                    
+                                    
+                                    l_total_error := l_total_error + 1;
+                                    dbms_output.put_line('log: ' || l_log);
+                                    
+                                    
+ 
+                                END IF;
+                                END LOOP; --+ LOOP de FOR que recorre cursor
+                        END IF; --TIPO ARCHIVO
+                END IF; --="02"
+
+               
+				
+				---+ENVIO DE CORREOS A LAS DISTINTAS UNIDADES, DEPENDIENDO DEL TIPO DE RESPUESTA
+				-- XXTOKS_ACT_CUEN_BAN_CORTA_PKG.prueba_correo(p_curp => l_curp,
+				--                                 			p_error_no_update   => v_error_no_update,
+				-- 											p_error_no_update_v1 => v_error_no_update_v1,
+				-- 											p_NUMERO_TARJERA => l_numero_tarjeta);
+				
+ 
+				---
+                L_PERSON_NUMBER             := NULL;
+                L_FULL_NAME                 := NULL;
+                L_PERSON_ID                 := NULL;
+                L_NOMBRE_METODO_PAGO        := NULL;
+                L_BANK_NUMBER               := NULL;
+                L_EFFECTIVE_START_DATE      := NULL;
+                L_NUMERO_TARJERA            := NULL;
+                l_curp                      := NULL;
+                l_full_name                 := NULL;
+                SECONDARY_ACCOUNT_REFERENCE := NULL;
+                l_tipo_empleado_activo_baja := NULL;
+				
+          
+        END LOOP;
+      ELSIF p_tipo_archivo = '2' AND p_archivo IS NOT NULL THEN      --CARGAR EL SEGUNDO TEMPLATE 
+        l_all_metadatas_h := 
+                --'METADATA|PersonalPaymentMethod|PersonalPaymentMethodId|EffectiveStartDate|EffectiveEndDate|LegislativeDataGroupId|PersonalPaymentMethodCode|OrganizationPaymentMethodId|PaymentAmountType|Amount|Percentage|ProcessingOrder|RunTypeId|BankAccountId|LegislativeDataGroupName|AssignmentNumber|OrganizationPaymentMethodCode|RunTypeCode|BankName|BankBranchName|BankAccountNumber|BankCountryCode|GUID|SourceSystemOwner|SourceSystemId|AssignmentId|BankBranchNumber|BankNumber|BankAccountType|SecondaryAccountReference|SourceRefTableName=<source-table-name>|SourceRef001=<source-column-001>|SourceRef002=<source-column-002>|SourceRef003=<source-column-003>|SourceRef004=<source-column-004>|SourceRef005=<source-column-005>|SourceRef006=<source-column-006>|SourceRef007=<source-column-007>|SourceRef008=<source-column-008>|SourceRef009=<source-column-009>|SourceRef010=<source-column-010>';
+                'METADATA|PersonalPaymentMethod|EffectiveStartDate|EffectiveEndDate|PersonalPaymentMethodCode|LegislativeDataGroupName|AssignmentNumber|Percentage|OrganizationPaymentMethodCode|BankName|BankBranchNumber|BankAccountNumber|BankCountryCode|SourceSystemOwner|SourceSystemId|BankAccountType|ProcessingOrder|PaymentAmountType';
+            l_all_metadatas_l := NULL;
+            
+        l_nombre_archivo_p := 'PersonalPaymentMethod';
+        
+        v_lines_arr := apex_string.split (p_archivo);
+    
+        FOR i IN 2 .. v_lines_arr.COUNT  LOOP
+            
+            IF SUBSTR (v_lines_arr (i), 1, 2) = '02' THEN
+            
+                    IF l_tipo_archivo = 'LARGAS' THEN
+                    
+                            v_num_empl := TRIM (SUBSTR (v_lines_arr (i), 206, 8));
+                            dbms_output.put_line ('numero empleado: ' ||v_num_empl );
+                            v_num_cuenta := TRIM (SUBSTR (v_lines_arr (i), 449, 10));
+                            dbms_output.put_line ('numero cuenta: '||v_num_cuenta );
+                            v_error := TRIM (SUBSTR (v_lines_arr (i), 511, 2) );
+                            v_error_no_update := TRIM (SUBSTR (v_lines_arr (i), 511, 49) );
+                            
+                              
+                        
+ 
+                    ELSIF l_tipo_archivo = 'CORTAS' THEN
+                            l_total := l_total + 1;
+                            l_curp := TRIM (SUBSTR (v_lines_arr (i), 3, 18));
+                            dbms_output.put_line ('CURP: ' ||l_curp );
+                            v_error := TRIM (SUBSTR (v_lines_arr (i), 234, 2));
+                            v_error_no_update :=TRIM (REPLACE (SUBSTR (v_lines_arr (i), 234, 55), ' ', ''));
+                            v_error_no_update_v1 := TRIM(SUBSTR (v_lines_arr (i), 234, 55));
+                            v_num_cuenta := TRIM (SUBSTR (v_lines_arr (i), 190, 10));
+                              
+                                          
+                              BEGIN
+                              SELECT xacct.PERSON_NUMBER 
+                                    ,xacct.FULL_NAME
+                                    ,xacct.PERSON_ID
+                                    ,xacct.NOMBRE_METODO_PAGO
+                                    ,xacct.EFFECTIVE_START_DATE
+                                    ,xacct.NUMERO_TARJERA
+                                    ,xacct.ASSINGMENT_NUMBER
+                                    ,xacct.ATRIBUTO1
+                                    ,xacct.ATRIBUTO2
+                                    ,xacct.ATRIBUTO3
+                                    ,xacct.ATRIBUTO4
+                                    ,xacct.ATRIBUTO5
+                                  INTO L_PERSON_NUMBER
+                                  ,L_FULL_NAME
+                                  ,L_PERSON_ID
+                                  ,L_NOMBRE_METODO_PAGO
+                                  ,L_EFFECTIVE_START_DATE
+                                  ,L_NUMERO_TARJERA
+                                  ,L_ASSINGMENT_NUMBER
+                                  ,IBAN_NUMBER
+                                  ,L_EFFECTIVE_START_DATE_METODO
+                                  ,L_CHEQUE_ID
+                                  ,SOURCE_SYSTEM_OWNER
+                                  ,l_tipo_empleado_activo_baja
+                                  FROM XXGRG_CREA_CTASBAN_CORTAS_T xacct
+                                 WHERE xacct.NATIONAL_IDENTIFIER_NUMBER = l_curp;
+                                 --AND xacct.ATRIBUTO3 IS NOT NULL;
+                                EXCEPTION WHEN OTHERS THEN
+                                        L_PERSON_NUMBER := NULL;
+                                END;
+                        
+                                IF
+                                   v_error = 'OK'
+                                   AND v_error_no_update not like 
+                                       '%OKCLIENTECONCUENTAYPLASTICOEXISTENTE%'
+                                   AND v_num_cuenta != '0000000000'
+                                   and L_PERSON_NUMBER IS NOT NULL
+                                   AND (IBAN_NUMBER IS NULL
+                                    OR UPPER(IBAN_NUMBER) LIKE '%CHEQUE%'
+                                   )
+                                   AND L_CHEQUE_ID IS NOT NULL
+                                THEN
+                                              --  DBMS_OUTPUT.put_line(  v_total_actualizados1 + 1);
+                                l_metadata_h :=
+                                'MERGE|PersonalPaymentMethod|'||L_EFFECTIVE_START_DATE_METODO||'|4712/12/31|'||'CHEQUE'||'|MX Legislative Data Group|'||L_ASSINGMENT_NUMBER||'||'||IBAN_NUMBER||'|||||'||SOURCE_SYSTEM_OWNER||'|'||L_CHEQUE_ID||'|||';
+                                --
+                                --l_metadata_h := l_metadata_h ||
+                                --           'MERGE|PersonalPaymentMethod|'||L_EFFECTIVE_START_DATE||'|4712/12/31|NOMINA|MX Legislative Data Group|'||L_ASSINGMENT_NUMBER||'|100|'||L_NOMBRE_METODO_PAGO||'|BBVA BANCOMER, S.A.|0012|'||v_num_cuenta||'|MX|HRC_SQLLOADER|PPM'||REPLACE(REPLACE(L_ASSINGMENT_NUMBER,'E'),'-','_')||'|||Percentage';
+                                l_all_metadatas_h := l_all_metadatas_h || CHR (10) ||
+                                l_metadata_h;
+                                
+                                    l_log := l_log ||'Actualiza Cuenta del Empleado: |'||L_PERSON_NUMBER||' | '||' Nombre: |' ||l_full_name||' | CUENTA |'||v_num_cuenta ||'|' ||' Fecha aplicación: |' ||L_EFFECTIVE_START_DATE ||' | Empleado: | '||CASE WHEN l_tipo_empleado_activo_baja IS NULL THEN 'ACTIVO' ELSE 'BAJA | '|| l_tipo_empleado_activo_baja END||CHR (10);
+                                
+                                    l_total_actualizados := l_total_actualizados + 1;
+                                ELSE 
+                                    
+                                    IF v_error = 'OK' AND IBAN_NUMBER LIKE '%EFT%' THEN 
+                                        l_log := l_log ||'Empleado con Error ya cuenta con numero de cuenta: |' ||L_PERSON_NUMBER||' | '||' Nombre: |' ||l_full_name||' | '||v_error_no_update_v1 ||' | Fecha aplicación: |' ||L_EFFECTIVE_START_DATE ||' | Empleado: | '||CASE WHEN l_tipo_empleado_activo_baja IS NULL THEN 'ACTIVO' ELSE 'BAJA | '|| l_tipo_empleado_activo_baja END||CHR (10);
+                                    --
+                                    ELSE
+
+                                        l_log := l_log ||'Empleado con Error: |' ||L_PERSON_NUMBER||' | '||' Nombre: ' ||l_full_name||' | '||v_error_no_update_v1 ||' | Fecha aplicación: |' ||L_EFFECTIVE_START_DATE ||' | Empleado: | '||CASE WHEN l_tipo_empleado_activo_baja IS NULL THEN 'ACTIVO' ELSE 'BAJA | '|| l_tipo_empleado_activo_baja END||CHR (10);
+                                    END IF;
+                                    
+                                    l_total_error := l_total_error + 1;
+ 
+ 
+                                END IF;
+                        END IF; --TIPO ARCHIVO
+                END IF; --="02"    
+               
+ 
+                --
+                L_PERSON_NUMBER := NULL;
+                L_FULL_NAME := NULL;
+                L_PERSON_ID := NULL;
+                L_NOMBRE_METODO_PAGO := NULL;
+                L_BANK_NUMBER := NULL;
+                L_EFFECTIVE_START_DATE := NULL;
+                L_NUMERO_TARJERA := NULL;
+                l_curp := NULL;
+                l_full_name := NULL;
+                L_ASSINGMENT_NUMBER := NULL;
+                IBAN_NUMBER := NULL;
+                SOURCE_SYSTEM_OWNER := null;
+                l_tipo_empleado_activo_baja := NULL;
+				
+               
+        END LOOP;
+      ELSIF p_tipo_archivo = '3' AND p_archivo IS NOT NULL THEN      --CARGAR EL SEGUNDO TEMPLATE 
+        l_all_metadatas_h := 
+                --'METADATA|PersonalPaymentMethod|PersonalPaymentMethodId|EffectiveStartDate|EffectiveEndDate|LegislativeDataGroupId|PersonalPaymentMethodCode|OrganizationPaymentMethodId|PaymentAmountType|Amount|Percentage|ProcessingOrder|RunTypeId|BankAccountId|LegislativeDataGroupName|AssignmentNumber|OrganizationPaymentMethodCode|RunTypeCode|BankName|BankBranchName|BankAccountNumber|BankCountryCode|GUID|SourceSystemOwner|SourceSystemId|AssignmentId|BankBranchNumber|BankNumber|BankAccountType|SecondaryAccountReference|SourceRefTableName=<source-table-name>|SourceRef001=<source-column-001>|SourceRef002=<source-column-002>|SourceRef003=<source-column-003>|SourceRef004=<source-column-004>|SourceRef005=<source-column-005>|SourceRef006=<source-column-006>|SourceRef007=<source-column-007>|SourceRef008=<source-column-008>|SourceRef009=<source-column-009>|SourceRef010=<source-column-010>';
+                'METADATA|PersonalPaymentMethod|EffectiveStartDate|EffectiveEndDate|PersonalPaymentMethodCode|LegislativeDataGroupName|AssignmentNumber|Percentage|OrganizationPaymentMethodCode|BankName|BankBranchNumber|BankAccountNumber|BankCountryCode|SourceSystemOwner|SourceSystemId|BankAccountType|ProcessingOrder|PaymentAmountType';
+                
+            l_all_metadatas_l := NULL;
+            
+        l_nombre_archivo_p := 'PersonalPaymentMethod';
+        
+        v_lines_arr := apex_string.split (p_archivo);
+    
+        FOR i IN 2 .. v_lines_arr.COUNT  LOOP
+            
+            IF SUBSTR (v_lines_arr (i), 1, 2) = '02' THEN
+            
+                    IF l_tipo_archivo = 'LARGAS' THEN
+                    
+                            v_num_empl := TRIM (SUBSTR (v_lines_arr (i), 206, 8));
+                            dbms_output.put_line ('numero empleado: ' ||v_num_empl );
+                            v_num_cuenta := TRIM (SUBSTR (v_lines_arr (i), 449, 10));
+                            dbms_output.put_line ('numero cuenta: '||v_num_cuenta );
+                            v_error := TRIM (SUBSTR (v_lines_arr (i), 511, 2) );
+                            v_error_no_update := TRIM (SUBSTR (v_lines_arr (i), 511, 49) );
+                              
+                        
+ 
+                    ELSIF l_tipo_archivo = 'CORTAS' THEN
+                            l_total := l_total + 1;
+                            l_curp := TRIM (SUBSTR (v_lines_arr (i), 3, 18));
+                            dbms_output.put_line ('CURP: ' ||l_curp );
+                            v_error := TRIM (SUBSTR (v_lines_arr (i), 234, 2));
+                            v_error_no_update :=TRIM (REPLACE (SUBSTR (v_lines_arr (i), 234, 55), ' ', ''));
+                            v_error_no_update_v1 := TRIM(SUBSTR (v_lines_arr (i), 234, 55));
+                            v_num_cuenta := TRIM (SUBSTR (v_lines_arr (i), 190, 10));
+                              
+                                          
+                              BEGIN
+                              SELECT xacct.PERSON_NUMBER 
+                                    ,xacct.FULL_NAME
+                                    ,xacct.PERSON_ID
+                                    ,xacct.NOMBRE_METODO_PAGO
+                                    ,xacct.EFFECTIVE_START_DATE
+                                    ,xacct.NUMERO_TARJERA
+                                    ,xacct.ASSINGMENT_NUMBER
+                                    ,xacct.ATRIBUTO1
+                                    ,xacct.ATRIBUTO2
+                                    ,xacct.ATRIBUTO3
+                                    ,xacct.ATRIBUTO5
+                                  INTO L_PERSON_NUMBER
+                                  ,L_FULL_NAME
+                                  ,L_PERSON_ID
+                                  ,L_NOMBRE_METODO_PAGO
+                                  ,L_EFFECTIVE_START_DATE
+                                  ,L_NUMERO_TARJERA
+                                  ,L_ASSINGMENT_NUMBER
+                                  ,IBAN_NUMBER
+                                  ,L_EFFECTIVE_START_DATE_METODO
+                                  ,L_CHEQUE_ID
+                                  ,l_tipo_empleado_activo_baja
+                                  FROM XXGRG_CREA_CTASBAN_CORTAS_T xacct
+                                 WHERE xacct.NATIONAL_IDENTIFIER_NUMBER = l_curp;
+                                 --AND xacct.ATRIBUTO3 IS NOT NULL;
+                                EXCEPTION WHEN OTHERS THEN
+                                        L_PERSON_NUMBER := NULL;
+                                END;
+                        
+                                IF
+                                   v_error = 'OK'
+                                   AND v_error_no_update not like 
+                                       '%OKCLIENTECONCUENTAYPLASTICOEXISTENTE%'
+                                   AND v_num_cuenta != '0000000000'
+                                   and L_PERSON_NUMBER IS NOT NULL
+                                   AND (IBAN_NUMBER IS NULL
+                                    OR UPPER(IBAN_NUMBER) LIKE '%CHEQUE%'
+                                   )
+                                   AND L_CHEQUE_ID IS NOT NULL
+                                THEN
+                                              --  DBMS_OUTPUT.put_line(  v_total_actualizados1 + 1);
+                                --l_metadata_h :=
+                                --'MERGE|PersonalPaymentMethod|'||L_EFFECTIVE_START_DATE_METODO||'|4712/12/31|'||'CHEQUE'||'|MX Legislative Data Group|'||L_ASSINGMENT_NUMBER||'||'||IBAN_NUMBER||'|||||FUSION|'||L_CHEQUE_ID||'|||'|| CHR (10);
+                                --
+								 l_sequence := XXGRG_CTA_CORTA_SOURCE_SEQ.NEXTVAL;
+	
+ 
+       -- l_metadata_h := 'MERGE|PersonalPaymentMethod|'||L_EFFECTIVE_START_DATE||'|4712/12/31|NOMINA|MX Legislative Data Group|'||L_ASSINGMENT_NUMBER||'|100|'||L_NOMBRE_METODO_PAGO||'|BBVA BANCOMER, S.A.|0012|'||v_num_cuenta||'|MX|HRC_SQLLOADER|PPM'||REPLACE(REPLACE(L_ASSINGMENT_NUMBER,'E'),'-','_')||l_sequence||'|DEBIT||Porcentaje'; --Percentage						 
+								 
+                                 l_metadata_h := 'MERGE|PersonalPaymentMethod|'||L_EFFECTIVE_START_DATE||'|4712/12/31|NOMINA|MX Legislative Data Group|'||L_ASSINGMENT_NUMBER||'|100|'||L_NOMBRE_METODO_PAGO||'|BBVA BANCOMER, S.A.|0012|'||v_num_cuenta||'|MX|HRC_SQLLOADER|PPM'||REPLACE(REPLACE(L_ASSINGMENT_NUMBER,'E'),'-','_')||l_sequence||'|DEBIT||Porcentaje'; --Percentage
+                                l_all_metadatas_h := l_all_metadatas_h || CHR (10) ||
+                               
+							   l_metadata_h;
+                                dbms_output.put_line ('l_log: ' ||l_all_metadatas_h);
+                                    l_log := l_log ||'Actualiza Cuenta del Empleado: |'||L_PERSON_NUMBER||' | '||' Nombre: |' ||l_full_name||' | CUENTA |'||v_num_cuenta ||'|' ||' Fecha aplicación: |' ||L_EFFECTIVE_START_DATE ||' | Empleado: | '||CASE WHEN l_tipo_empleado_activo_baja IS NULL THEN 'ACTIVO' ELSE 'BAJA | '|| l_tipo_empleado_activo_baja END||CHR (10);
+                                
+                                    l_total_actualizados := l_total_actualizados + 1;
+                                ELSE 
+                                    
+                                    IF v_error = 'OK' AND IBAN_NUMBER LIKE '%EFT%' THEN 
+                                        l_log := l_log ||'Empleado con Error ya cuenta con numero de cuenta: |' ||L_PERSON_NUMBER||' | '||' Nombre: |' ||l_full_name||' | '||v_error_no_update_v1 ||' | Fecha aplicación: |' ||L_EFFECTIVE_START_DATE ||' | Empleado: | '||CASE WHEN l_tipo_empleado_activo_baja IS NULL THEN 'ACTIVO' ELSE 'BAJA | '|| l_tipo_empleado_activo_baja END||CHR (10);
+                                    --
+                                    ELSE
+                                        l_log := l_log ||'Empleado con Error: |' ||L_PERSON_NUMBER||' | '||' Nombre: ' ||l_full_name||' | '||v_error_no_update_v1 ||' | Fecha aplicación: |' ||L_EFFECTIVE_START_DATE ||' | Empleado: | '||CASE WHEN l_tipo_empleado_activo_baja IS NULL THEN 'ACTIVO' ELSE 'BAJA | '|| l_tipo_empleado_activo_baja END||CHR (10);
+                                    END IF;
+                                    
+                                    l_total_error := l_total_error + 1;
+ 
+ 
+                                END IF;
+                        END IF; --TIPO ARCHIVO
+                END IF; --="02"    
+                
+				-- XXTOKS_ACT_CUEN_BAN_CORTA_PKG.prueba_correo( p_nombre_archivo 	=> p_nombre_archivo,
+				-- 											 p_tipo_archivo 	=> p_tipo_archivo); 
+				---+ENVIO DE CORREOS A LAS DISTINTAS UNIDADES, DEPENDIENDO DEL TIPO DE RESPUESTA
+				-- XXTOKS_ACT_CUEN_BAN_CORTA_PKG.prueba_correo(p_curp => l_curp,
+				--                                 			p_error_no_update   => v_error_no_update,
+				-- 											p_error_no_update_v1 => v_error_no_update_v1,
+				-- 											p_NUMERO_TARJERA => L_NUMERO_TARJERA);
+                --
+                L_PERSON_NUMBER := NULL;
+                L_FULL_NAME := NULL;
+                L_PERSON_ID := NULL;
+                L_NOMBRE_METODO_PAGO := NULL;
+                L_BANK_NUMBER := NULL;
+                L_EFFECTIVE_START_DATE := NULL;
+                L_NUMERO_TARJERA := NULL;
+                l_curp := NULL;
+                l_full_name := NULL;
+                L_ASSINGMENT_NUMBER := NULL;
+                IBAN_NUMBER := NULL;
+                l_tipo_empleado_activo_baja := NULL;
+				
+        END LOOP;
+      END IF; --- IF DE TIPO DE TEMPLATE
+     --dbms_output.put_line ('l_log: ' ||l_log);
+        l_all_metadatas_h := l_all_metadatas_h || CHR (10) || l_all_metadatas_l;
+        dbms_output.put_line ('l_log: ' ||l_all_metadatas_h);
+       as_zip.add1file (l_zipped_blob,
+                   l_nombre_archivo_p||'.dat',
+                   UTL_RAW.cast_to_raw (l_all_metadatas_h));
+        as_zip.finish_zip (l_zipped_blob);
+        
+--        l_base64enconde := GRG_PAY_ZIP_FILE_PKG.base64_file (
+--                                                              'XXTOKS_OUTGOING'  -- ruta
+--                                                            ,'ActualizaCuentas.zip' --nombre archivo zip
+--        													);
+        
+        l_tempname :='ActualizaCuentas' || TO_CHAR (SYSDATE, 'YYYYMMDDHHMISS');
+        x_tempname := l_tempname;
+        x_tempname_zip := 'ActualizaCuentas' || TO_CHAR (SYSDATE, 'YYYYMMDDHHMISS') || '.zip';
+        AS_ZIP.SAVE_ZIP (l_zipped_blob,
+                             'GRG_PAY_HDL',
+                             x_tempname);
+        l_base64enconde := BASE64_ENCODE_F (l_zipped_blob);
+ 
+    l_log := l_log ||'Total Empleados: |'|| l_total || CHR (10);
+    l_log := l_log ||'Total empleados con error: |'|| l_total_error || CHR (10);
+    l_log := l_log ||'Total empleados actualizados: |'|| l_total_actualizados || CHR (10);
+    IF p_tipo_archivo = '1' AND p_archivo IS NOT NULL THEN
+        l_log := l_log ||'-------------------------------------------------------------------'|| CHR (10);
+        l_log := l_log ||'----------------RELACION DE METODO DE PAGO CON CUENTA PARTE 1--------------'|| CHR (10);
+    END IF;
+    IF p_tipo_archivo = '2' AND p_archivo IS NOT NULL THEN
+        l_log := l_log ||'-------------------------------------------------------------------'|| CHR (10);
+        l_log := l_log ||'----------------RELACION DE METODO DE PAGO CON CUENTA PARTE 2--------------'|| CHR (10);
+    END IF;
+    
+    UPDATE PAY.ARCHIVOS_CUENTAS_CORTAS 
+    SET LINEAS_LOG = LINEAS_LOG || l_log
+    , ID_LOG = 'Y'
+    WHERE 1 = 1
+    AND NOMBRE_ARCHIVO = p_nombre_archivo;
+    COMMIT;
+    
+    p_status := 20;
+    apex_json.open_object;
+    apex_json.write('status', p_status);
+    apex_json.write('v_total_actualizados', v_total_actualizados);
+    apex_json.write('status_carga', status_carga);
+    apex_json.write('nombre_archivo', x_tempname);
+    apex_json.write('nombre_archivo_zip', x_tempname_zip);
+    apex_json.write('archivo_base64', l_base64enconde);
+    apex_json.close_object;
+ 
+    EXCEPTION
+        WHEN ERROR_NOT_FOUND
+        THEN
+        p_status := 10;
+        apex_json.open_object;
+       apex_json.write('status', p_status);
+	    apex_json.write('v_total_actualizados', v_total_actualizados);
+        apex_json.write('status_carga', 'N');
+       apex_json.close_object;
+   
+       --     DBMS_OUTPUT.put_line ('No se encontraron datos');
+ 
+	
+ 
+    END crear_cuentas_bancarias_cortas;
+	
+----------------
+	-------+ PROCEDIMIENTO PARA EL ENVIO DE CORREOS +--------
+	---------------------------------------------------------
+	PROCEDURE  envio_notificaciones_ctas (	p_nombre_archivo IN VARCHAR2,
+			                        		p_tipo_archivo   IN VARCHAR2) IS
+									  
+			v_body_html  VARCHAR2(4000);
+			v_from       VARCHAR2(250)  := 'no-reply@toks.com.mx';
+			v_subject    VARCHAR2(300);             --Asunto
+		    --+ VARIABLES DESARMADO DE ARCHIVO
+			v_lines_arr apex_t_varchar2;
+			p_archivo        CLOB;
+			l_tipo_archivo   VARCHAR2(250);
+			--++
+			v_tipo_archivo    VARCHAR2(250);
+			v_curp_empleado   VARCHAR2(250);
+			v_correo_empleado VARCHAR2(250);
+			v_atributo4       VARCHAR2(250);
+			v_numero_tarjeta  VARCHAR2(250);
+			v_nombre_empleado VARCHAR2(250);
+			v_atributo7       VARCHAR2(250);
+			v_atributo8       VARCHAR2(250);
+			v_atributo9       VARCHAR2(250);
+			v_tipo_respuesta  VARCHAR2(250);		
+			acum_numero_tarjeta VARCHAR2(500);					  
+			---++ variables cursor
+			v_correo	 VARCHAR2(250);
+			v_nombre	 VARCHAR2(250);
+			v_respuesta  VARCHAR2(250);
+			v_asunto     VARCHAR2(250);
+			v_curp       VARCHAR2(250);
+			v_nombre_metodo_pago 	VARCHAR2(250);
+				
+		CURSOR c_lista_respuestas IS
+ 
+	SELECT 	glrb.curp_empleado,
+	   		geb.full_name,
+	   		glrb.tipo_respuesta,
+	   		glrb.asunto,
+	   		gmlr.correo_unidad,
+			geb.nombre_metodo_pago
+	FROM 	GRG_LISTA_RESPUESTAS_BBVA glrb,
+	 		GRG_EMP_BASE geb,
+	 		grg_mail_lista_resp	   gmlr
+	WHERE 1=1
+	AND geb.national_identifier_number 	= glrb.curp_empleado
+	AND geb.location_id       			= gmlr.unidad
+	--AND glrb.status 					= 'PROCESANDO'
+	AND geb.national_identifier_number 	= v_curp_empleado;
+	BEGIN
+			
+		SELECT  lineas_archivo,
+				tipo_archivo
+        INTO    p_archivo, 
+				l_tipo_archivo
+        FROM    archivos_cuentas_cortas                                           
+        WHERE   1 =1 
+        AND nombre_archivo = p_nombre_archivo;
+				
+ 
+		EXECUTE IMMEDIATE ('TRUNCATE TABLE GRG_LISTA_RESPUESTAS_BBVA');
+        COMMIT;
+		--+
+			v_lines_arr := apex_string.split (p_archivo);
+    
+			FOR i IN 2 .. v_lines_arr.COUNT -1  LOOP
+            
+				IF SUBSTR (v_lines_arr (i), 1, 2) = '02' THEN
+                    
+					IF  l_tipo_archivo = 'CORTAS' THEN
+						    
+                        v_tipo_archivo              := TRIM (SUBSTR (v_lines_arr (i), 1, 2));
+						v_curp_empleado             := TRIM (SUBSTR (v_lines_arr (i), 3, 18));
+						v_correo_empleado           := TRIM (SUBSTR (v_lines_arr (i), 21, 50));
+						v_atributo4                 := TRIM (SUBSTR (v_lines_arr (i), 71, 14));
+						v_numero_tarjeta			:= TRIM (SUBSTR (v_lines_arr (i), 85, 16));
+						v_nombre_empleado           := TRIM (SUBSTR (v_lines_arr (i), 130, 60));
+						v_atributo7                 := TRIM (SUBSTR (v_lines_arr (i), 190, 26));
+						v_atributo8                 := TRIM (SUBSTR (v_lines_arr (i), 216, 18));
+						v_atributo9                 := TRIM (SUBSTR (v_lines_arr (i), 234, 15));
+						v_tipo_respuesta            := TRIM (REPLACE (SUBSTR (v_lines_arr (i), 249, 52), ' ', ''));
+						v_subject                   := TRIM (SUBSTR (v_lines_arr (i), 249, 52));
+ 
+					INSERT INTO GRG_LISTA_RESPUESTAS_BBVA( 
+                                  TIPO_ARCHIVO
+								, CURP_EMPLEADO
+								, CORREO_EMPLEADO
+								, ATRIBUTO4
+								, NUMERO_TARJETA
+								, NOMBRE_EMPLEADO
+								, ATRIBUTO7
+								, ATRIBUTO8
+								, ATRIBUTO9
+								, TIPO_RESPUESTA 
+								, ASUNTO
+                                , STATUS        
+							)VALUES(
+									v_tipo_archivo      ,
+									v_curp_empleado     ,
+									v_correo_empleado   ,
+									v_atributo4         ,
+									v_numero_tarjeta    ,
+									v_nombre_empleado   ,
+									v_atributo7         ,
+									v_atributo8         ,
+									v_atributo9         ,
+									v_tipo_respuesta    ,
+									v_subject           ,
+                                    'PROCESANDO'
+								);
+                    COMMIT;
+ 
+                            IF NOT c_lista_respuestas%ISOPEN THEN
+                            OPEN c_lista_respuestas;
+                            END IF;
+								
+                            LOOP 
+							FETCH c_lista_respuestas
+							INTO  v_curp,
+								  v_nombre,
+								  v_respuesta,
+								  v_asunto,
+								  v_correo,
+								  v_nombre_metodo_pago;
+							EXIT WHEN c_lista_respuestas%NOTFOUND;
+								
+								DBMS_OUTPUT.PUT_LINE ('FETCH #: '			||c_lista_respuestas%ROWCOUNT);
+								DBMS_OUTPUT.PUT_LINE ('Nombre: '  			||v_nombre);
+								DBMS_OUTPUT.PUT_LINE ('Correo: '  			||v_correo);
+								DBMS_OUTPUT.PUT_LINE ('Tipo de Respuesta: '	||v_respuesta);
+								DBMS_OUTPUT.PUT_LINE ('Curp: ' 				||v_curp);
+								DBMS_OUTPUT.PUT_LINE ('Asunto: ' 				||v_asunto);
+								DBMS_OUTPUT.PUT_LINE ('Número de tarjeta: '	||v_numero_tarjeta);
+								DBMS_OUTPUT.PUT_LINE ('Metodo pago: '		||v_nombre_metodo_pago);
+								DBMS_OUTPUT.PUT_LINE('-----------------------------------------');
+							END LOOP;
+							
+							IF c_lista_respuestas%ISOPEN THEN
+          					CLOSE c_lista_respuestas;
+							END IF;
+							
+						--END IF;
+				    END IF;
+						
+						IF v_respuesta LIKE '%TARJETANOASIGNADAAESTAEMPRESA%' THEN
+ 
+							v_body_html := 
+							'<html>'||
+								'<head>'||
+									'<style type="text/css">'||
+										' .container .main .texto-img{ display: flex; } ' ||
+										' .container .main .texto-img .thumb {  width: 10%;  }' ||
+										' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+										' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+										' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+									' </style> ' ||
+								'</head>'||
+								'<body>'||
+									' <div class="container"> ' ||
+										'<div class="main"> ' ||
+											'<div class="msj-usuario"> '||
+												'<p class="msj">'|| 'Solicitar al área de Reclutamiento una tarjeta nueva que corresponda a la empresa actual del colaborador '|| '<b>'||v_nombre||'</b>' ||'</p>'||
+											'</div>'||
+											'<div class="msj-usuario"> '||
+											'</div>'||
+											'<div class="texto-img">'||
+												'<div class="txtImagen">'||
+														'<b>Atentamente <br/>'||
+														'Grupo Restaurantero Gigante</b> <br/><br/>'||
+												'</div>'||
+												'<div class="thumb">' ||
+													'<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+												'</div>'||
+											'</div>'||
+										'</div>'||
+									'</div>'||
+								'</body>'||
+							'</html>';
+							
+                                    
+							apex_mail.send(	p_to        =>    v_correo,
+											p_from      =>    v_from,
+											p_subj      =>    v_asunto,
+											p_body      =>    NULL,
+											p_body_html =>    v_body_html);
+ 
+                    --+
+                    --+
+ 
+						ELSIF v_respuesta LIKE '%TARJETAYAESTAASIGNADA%' THEN
+                
+							acum_numero_tarjeta := acum_numero_tarjeta||'<b>'|| 'Nombre: '||'</b>'||v_nombre||', '||'<b>'||'Número de Tarjeta: '||'</b>'||v_numero_tarjeta||'<br/>'||chr(13);
+ 
+                    --+
+                    --+
+ 
+						ELSIF v_respuesta 	LIKE '%VALIDARCURPYPOSTERIORMENTEENVIARLO%'
+						OR 	  v_respuesta	LIKE '%LACURPSEENCUENTRAINACTIVA%' THEN
+                
+							v_body_html := 
+								'<html>'||
+									'<head>'||
+										'<style type="text/css">'||
+											' .container .main .texto-img{ display: flex; } ' ||
+											' .container .main .texto-img .thumb {  width: 10%;  }' ||
+											' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+											' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+											' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+										' </style> ' ||
+									'</head>'||
+									'<body>'||
+										' <div class="container"> ' ||
+											'<div class="main"> ' ||
+												'<div class="msj-usuario"> '||
+													'<p class="msj">'|| 'La solicitud de cuenta del colaborador ' ||'<b>'||v_nombre||'</b>'|| 
+													', no pudo ser asignada a la tarjeta que se le entrego debido a que se requiere validar CURP, 
+													solicitamos su valioso apoyo para enviar documento oficial de la CURP del colaborador para cotejo 
+													y revisión en sistema al correo gpo_nomina@toks.com.mx'
+													||'</p>'|| 
+												'</div>'||
+												'<div class="msj-usuario"> '||
+												'</div>'||
+												'<div class="texto-img">'||
+													'<div class="txtImagen">'||
+														'<b>Atentamente <br/>'||
+														'Grupo Restaurantero Gigante</b> <br/><br/>'||
+													'</div>'||
+													'<div class="thumb">' ||
+														'<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+													'</div>'||
+												'</div>'||
+											'</div>'||
+										'</div>'||
+									'</body>'||
+								'</html>';
+ 
+							apex_mail.send(	p_to        =>    v_correo,
+											p_from      =>    v_from,
+											p_subj      =>    v_asunto,
+											p_body      =>    NULL,
+											p_body_html =>    v_body_html );
+ 
+                    --+
+                    --+
+ 
+						ELSIF v_respuesta LIKE '%CAMPOCELULARDUPLICADOCONOTROREGISTRO%' THEN
+                    
+							v_body_html := 
+								'<html>'||
+									'<head>'||
+										'<style type="text/css">'||
+											' .container .main .texto-img{ display: flex; } ' ||
+											' .container .main .texto-img .thumb {  width: 10%;  }' ||
+											' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+											' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+											' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+										' </style> ' ||
+									'</head>'||
+									'<body>'||
+										' <div class="container"> ' ||
+											'<div class="main"> ' ||
+												'<div class="msj-usuario"> '||
+													'<p class="msj">'|| 'La solicitud de cuenta del colaborador '||'<b>'||v_nombre||'</b>'||', no pudo ser asignada a 
+													la tarjeta que se le entrego al ingresar debido a que el número telefónico que proporcionó el colaborador 
+													corresponde a otro colaborador, por favor solicitarle un número celular propio y enviarlo al correo 
+													gpo_nomina@toks.com.mx, para proceder con la corrección.'
+													||'</p>'||
+												'</div>'||
+												'<div class="msj-usuario"> '||
+												'</div>'||
+												'<div class="texto-img">'||
+													'<div class="txtImagen">'||
+														'<b>Atentamente <br/>'||
+													'Grupo Restaurantero Gigante</b> <br/><br/>'||
+													'</div>'||
+													'<div class="thumb">' ||
+														'<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+													'</div>'||
+												'</div>'||
+											'</div>'||
+										'</div>'||
+									'</body>'||
+								'</html>';
+
+							apex_mail.send(	p_to        =>    v_correo,
+											p_from      =>    v_from,
+											p_subj      =>    v_asunto,
+											p_body      =>    NULL,
+											p_body_html =>    v_body_html);
+ 
+                    --+
+                    --+				
+                    
+						ELSIF v_respuesta LIKE '%NUMERODECELULARINVALIDO%' THEN
+                
+							v_body_html := 
+								'<html>'||
+									'<head>'||
+										'<style type="text/css">'||
+											' .container .main .texto-img{ display: flex; } ' ||
+											' .container .main .texto-img .thumb {  width: 10%;  }' ||
+											' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+											' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+											' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+										' </style> ' ||
+									'</head>'||
+									'<body>'||
+										' <div class="container"> ' ||
+											'<div class="main"> ' ||
+												'<div class="msj-usuario"> '||
+													'<p class="msj">'|| 'La solicitud de cuenta BBVA del colaborador '||'<b>'||v_nombre||'</b>'|| 
+													', no pudo ser asignada a la tarjeta que se le entrego al ingresar debido a que el 
+													número telefónico que proporcionó el colaborador no corresponde a un equipo celular movil, 
+													solicitar al colaborador un número de celular movil y enviarlo al correo 
+													gpo_nomina@toks.com.mx, para proceder con la corrección.'
+													||'</p>'||
+												'</div>'||
+												'<div class="msj-usuario"> '||
+												'</div>'||
+												'<div class="texto-img">'||
+													'<div class="txtImagen">'||
+															'<b>Atentamente <br/>'||
+													'Grupo Restaurantero Gigante</b> <br/><br/>'||
+													'</div>'||
+													'<div class="thumb">' ||
+														'<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+														'</div>'||
+												'</div>'||
+											'</div>'||
+										'</div>'||
+									'</body>'||
+								'</html>';
+ 
+							apex_mail.send(	p_to        =>    v_correo,
+											p_from      =>    v_from,
+											p_subj      =>    v_asunto,
+											p_body      =>    NULL,
+											p_body_html =>    v_body_html);
+ 
+                    --+
+                    --+
+                    
+						ELSIF v_respuesta LIKE '%NOEXISTETARJETAENLATABLATPAN%' THEN
+                
+							v_body_html := 
+								'<html>'||
+									'<head>'||
+										'<style type="text/css">'||
+											' .container .main .texto-img{ display: flex; } ' ||
+											' .container .main .texto-img .thumb {  width: 10%;  }' ||
+											' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+											' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+											' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+										' </style> ' ||
+									'</head>'||
+									'<body>'||
+										' <div class="container"> ' ||
+											'<div class="main"> ' ||
+												'<div class="msj-usuario"> '||
+													'<p class="msj">'|| 'La solicitud de cuenta BBVA del colaborador ' ||'<b>'||v_nombre||'</b>'||
+													', no pudo ser asignada a la tarjeta que se le entrego al ingresar debido a que 
+													ingresó la tarjeta  al Cajerto Automatico antes de aplicar el deposito de nómina, 
+													por favor solicitar al Reclutador que lo contrato le otorgue un nuevo plástico y 
+													enviar el nuevo número de tarjeta a gpo_nomina@toks.com.mx para proceder con la corrección.'
+													||'</p>'||
+ 
+													'<p class="msj">'|| 'Indicar al colaborador cuando le otorguen la nueva tarjeta que espere 
+													a que se realice el deposito de nómina, el cual se puede confirmar cuando en su recibo de 
+													nómina en la parte inferior derecha en el campo "Deposito en Cuenta de Banco"  se refleje un 
+													número de 10 dígitos el cual corresponde a la cuenta que se asigno a la tarjeta.'
+													||'</p>'||
+												'</div>'||
+												'<div class="msj-usuario"> '||
+												'</div>'||
+												'<div class="texto-img">'||
+													'<div class="txtImagen">'||
+														'<b>Atentamente <br/>'||
+													'Grupo Restaurantero Gigante</b> <br/><br/>'||
+													'</div>'||
+													'<div class="thumb">' ||
+														'<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+													'</div>'||
+												'	</div>'||
+											'</div>'||
+										'</div>'||
+									'</body>'||
+								'</html>';
+ 
+							apex_mail.send(	p_to        =>    v_correo,
+											p_from      =>    v_from,
+											p_subj      =>    v_asunto,
+											p_body      =>    NULL,
+											p_body_html =>    v_body_html);
+                
+                    --+
+                    --+
+ 
+						ELSIF v_respuesta LIKE '%CLIENTECONCUENTAACTIVA%'
+						OR 	  v_respuesta LIKE '%CLIENTECONCTABBVA,ASISTIRA%'
+						OR    v_respuesta LIKE '%CLIENTECONCUENTAYPLASTICOEXISTENTE%'
+						OR 	  v_respuesta LIKE '%CLIENTEESPECIAL%' THEN
+                
+							v_body_html := 
+								'<html>'||
+									'<head>'||
+										'<style type="text/css">'||
+											' .container .main .texto-img{ display: flex; } ' ||
+											' .container .main .texto-img .thumb {  width: 10%;  }' ||
+											' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+											' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+											' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+										' </style> ' ||
+									'</head>'||
+									'<body>'||
+										' <div class="container"> ' ||
+											'<div class="main"> ' ||
+												'<div class="msj-usuario"> '|| 
+													'<p class="msj">'|| 'La respuesta por parte de BBVA al intentar asignar cuenta al colaborador '||'<b>'||v_nombre||'</b>'|| ' es que ya tiene una cuenta BBVA,  indicar al colabrador(a) para que se presente en 
+													cualquier sucursal BBVA con su Identificación Oficial Vigente y pida le proporcionen un comprobante del banco con los datos de su cuenta. la información que se requere es: cuenta (10 dígitos), 
+													CLABE Interbancaria (18 dígitos) y Número de tarjeta (16 dígitos).'
+													||'</p>'||
+ 
+													'<p class="msj">'|| ' Y enviar  los siguientes documentos escaneados al correo a gpo_nomina@toks.com.mx y vía valija en original al área de nómina en Centro de apoyo:'  
+													||'</p>'||
+                                                
+													'<p class="msj">'|| '1. Llenar el Formato de Consentimiento para deposito en cuenta BBVA (adjunto formato, por favor actualizar fecha) debidamente requisitado y firmado por el/la colaborador(a).'  
+													||'</p>'||
+                                                
+													'<p class="msj">'|| '2. Foto de Estado de Cuenta o comprobante por parte del banco en donde se muestre su nombre, número de cuenta y CLABE Interbancaria.'  
+													||'</p>'||
+ 
+													'<p class="msj">'|| '3. Foto de los 16 dígitos de la tarjeta que tiene asignada a esa cuenta.'  
+													||'</p>'||
+												'</div>'||
+												'<div class="texto-img">'||
+													'<div class="txtImagen">'||
+														'<b>Atentamente <br/>'||
+													'Grupo Restaurantero Gigante</b> <br/><br/>'||
+													'</div>'||
+													'<div class="thumb">' ||
+														'<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+													'</div>'||
+												'</div>'||
+											'</div>'||
+										'</div>'||
+									'</body>'||
+								'</html>';
+
+							apex_mail.send( p_to        =>    v_correo,
+											p_from      =>    v_from,
+											p_subj      =>    v_asunto,
+											p_body      =>    NULL,
+											p_body_html =>    v_body_html);        
+						END IF;
+                 
+				END IF; --+
+					--+ RESETEO DE VARIABLES PARA EVITAR DUPLICIDAD DE CORREOS
+					v_curp		:= NULL;
+					v_nombre	:= NULL;
+					v_respuesta	:= NULL;
+					v_asunto	:= NULL;
+					v_correo	:= NULL;
+ 
+		    END LOOP;
+	
+				IF LENGTH(TRIM(acum_numero_tarjeta)) > 2 THEN
+ 
+                     v_body_html := 
+                        '<html>'||
+						   '<head>'||
+								'<style type="text/css">'||
+                                    ' .container .main .texto-img{ display: flex; } ' ||
+                                    ' .container .main .texto-img .thumb {  width: 10%;  }' ||
+                                    ' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+                                    ' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+                                    ' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+							   ' </style> ' ||
+                            '</head>'||
+                            '<body>'||
+                                ' <div class="container"> ' ||
+                                        '<div class="main"> ' ||
+                                        '<div class="msj-usuario"> '||
+                                            '<p class="msj">'|| 'Listado de tarjetas ya asignadas:'
+                                            ||'</p>'||'<br>'
+                                            ||acum_numero_tarjeta||chr(13)||
+                                            
+                                        '</div>'||
+                                        '<div class="msj-usuario"> '||
+                                        '</div>'||
+                                        '<div class="texto-img">'||
+                                            '<div class="txtImagen">'||
+                                                '<b>Atentamente <br/>'||
+                                            'Grupo Restaurantero Gigante</b> <br/><br/>'||
+                                            '</div>'||
+                                            '<div class="thumb">' ||
+                                                '<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+                                            '</div>'||
+                                        '</div>'||
+                                    '</div>'||
+                                '</div>'||
+                            '</body>'||
+						'</html>';
+                        
+                    apex_mail.send(	p_to    	=>    'alancontreras199720@gmail.com,luisroberto181@gmail.com,luisroberto.estrada@4ce.com.mx,alanrogelio.contreras@4ce.com.mx',
+                                    p_from      =>    v_from,
+                                    p_subj      =>    'TARJETA YA ESTA ASIGNADA',
+                                    p_body      =>    NULL,
+                                    p_body_html =>    v_body_html);
+							
+                END IF;
+			
+            --update GRG_LISTA_RESPUESTAS_BBVA set status = 'ENVIADO';
+            --COMMIT;
+	
+	END envio_notificaciones_ctas;  
+END XXTOKS_ACT_CUEN_BAN_CORTA_PKG;
+/
