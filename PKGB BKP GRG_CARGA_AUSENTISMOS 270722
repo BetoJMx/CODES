@@ -1,0 +1,801 @@
+--PKGB BKP GRG_CARGA_AUSENTISMOS 270722
+create or replace PACKAGE BODY     GRG_CARGA_AUSENTISMOS 
+AS
+PROCEDURE output (p_message IN VARCHAR2)
+    IS
+    BEGIN
+        UTL_FILE.put_line (v_file_load, p_message);
+        DBMS_OUTPUT.put_line (p_message);
+    EXCEPTION
+    WHEN UTL_FILE.invalid_path THEN
+        raise_application_error (-20000, 'ERROR: Invalid PATH FOR file. '||SQLERRM);
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.put_line (p_message);
+    END output;  
+--+
+--+
+FUNCTION schedule_hdl (  
+                        archivo      IN VARCHAR2,
+                        p_id_proces  IN VARCHAR2
+                      ) RETURN VARCHAR2
+IS                  
+    l_ws_url             VARCHAR2 (500);  
+    l_ws_action          VARCHAR2 (500) := 'urn:GenericSoap/GenericSoapOperation';  
+    l_ws_response_clob   CLOB;  
+    l_ws_envelope        CLOB;  
+    l_message            VARCHAR2 (50);  
+    l_ws_token           VARCHAR2(3650); 
+    l_tipo               varchar2(50);
+    V_ID                 VARCHAR2(200);
+
+BEGIN  
+
+    l_ws_envelope :=  
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:typ="http://xmlns.oracle.com/apps/hcm/common/dataLoader/core/dataLoaderIntegrationService/types/">    
+            <soapenv:Body>    
+            <typ:importAndLoadData>    
+            <typ:ContentId>' || archivo || '</typ:ContentId>    
+            <typ:Parameters/>    
+            </typ:importAndLoadData>    
+            </soapenv:Body>    
+        </soapenv:Envelope>';  
+
+    GRG_COMMON_CONNECTIONS.get_security_token( l_ws_token ,'DEV2'); 
+    
+    apex_web_service.g_request_headers (1).name  := 'Authorization'; 
+    apex_web_service.g_request_headers (1).value :=  l_ws_token; 
+    
+    l_ws_url := GRG_COMMON_CONNECTIONS.get_parameter('HDL_URL' ,'DEV2'); 
+
+    apex_web_service.g_request_headers (2).name := 'SOAPAction';  
+    apex_web_service.g_request_headers (2).VALUE := l_ws_action;  
+    apex_web_service.g_request_headers (3).name := 'Content-Type';  
+    apex_web_service.g_request_headers (3).VALUE :=  'text/xml; charset=UTF-8';  
+    
+    l_ws_response_clob  :=  apex_web_service.make_rest_request (  
+                                p_url           => l_ws_url,  
+                                p_http_method   => 'POST',  
+                                p_body          => l_ws_envelope
+                            );  
+
+    SELECT  MAX(hdl_process_id) 
+    into    l_message
+    FROM    XMLTABLE(
+                xmlnamespaces (
+                    'http://schemas.xmlsoap.org/soap/envelope/'   AS "env",
+                    'http://xmlns.oracle.com/apps/hcm/common/dataLoader/core/dataLoaderIntegrationService/types/' AS "ns0"),
+                '/env:Envelope/env:Body/ns0:importAndLoadDataResponse'
+                PASSING XMLTYPE.createXML( l_ws_response_clob )
+                COLUMNS hdl_process_id   NUMBER PATH 'ns0:result'
+            ) dat;
+    
+    V_ID := l_message;
+    UPDATE  GRG_CARGA_AUSENTISMOS_LOG
+    SET     ID_HDL = V_ID,
+            STATUS = 'FINALIZADO'
+    WHERE   ID = p_id_proces;
+    RETURN  l_message;
+    
+    COMMIT;
+    EXCEPTION WHEN OTHERS  
+    THEN  
+        DBMS_OUTPUT.put_line ('Error al enviar archivo en schedule_hdl: ' || SQLERRM);  
+
+END schedule_hdl;
+--+
+--+
+PROCEDURE create_hdl(
+                            p_hdl_id      IN NUMBER,
+                            p_hdl_name    IN VARCHAR2,
+                            p_hdl_content IN CLOB,
+                            p_type        IN VARCHAR2,
+                            x_hdl_id      OUT NUMBER,
+                            x_hdl_name    OUT VARCHAR2
+                        )
+IS 
+    l_base64enconde     CLOB;
+    l_ws_envelope       CLOB;
+    l_tempname          CLOB;
+    l_archivo           CLOB;
+    v_archivo           CLOB := p_hdl_content;
+    l_ws_url            VARCHAR2 (500) ;
+    l_ws_action         VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest';
+    l_ws_response_clob  CLOB;
+    l_result            CLOB;
+    l_zip_file          VARCHAR2(3650);
+    l_directory_path    VARCHAR2(3650);
+    l_ws_token          VARCHAR2(3650);
+    v_error_msg         VARCHAR2(512);
+
+BEGIN
+    l_archivo   := DECODEBASE64(v_archivo);
+    v_file_load := UTL_FILE.fopen('GRG_PAY_HDL', p_hdl_name||'.dat','w',32767);
+
+    output(l_archivo);
+    UTL_FILE.fclose (v_file_load);
+    -----proceso de creacion del zip
+    BEGIN
+
+        SELECT  directory_path
+        INTO    l_directory_path
+        FROM    all_directories
+        WHERE   directory_name = 'GRG_PAY_HDL';
+
+        dbms_output.put_line('DIRECTORIO: '||l_directory_path);
+        EXCEPTION
+            WHEN OTHERS THEN
+                    dbms_output.put_line ('ERROR: Al obtener el directorio --> '||SQLERRM); 
+
+    END;
+    
+    l_tempname  := p_hdl_name||'_'||p_hdl_id;
+    l_zip_file  := GRG_PAY_ZIP_FILE_PKG.zip_file( 
+                                            l_directory_path
+                                            ,p_hdl_name||'.dat'
+                                            ,l_tempname||'.zip'
+                                        );
+
+    l_base64enconde := GRG_PAY_ZIP_FILE_PKG.base64_file (l_directory_path,l_tempname||'.zip');
+    
+    l_ws_envelope :=
+                    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ucm="http://www.oracle.com/UCM">  
+                    <soapenv:Body>  
+                            <ucm:GenericRequest webKey="cs">  
+                                <ucm:Service IdcService="CHECKIN_UNIVERSAL">  
+                                    <ucm:User/>  
+                                    <ucm:Document>  
+                                        <ucm:Field name="dDocName">'||l_tempname||'</ucm:Field>  
+                                        <ucm:Field name="dDocTitle">'||l_tempname||'.zip</ucm:Field>  
+                                        <ucm:Field name="dDocType">Document</ucm:Field>  
+                                        <ucm:Field name="dSecurityGroup">FAFusionImportExport</ucm:Field>  
+                                        <ucm:Field name="dDocAccount">hcm$/dataloader$/import$</ucm:Field>  
+                                        <ucm:Field name="primaryFile">'||l_tempname||'.zip</ucm:Field>  
+                                        <ucm:File href="'||l_tempname||'.zip" name="primaryFile">  
+                                            <ucm:Contents>'||l_base64enconde||'</ucm:Contents>  
+                                        </ucm:File>  
+                                    </ucm:Document>  
+                                </ucm:Service>  
+                            </ucm:GenericRequest>  
+                        </soapenv:Body>  
+                    </soapenv:Envelope>';
+    --------------------TOKEN-----------------------------
+    GRG_COMMON_CONNECTIONS.get_security_token( l_ws_token,'DEV2' );
+    apex_web_service.g_request_headers (1).name  := 'Authorization';
+    apex_web_service.g_request_headers (1).value := l_ws_token;
+    l_ws_url := GRG_COMMON_CONNECTIONS.get_parameter('IDCWS_URL','DEV2');
+    apex_web_service.g_request_headers (2).name := 'SOAPAction';
+    apex_web_service.g_request_headers (2).VALUE := l_ws_action;
+    apex_web_service.g_request_headers (3).name := 'Content-Type';
+    apex_web_service.g_request_headers (3).VALUE :='text/xml; charset=UTF-8';
+    DBMS_OUTPUT.put_line ('Envio archivo:' ||' '||l_ws_url);
+
+    l_ws_response_clob := apex_web_service.make_rest_request ( 
+                                                                p_url           => l_ws_url 
+                                                                ,p_http_method   => 'POST'
+                                                                ,p_body          => l_ws_envelope
+                                                                --,p_username      => l_user_name
+                                                                --,p_password      => l_password
+                                                             ); 
+    INSERT INTO GRG_CARGA_AUSENTISMOS_LOG   (
+                                                ID, 
+                                                EXEC_DATE_I, 
+                                                EXEC_DATE_F, 
+                                                HDL_DATA, 
+                                                STATUS, 
+                                                CREATION_DATE, 
+                                                HDL_NAME,
+                                                TYPE
+                                            ) VALUES (
+                                                p_hdl_id, 
+                                                SYSDATE - 5/24, 
+                                                SYSDATE - 5/24, 
+                                                l_archivo, 
+                                                'ENVIADO', 
+                                                SYSDATE - 5/24, 
+                                                l_tempname,
+                                                p_type
+                                            );
+    COMMIT;
+
+    l_result := schedule_hdl (l_tempname,p_hdl_id);
+    
+    DBMS_OUTPUT.PUT_LINE(l_result);
+    
+    x_hdl_id   := p_hdl_id;
+    x_hdl_name := p_hdl_name;
+    
+    EXCEPTION WHEN UTL_FILE.invalid_path  
+    THEN  
+        dbms_output.put_line('ERROR: Invalid PATH FOR file.');
+
+END create_hdl;  
+--+
+--+
+PROCEDURE main  (
+                    p_hdl_id      IN NUMBER,
+                    p_hdl_name    IN VARCHAR2,
+                    p_hdl_content IN CLOB,
+                    p_type        IN VARCHAR2,
+                    x_hdl_id      OUT NUMBER,
+                    x_hdl_name    OUT VARCHAR2,
+                    x_hdl_status  OUT VARCHAR2
+                )
+AS
+    v_contar NUMBER;
+BEGIN 
+    SELECT  COUNT(ID) TOTAL
+    INTO    v_contar
+    FROM    GRG_AE_HDL_LOG
+    WHERE   1=1
+            AND ID = p_hdl_id;
+
+    DBMS_OUTPUT.PUT_LINE(v_contar);
+    IF v_contar < 1 AND p_hdl_id IS NOT NULL THEN 
+        DBMS_OUTPUT.PUT_LINE('ENTRO');
+        BEGIN
+            IF p_hdl_name IS NOT NULL AND p_hdl_content IS NOT NULL THEN 
+            
+            GRG_CARGA_AUSENTISMOS.create_hdl(p_hdl_id,p_hdl_name,p_hdl_content,p_type,x_hdl_id,x_hdl_name);
+            x_hdl_status := 'PROCESO_ENVIADO';
+            ELSE
+            
+            x_hdl_id     := p_hdl_id;
+            x_hdl_name   := p_hdl_name;
+            x_hdl_status := 'No se puede generar el archivo .dat';   
+            END IF;
+        END;
+    ELSE 
+        x_hdl_id     := p_hdl_id;
+        x_hdl_name   := p_hdl_name;
+        x_hdl_status := 'PROCESO_NO_ENVIADO';
+    END IF;
+
+END main;
+--+
+--+
+PROCEDURE status(
+                    p_id_rastreo      IN VARCHAR2,
+                    x_hdl_name        OUT VARCHAR2,
+                    x_imported_status OUT VARCHAR2,
+                    x_loaded_status   OUT VARCHAR2,
+                    x_mensaje         OUT VARCHAR2,
+                    x_msg_detail      OUT VARCHAR2
+                )
+AS
+    l_ws_action          VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest';
+    l_ws_envelope        CLOB;
+    l_clob               CLOB;
+    v_hdl_name         VARCHAR2(350);
+    v_imported_status  VARCHAR2(350);
+    v_loaded_status    VARCHAR2(350);
+    v_mensaje          VARCHAR2(350);
+    v_msg_detail       VARCHAR2(350);
+    v_id_rastreo       VARCHAR2(350);
+BEGIN
+    SELECT  ID_HDL
+    INTO    v_id_rastreo
+    FROM    GRG_AE_HDL_LOG
+    WHERE   1 = 1
+            AND id = p_id_rastreo;
+    
+        l_ws_envelope :=    '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                                <soap:Body>
+                                    <pub:runReport>
+                                        <pub:reportRequest>
+                                            <pub:parameterNameValues>
+
+                                                <pub:item>
+                                                    <pub:name>P_CONTENT_ID</pub:name>
+                                                    <pub:values>
+                                                        <pub:item>'|| v_id_rastreo ||'</pub:item>
+                                                    </pub:values>
+                                                </pub:item>
+                                                            
+                                            </pub:parameterNameValues>
+                                        <pub:reportAbsolutePath>/Reportes Custom/PAY/GRG Automatizacion de Carga de Incidencias de AE/HDLCargaIncidenciasDT.xdo</pub:reportAbsolutePath>
+                                        <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+                                        </pub:reportRequest>
+                                    </pub:runReport>
+                                </soap:Body>
+                            </soap:Envelope>';
+--------------------TOKEN-------------------------
+--dbms_output.put_line(l_ws_envelope);
+    GRG_COMMON_CONNECTIONS.get_otbi_report(
+                                            l_ws_envelope   => l_ws_envelope
+                                            ,l_user_token    => NULL
+                                            ,x_ws_response   => l_clob 
+                                            ,p_instance_name => 'DEV2' 
+                                          );
+--dbms_output.put_line(l_clob);
+    FOR i IN (
+            SELECT  XML_DATA.UCM_CONTENT_ID
+                    ,XML_DATA.ARCHIVO
+                    ,XML_DATA.IMPORTED_STATUS
+                    ,XML_DATA.LOADED_STATUS
+                    ,XML_DATA.ZIP_FILE
+                    ,XML_DATA.MENSAJE
+                    ,XML_DATA.MSG_DETAIL
+            FROM    XMLTABLE (
+                        '/DATA_DS/G_1'
+                        PASSING XMLTYPE.createXML (l_clob)
+                        COLUMNS 
+                        UCM_CONTENT_ID   VARCHAR2(250) path 'UCM_CONTENT_ID'
+                        ,ARCHIVO         VARCHAR2(250) path 'ARCHIVO'
+                        ,IMPORTED_STATUS VARCHAR2(250) path 'IMPORTED_STATUS'
+                        ,LOADED_STATUS   VARCHAR2(250) path 'LOADED_STATUS'
+                        ,ZIP_FILE        VARCHAR2(250) path 'ZIP_FILE'
+                        ,MENSAJE         CLOB          path 'MENSAJE'
+                        ,MSG_DETAIL      CLOB          path 'MSG_DETAIL'
+                                                                
+                    ) XML_DATA
+    ) 
+    LOOP
+        UPDATE GRG_AE_HDL_LOG
+        SET UCM_CONTENT_ID  = i.UCM_CONTENT_ID,
+            ARCHIVO	       = i.ARCHIVO,
+            IMPORTED_STATUS = i.IMPORTED_STATUS,
+            LOADED_STATUS   = i.LOADED_STATUS,
+            ZIP_FILE        = i.ZIP_FILE,
+            MENSAJE         = i.MENSAJE,
+            MSG_DETAIL      = i.MSG_DETAIL
+        WHERE 1=1
+        AND ID = p_id_rastreo;
+        dbms_output.put_line('NOMBRE ARCHIVO: '||i.ARCHIVO);
+    END LOOP;
+    COMMIT;
+
+    SELECT  hdl_name,
+            imported_status,
+            loaded_status,
+            mensaje,
+            msg_detail
+    INTO    v_hdl_name,
+            v_imported_status,
+            v_loaded_status,
+            v_mensaje,
+            v_msg_detail
+    FROM    GRG_AE_HDL_LOG
+    WHERE   1=1
+            AND ID = p_id_rastreo;
+
+    x_hdl_name        := v_hdl_name;
+    x_imported_status := v_imported_status;
+    x_loaded_status   := v_loaded_status;
+    x_mensaje         := v_mensaje;
+    x_msg_detail      := v_msg_detail;
+
+    EXCEPTION WHEN OTHERS 
+    THEN
+        dbms_output.put_line ('ERROR: Al obtener el directorio --> '||SQLERRM); 
+
+END  status;
+--+
+--+
+PROCEDURE main_status_star(
+                            p_id_rastreo      IN VARCHAR2,
+                            x_hdl_name        OUT VARCHAR2,
+                            x_imported_status OUT VARCHAR2,
+                            x_loaded_status   OUT VARCHAR2,
+                            x_mensaje         OUT VARCHAR2,
+                            x_msg_detail      OUT VARCHAR2,
+                            x_status_process  OUT VARCHAR2
+                          )
+AS
+BEGIN
+    IF p_id_rastreo IS NOT NULL  THEN
+        GRG_CARGA_AUSENTISMOS.status(p_id_rastreo,x_hdl_name,x_imported_status,x_loaded_status,x_mensaje,x_msg_detail);
+        x_status_process := 'PROCESO ENVIADO';
+    ELSE
+        x_status_process := 'EL PROCESO NO SE PUDO EJECUTAR';
+    END IF;
+    
+    EXCEPTION
+        WHEN OTHERS THEN
+                dbms_output.put_line ('ERROR: Al obtener el directorio --> '||SQLERRM); 
+                x_status_process := 'ERROR EN EL SERVIDOR';
+END main_status_star;
+--+
+--+
+PROCEDURE CASES_DHL(          
+                    juego_asig  IN VARCHAR2,
+                    action_DHL  IN VARCHAR2,
+                    Ttype_DHL   IN VARCHAR2                                          
+                    )
+    IS
+        --VARIABLES  
+        l_metadata_h        CLOB;
+        l_metadata_l        CLOB;
+        l_all_metadatas_h   CLOB;
+        l_all_metadatas_l   CLOB;
+        l_template          CLOB;
+        l_tempname          VARCHAR2(100);
+        l_tempname2         VARCHAR2(100);
+        l_base64enconde     CLOB;
+        l_base64enconde2    CLOB;
+        ---
+        l_metadata_h2       CLOB;
+        l_metadata_l2       CLOB;
+        l_all_metadatas_h2  CLOB;
+        l_all_metadatas_l2  CLOB;
+        l_template2         CLOB;
+        --
+        l_ws_url            VARCHAR2 (500) ;
+        l_ws_action         VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest';
+        l_ws_response_clob  CLOB;
+        l_ws_response_clob2 CLOB;
+        l_ws_envelope       CLOB;
+        l_ws_envelope2      CLOB;
+        l_clob              CLOB;
+        l_result            VARCHAR2(100);
+        l_result2           VARCHAR2(100);
+        l_zip_file          VARCHAR2(3650);
+        l_zip_file2         VARCHAR2(3650);
+		l_directory_path    VARCHAR2(3650);
+		l_ws_token          VARCHAR2(3650);
+		v_existe            NUMBER :=0;
+        l_nombre            VARCHAR2(3650);
+        l_id_proceso        NUMBER;
+        l_nombre_hdl        VARCHAR2(650);
+        l_linea_hdl         NUMBER;
+        --+
+        l_seq1              NUMBER;
+        l_seq2              NUMBER;
+        l_fecha             VARCHAR2(100);
+        v_error_msg         VARCHAR2(512);
+        l_tipo              VARCHAR2(100);
+    BEGIN
+    IF  Ttype_DHL = 'A' THEN  --HDL_CARGA
+
+    --+Template para Eliminar
+    FOR registro IN (
+      select ID,
+       PERSONABSENCEENTRY,
+       EMPLOYER,
+       EMPLOYERID,
+       PERSONNUMBER,
+       PERSONID,
+       ABSENCETYPE,
+       ABSENCETYPEID,
+       ABSENCESTATUS,
+       APPROVALSTATUS,
+       PERABSENCEENTRYID,
+       STARTDATE,
+       ENDDATE,
+       PERABSMATID,
+       FLEX_ANC_PER_ABS_ENTRIES_DDF,
+       ORAHRXMXDISA,
+       STARTDATEDURATION,
+       ENDDATEDURATION,
+       ABSENCEREASON,
+       PLANNEDENDDATE,
+       SUBMITTEDDATE,
+       NOTIFICATIONDATE,
+       CONDITIONSTARTDATE,
+       CONFIRMEDDATE,
+       ENDTIME,
+       COMMENTS,
+       DURATION,
+       GUID,
+       STARTTIME,
+       MAT_PLANNEDSTARTDATE,
+       MAT_PLANNEDRETURNDATE,
+       MAT_LEAVEDURATION,
+       MAT_INTENDTOWORK,
+       MAT_EXPECTEDDATEOFCHILDBIRTH,
+       MAT_ACTUALSTARTDATE,
+       MAT_ACTUALRETURNDATE,
+       MAT_ACTUALDURATION,
+       MAT_PERABSENCEENTRYID,
+       MAT_PERABSMATID,
+       MAT_OPENENDEDFLAG,
+       MAT_ACTUALCHILDBIRTHDATE
+from GRG_CARGA_AUSENTISMOS_LINES   )               
+LOOP
+l_metadata_h := 'DELETE|PersonAbsenceEntry|'||registro.EMPLOYER||'|'
+                                            ||registro.EMPLOYERID||'|'
+                                            ||registro.PERSONNUMBER||'|'
+                                            ||registro.PERSONID||'|'
+                                            ||registro.ABSENCETYPE||'|'
+                                            ||registro.ABSENCETYPEID||'|'
+                                            ||registro.ABSENCEREASON||'|'
+                                            ||registro.ABSENCESTATUS||'|'
+                                            ||registro.APPROVALSTATUS||'|'
+                                            ||registro.PERABSENCEENTRYID||'|'
+                                            ||registro.STARTDATEDURATION||'|'
+                                            ||registro.ENDDATEDURATION||'|'
+                                            ||registro.PLANNEDENDDATE||'|'
+                                            ||registro.SUBMITTEDDATE||'|'
+                                            ||registro.NOTIFICATIONDATE||'|'
+                                            ||registro.CONDITIONSTARTDATE||'|'
+                                            ||registro.CONFIRMEDDATE||'|'
+                                            ||registro.COMMENTS||'|'
+                                            ||registro.STARTDATE||'|'
+                                            ||registro.STARTTIME||'|'
+                                            ||registro.ENDDATE||'|'
+                                            ||registro.ENDTIME||'|'
+                                            ||registro.DURATION||'|'
+                                            ||registro.GUID||'|'
+                                            ||registro.FLEX_ANC_PER_ABS_ENTRIES_DDF||'|'
+                                            ||registro.ORAHRXMXDISA;
+            l_all_metadatas_h := l_all_metadatas_h || l_metadata_h || CHR (10);
+END LOOP;
+ l_template :=
+                'METADATA|PersonAbsenceEntr|Employer|EmployerId|PersonNumber|PersonId|AbsenceType|AbsenceTypeId|AbsenceReason|AbsenceStatus|ApprovalStatus|PerAbsenceEntryId|StartDateDuration|EndDateDuration|PlannedEndDate|SubmittedDate|NotificationDate|ConditionStartDate|ConfirmedDate|Comments|StartDate|StartTime|EndDate|EndTime|Duration|GUID|FLEX_ANC_PER_ABS_ENTRIES_DDF|oraHrxMxDisab_ANC_PER_ABS_ENTRIES_DDF=ORA_HRX_MX_DISABILITY'
+                || CHR (10)
+                || l_all_metadatas_h;
+  --+Template para Eliminar  
+
+----------------------------------
+ --+Template para Eliminar MATERNIDAD
+FOR registro2 IN (
+       select ID,
+       PERSONABSENCEENTRY,
+       EMPLOYER,
+       EMPLOYERID,
+       PERSONNUMBER,
+       PERSONID,
+       ABSENCETYPE,
+       ABSENCETYPEID,
+       ABSENCESTATUS,
+       APPROVALSTATUS,
+       PERABSENCEENTRYID,
+       STARTDATE,
+       ENDDATE,
+       PERABSMATID,
+       FLEX_ANC_PER_ABS_ENTRIES_DDF,
+       ORAHRXMXDISA,
+       STARTDATEDURATION,
+       ENDDATEDURATION,
+       ABSENCEREASON,
+       PLANNEDENDDATE,
+       SUBMITTEDDATE,
+       NOTIFICATIONDATE,
+       CONDITIONSTARTDATE,
+       CONFIRMEDDATE,
+       ENDTIME,
+       COMMENTS,
+       DURATION,
+       GUID,
+       STARTTIME,
+       MAT_PLANNEDSTARTDATE,
+       MAT_PLANNEDRETURNDATE,
+       MAT_LEAVEDURATION,
+       MAT_INTENDTOWORK,
+       MAT_EXPECTEDDATEOFCHILDBIRTH,
+       MAT_ACTUALSTARTDATE,
+       MAT_ACTUALRETURNDATE,
+       MAT_ACTUALDURATION,
+       MAT_PERABSENCEENTRYID,
+       MAT_PERABSMATID,
+       MAT_OPENENDEDFLAG,
+       MAT_ACTUALCHILDBIRTHDATE
+from GRG_CARGA_AUSENTISMOS_LINES 
+where ABSENCETYPE  = 'Maternidad' )             
+LOOP
+l_metadata_h := 'DELETE|PersonAbsenceEntry|'||registro2.EMPLOYER||'|'
+                                            ||registro2.EMPLOYERID||'|'
+                                            ||registro2.PERSONNUMBER||'|'
+                                            ||registro2.PERSONID||'|'
+                                            ||registro2.ABSENCETYPE||'|'
+                                            ||registro2.ABSENCETYPEID||'|'
+                                            ||registro2.ABSENCEREASON||'|'
+                                            ||registro2.ABSENCESTATUS||'|'
+                                            ||registro2.APPROVALSTATUS||'|'
+                                            ||registro2.PERABSENCEENTRYID||'|'
+                                            ||registro2.STARTDATEDURATION||'|'
+                                            ||registro2.ENDDATEDURATION||'|'
+                                            ||registro2.PLANNEDENDDATE||'|'
+                                            ||registro2.SUBMITTEDDATE||'|'
+                                            ||registro2.NOTIFICATIONDATE||'|'
+                                            ||registro2.CONDITIONSTARTDATE||'|'
+                                            ||registro2.CONFIRMEDDATE||'|'
+                                            ||registro2.COMMENTS||'|'
+                                            ||registro2.STARTDATE||'|'
+                                            ||registro2.STARTTIME||'|'
+                                            ||registro2.ENDDATE||'|'
+                                            ||registro2.ENDTIME||'|'
+                                            ||registro2.DURATION||'|'
+                                            ||registro2.GUID||'|'
+                                            ||registro2.FLEX_ANC_PER_ABS_ENTRIES_DDF||'|'
+                                            ||registro2.ORAHRXMXDISA||'|'
+                                            ||registro2.MAT_PLANNEDSTARTDATE||'|'
+                                            ||registro2.MAT_PLANNEDRETURNDATE||'|'
+                                            ||registro2.MAT_LEAVEDURATION||'|'
+                                            ||registro2.MAT_INTENDTOWORK||'|'
+                                            ||registro2.MAT_EXPECTEDDATEOFCHILDBIRTH||'|'
+                                            ||registro2.MAT_ACTUALSTARTDATE||'|'
+                                            ||registro2.MAT_ACTUALRETURNDATE||'|'
+                                            ||registro2.MAT_ACTUALDURATION||'|'
+                                            ||registro2.MAT_ACTUALCHILDBIRTHDATE||'|'
+                                            ||registro2.PERABSMATID;
+            l_all_metadatas_h := l_all_metadatas_h || l_metadata_h || CHR (10);
+END LOOP;
+ l_template :=
+                'METADATA|PersonAbsenceEntr|Employer|EmployerId|PersonNumber|PersonId|AbsenceType|AbsenceTypeId|AbsenceReason|AbsenceStatus|ApprovalStatus|PerAbsenceEntryId|StartDateDuration|EndDateDuration|PlannedEndDate|SubmittedDate|NotificationDate|ConditionStartDate|ConfirmedDate|Comments|StartDate|StartTime|EndDate|EndTime|Duration|GUID|FLEX_ANC_PER_ABS_ENTRIES_DDF|oraHrxMxDisab_ANC_PER_ABS_ENTRIES_DDF=ORA_HRX_MX_DISABILITY|PlannedStartDate|PlannedReturnDate|LeaveDuration|IntendToWork|ExpectedDateOfChildBirth|ActualStartDate|ActualReturnDate|ActualDuration|ActualChildBirthDate|OpenEndedFlag|PerAbsMatId'
+                || CHR (10)
+                || l_all_metadatas_h;
+   
+
+ --+Template para Eliminar MATERNIDAD
+
+
+
+ELSE 
+
+   --+Template para Cargar
+FOR registro IN (
+      select ID,
+       PERSONABSENCEENTRY,
+       EMPLOYER,
+       EMPLOYERID,
+       PERSONNUMBER,
+       PERSONID,
+       ABSENCETYPE,
+       ABSENCETYPEID,
+       ABSENCESTATUS,
+       APPROVALSTATUS,
+       PERABSENCEENTRYID,
+       STARTDATE,
+       ENDDATE,
+       PERABSMATID,
+       FLEX_ANC_PER_ABS_ENTRIES_DDF,
+       ORAHRXMXDISA,
+       STARTDATEDURATION,
+       ENDDATEDURATION,
+       ABSENCEREASON,
+       PLANNEDENDDATE,
+       SUBMITTEDDATE,
+       NOTIFICATIONDATE,
+       CONDITIONSTARTDATE,
+       CONFIRMEDDATE,
+       ENDTIME,
+       COMMENTS,
+       DURATION,
+       GUID,
+       STARTTIME,
+       MAT_PLANNEDSTARTDATE,
+       MAT_PLANNEDRETURNDATE,
+       MAT_LEAVEDURATION,
+       MAT_INTENDTOWORK,
+       MAT_EXPECTEDDATEOFCHILDBIRTH,
+       MAT_ACTUALSTARTDATE,
+       MAT_ACTUALRETURNDATE,
+       MAT_ACTUALDURATION,
+       MAT_PERABSENCEENTRYID,
+       MAT_PERABSMATID,
+       MAT_OPENENDEDFLAG,
+       MAT_ACTUALCHILDBIRTHDATE
+from GRG_CARGA_AUSENTISMOS_LINES   )             
+LOOP
+l_metadata_h := 'MERGE|PersonAbsenceEntry|'||registro.EMPLOYER||'|'
+                                            ||registro.EMPLOYERID||'|'
+                                            ||registro.PERSONNUMBER||'|'
+                                            ||registro.PERSONID||'|'
+                                            ||registro.ABSENCETYPE||'|'
+                                            ||registro.ABSENCETYPEID||'|'
+                                            ||registro.ABSENCEREASON||'|'
+                                            ||registro.ABSENCESTATUS||'|'
+                                            ||registro.APPROVALSTATUS||'|'
+                                            ||registro.PERABSENCEENTRYID||'|'
+                                            ||registro.STARTDATEDURATION||'|'
+                                            ||registro.ENDDATEDURATION||'|'
+                                            ||registro.PLANNEDENDDATE||'|'
+                                            ||registro.SUBMITTEDDATE||'|'
+                                            ||registro.NOTIFICATIONDATE||'|'
+                                            ||registro.CONDITIONSTARTDATE||'|'
+                                            ||registro.CONFIRMEDDATE||'|'
+                                            ||registro.COMMENTS||'|'
+                                            ||registro.STARTDATE||'|'
+                                            ||registro.STARTTIME||'|'
+                                            ||registro.ENDDATE||'|'
+                                            ||registro.ENDTIME||'|'
+                                            ||registro.DURATION||'|'
+                                            ||registro.GUID||'|'
+                                            ||registro.FLEX_ANC_PER_ABS_ENTRIES_DDF||'|'
+                                            ||registro.ORAHRXMXDISA;
+            l_all_metadatas_h := l_all_metadatas_h || l_metadata_h || CHR (10);
+END LOOP;
+ l_template :=
+                'METADATA|PersonAbsenceEntry|Employer|EmployerId|PersonNumber|PersonId|AbsenceType|AbsenceTypeId|AbsenceReason|AbsenceStatus|ApprovalStatus|PerAbsenceEntryId|StartDateDuration|EndDateDuration|PlannedEndDate|SubmittedDate|NotificationDate|ConditionStartDate|ConfirmedDate|Comments|StartDate|StartTime|EndDate|EndTime|Duration|GUID|FLEX_ANC_PER_ABS_ENTRIES_DDF|oraHrxMxDisab_ANC_PER_ABS_ENTRIES_DDF=ORA_HRX_MX_DISABILITY'
+                || CHR (10)
+                || l_all_metadatas_h;
+
+ --+Template para Cargar
+ ----------------------------------
+ --+Template para Cargar MATERNIDAD
+FOR registro2 IN (
+       select ID,
+       PERSONABSENCEENTRY,
+       EMPLOYER,
+       EMPLOYERID,
+       PERSONNUMBER,
+       PERSONID,
+       ABSENCETYPE,
+       ABSENCETYPEID,
+       ABSENCESTATUS,
+       APPROVALSTATUS,
+       PERABSENCEENTRYID,
+       STARTDATE,
+       ENDDATE,
+       PERABSMATID,
+       FLEX_ANC_PER_ABS_ENTRIES_DDF,
+       ORAHRXMXDISA,
+       STARTDATEDURATION,
+       ENDDATEDURATION,
+       ABSENCEREASON,
+       PLANNEDENDDATE,
+       SUBMITTEDDATE,
+       NOTIFICATIONDATE,
+       CONDITIONSTARTDATE,
+       CONFIRMEDDATE,
+       ENDTIME,
+       COMMENTS,
+       DURATION,
+       GUID,
+       STARTTIME,
+       MAT_PLANNEDSTARTDATE,
+       MAT_PLANNEDRETURNDATE,
+       MAT_LEAVEDURATION,
+       MAT_INTENDTOWORK,
+       MAT_EXPECTEDDATEOFCHILDBIRTH,
+       MAT_ACTUALSTARTDATE,
+       MAT_ACTUALRETURNDATE,
+       MAT_ACTUALDURATION,
+       MAT_PERABSENCEENTRYID,
+       MAT_PERABSMATID,
+       MAT_OPENENDEDFLAG,
+       MAT_ACTUALCHILDBIRTHDATE
+from GRG_CARGA_AUSENTISMOS_LINES 
+where ABSENCETYPE  = 'Maternidad' )             
+LOOP
+l_metadata_h := 'MERGE|PersonAbsenceEntry|'||registro2.EMPLOYER||'|'
+                                            ||registro2.EMPLOYERID||'|'
+                                            ||registro2.PERSONNUMBER||'|'
+                                            ||registro2.PERSONID||'|'
+                                            ||registro2.ABSENCETYPE||'|'
+                                            ||registro2.ABSENCETYPEID||'|'
+                                            ||registro2.ABSENCEREASON||'|'
+                                            ||registro2.ABSENCESTATUS||'|'
+                                            ||registro2.APPROVALSTATUS||'|'
+                                            ||registro2.PERABSENCEENTRYID||'|'
+                                            ||registro2.STARTDATEDURATION||'|'
+                                            ||registro2.ENDDATEDURATION||'|'
+                                            ||registro2.PLANNEDENDDATE||'|'
+                                            ||registro2.SUBMITTEDDATE||'|'
+                                            ||registro2.NOTIFICATIONDATE||'|'
+                                            ||registro2.CONDITIONSTARTDATE||'|'
+                                            ||registro2.CONFIRMEDDATE||'|'
+                                            ||registro2.COMMENTS||'|'
+                                            ||registro2.STARTDATE||'|'
+                                            ||registro2.STARTTIME||'|'
+                                            ||registro2.ENDDATE||'|'
+                                            ||registro2.ENDTIME||'|'
+                                            ||registro2.DURATION||'|'
+                                            ||registro2.GUID||'|'
+                                            ||registro2.FLEX_ANC_PER_ABS_ENTRIES_DDF||'|'
+                                            ||registro2.ORAHRXMXDISA||'|'
+                                            ||registro2.MAT_PLANNEDSTARTDATE||'|'
+                                            ||registro2.MAT_PLANNEDRETURNDATE||'|'
+                                            ||registro2.MAT_LEAVEDURATION||'|'
+                                            ||registro2.MAT_INTENDTOWORK||'|'
+                                            ||registro2.MAT_EXPECTEDDATEOFCHILDBIRTH||'|'
+                                            ||registro2.MAT_ACTUALSTARTDATE||'|'
+                                            ||registro2.MAT_ACTUALRETURNDATE||'|'
+                                            ||registro2.MAT_ACTUALDURATION||'|'
+                                            ||registro2.MAT_ACTUALCHILDBIRTHDATE||'|'
+                                            ||registro2.PERABSMATID;
+            l_all_metadatas_h := l_all_metadatas_h || l_metadata_h || CHR (10);
+END LOOP;
+ l_template :=
+                'METADATA|PersonAbsenceEntry|Employer|EmployerId|PersonNumber|PersonId|AbsenceType|AbsenceTypeId|AbsenceReason|AbsenceStatus|ApprovalStatus|PerAbsenceEntryId|StartDateDuration|EndDateDuration|PlannedEndDate|SubmittedDate|NotificationDate|ConditionStartDate|ConfirmedDate|Comments|StartDate|StartTime|EndDate|EndTime|Duration|GUID|FLEX_ANC_PER_ABS_ENTRIES_DDF|oraHrxMxDisab_ANC_PER_ABS_ENTRIES_DDF=ORA_HRX_MX_DISABILITY|PlannedStartDate|PlannedReturnDate|LeaveDuration|IntendToWork|ExpectedDateOfChildBirth|ActualStartDate|ActualReturnDate|ActualDuration|ActualChildBirthDate|OpenEndedFlag|PerAbsMatId'
+                || CHR (10)
+                || l_all_metadatas_h;
+   
+
+ --+Template para Cargar MATERNIDAD
+END IF;
+
+END CASES_DHL;
+--+
+--+
+END GRG_CARGA_AUSENTISMOS;
