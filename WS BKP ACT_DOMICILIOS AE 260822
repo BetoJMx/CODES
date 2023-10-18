@@ -1,0 +1,309 @@
+--WS BKP ACT_DOMICILIOS AE 260822
+DECLARE
+
+v_url                   CLOB;
+v_url_2                 CLOB;
+v_url_3                 CLOB;
+l_response              CLOB;
+l_response_2            CLOB;
+l_response_3            CLOB;
+v_output                CLOB;
+v_output_count          NUMBER;
+v_body                  CLOB;
+
+p_addressline1 			VARCHAR2(250) := NVL(:p_addressline1,NULL);
+p_addressline2 			VARCHAR2(250) := NVL(:p_addressline2,NULL);
+p_addressline3 			VARCHAR2(250) := NVL(:p_addressline3,NULL);
+p_addressline4 			VARCHAR2(250) := NVL(:p_addressline4,NULL);
+p_townorcity 			VARCHAR2(250) := NVL(:p_townorcity,NULL);
+p_region1 				VARCHAR2(250) := NVL(:p_region1,NULL);
+p_region2 				VARCHAR2(250) := NVL(:p_region2,NULL);
+p_region3 				VARCHAR2(250) := NVL(:p_region3,NULL);
+p_country 				VARCHAR2(250) := NVL(:p_country,NULL);
+p_postalcode 			VARCHAR2(250) := NVL(:p_postalcode,NULL);
+p_addlAddressattribute1 VARCHAR2(250) := NVL(:p_addladdressattribute1,NULL);
+p_addlAddressattribute2 VARCHAR2(250) := NVL(:p_addladdressattribute2,NULL);
+p_person_number         VARCHAR2(250) := NVL(:p_person_number,NULL);
+
+l_addressline1 			VARCHAR2(250);
+l_addressline2 			VARCHAR2(250);
+l_addressline3 			VARCHAR2(250);
+l_addressline4 			VARCHAR2(250);
+l_townorcity 			VARCHAR2(250);
+l_region1 				VARCHAR2(250);
+l_region2 				VARCHAR2(250);
+l_region3 				VARCHAR2(250);
+l_country 				VARCHAR2(250);
+l_postalcode 			VARCHAR2(250);
+l_addlAddressattribute1 VARCHAR2(250);
+l_addlAddressattribute2 VARCHAR2(250);
+l_EffectiveStartDate 	VARCHAR2(250);
+l_EffectiveEndDate 		VARCHAR2(250);
+
+r_addressline1 			VARCHAR2(250);
+r_addressline2 			VARCHAR2(250);
+r_addressline3 			VARCHAR2(250);
+r_addressline4 			VARCHAR2(250);
+r_townorcity 			VARCHAR2(250);
+r_region1 				VARCHAR2(250);
+r_region2 				VARCHAR2(250);
+r_region3 				VARCHAR2(250);
+r_country 				VARCHAR2(250);
+r_postalcode 			VARCHAR2(250);
+r_addlAddressattribute1 VARCHAR2(250);
+r_addlAddressattribute2 VARCHAR2(250);
+r_EffectiveStartDate 	VARCHAR2(250);
+r_EffectiveEndDate 		VARCHAR2(250);
+
+v_url_jwt_rest   VARCHAR2 (250) := 'https://toksaicdev-toksopc-ia.integration.ocp.oraclecloud.com/ic/api/integration/v1/flows/rest/GET_JWT_FOR_FA/1.0/getToken';
+v_user_basic     VARCHAR2(100)  := 'OICINST-DEV_BASICAUTH';
+v_password_basic VARCHAR2(100)  := '0b7e6534-14ca-4d6d-9cdb-db58a490ea6c';
+v_usuario_entrada VARCHAR2(100) := NULL;
+v_bearer_token   VARCHAR2(3650);
+v_resp_code      VARCHAR2(250);
+v_resp_mess      VARCHAR2(250);
+--+
+l_date              VARCHAR2(100);
+
+BEGIN 
+    --IF p_person_number != "" OR p_person_number IS NOT NULL THEN
+
+        XXGRG_GET_TOKEN_FOR_FA_USER(
+                        v_url_jwt_rest,
+                        v_user_basic,
+                        v_password_basic,
+                        v_usuario_entrada,
+                        v_bearer_token,
+                        v_resp_code,
+                        v_resp_mess);
+        
+        apex_web_service.g_request_headers.delete;  
+
+        v_url := 'https://eioq-dev2.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/workers?q=PersonNumber='||TRIM(p_person_number);
+        
+        apex_web_service.g_request_headers (1).name  := 'Authorization'; 
+        apex_web_service.g_request_headers (1).value := v_bearer_token; 
+
+        l_response := apex_web_service.make_rest_request(
+                p_url        => v_url,                                                  
+                p_http_method => 'GET'
+            );  
+        
+        IF apex_web_service.g_status_code = 200 THEN    
+
+            --DBMS_OUTPUT.PUT_LINE('SALIDA: ' || l_response);  
+            
+            APEX_JSON.parse(l_response);
+            v_output := apex_json.get_varchar2(p_path => 'items[1].links[3].href');
+            v_output_count := apex_json.get_number(p_path => 'count');
+            
+            DBMS_OUTPUT.PUT_LINE('SALIDA: ' || v_output);  
+
+            v_url_2 := v_output||'?q=AddressType=HOME';
+
+            apex_web_service.g_request_headers.delete;  
+            IF v_output_count > 0 THEN
+
+                IF apex_web_service.g_status_code = 200 THEN
+
+                    apex_web_service.g_request_headers (1).name  := 'Authorization'; 
+                    apex_web_service.g_request_headers (1).value := v_bearer_token; 
+
+                    l_response_2 := apex_web_service.make_rest_request(
+                            p_url        => v_url_2,                                                  
+                            p_http_method => 'GET'
+                        );  
+
+                    --DBMS_OUTPUT.PUT_LINE('SALIDA: ' || l_response_2);  
+
+                    APEX_JSON.parse(l_response_2);
+                    
+                    v_url_3 := apex_json.get_varchar2(p_path => 'items[1].links[1].href'); --URL PARA PUT
+                    --+ CAMPOS DEL GET ADDRESS
+                    l_addressline1 			:= apex_json.get_varchar2(p_path => 'items[1].AddressLine1');
+                    l_addressline2 			:= apex_json.get_varchar2(p_path => 'items[1].AddressLine2');
+                    l_addressline3 			:= apex_json.get_varchar2(p_path => 'items[1].AddressLine3');
+                    l_addressline4 			:= apex_json.get_varchar2(p_path => 'items[1].AddressLine4');
+                    l_townorcity 			:= apex_json.get_varchar2(p_path => 'items[1].TownOrCity');
+                    l_region1 				:= apex_json.get_varchar2(p_path => 'items[1].Region1');
+                    l_region2 				:= apex_json.get_varchar2(p_path => 'items[1].Region2');
+                    l_region3 				:= apex_json.get_varchar2(p_path => 'items[1].Region3');
+                    l_country 				:= apex_json.get_varchar2(p_path => 'items[1].Country');
+                    l_postalcode 			:= apex_json.get_varchar2(p_path => 'items[1].PostalCode');
+                    l_addlAddressattribute1 := apex_json.get_varchar2(p_path => 'items[1].AddlAddressAttribute1');
+                    l_addlAddressattribute2 := apex_json.get_varchar2(p_path => 'items[1].AddlAddressAttribute2');
+                    l_EffectiveStartDate 	:= apex_json.get_varchar2(p_path => 'items[1].EffectiveStartDate');
+                    l_EffectiveEndDate 		:= apex_json.get_varchar2(p_path => 'items[1].EffectiveEndDate');
+                
+                    DBMS_OUTPUT.PUT_LINE('URL PUT: ' || v_url_3);
+
+                    apex_web_service.g_request_headers.delete;  
+
+                    IF apex_web_service.g_status_code = 200 THEN
+
+                        v_body :=  '{
+                                        "AddressLine1": "'||
+                                        CASE WHEN p_addressline1 = '-' THEN NULL WHEN p_addressline1 != '-' THEN p_addressline1 WHEN p_addressline1 IS NULL THEN l_addressline1 END||'",
+                                        "AddressLine2": "'||
+                                        CASE WHEN p_addressline1 = '-' THEN NULL WHEN p_addressline2 != '-' THEN p_addressline2 WHEN p_addressline2 IS NULL THEN l_addressline2 END||'",
+                                        "AddressLine3": "'||
+                                        CASE WHEN p_addressline3 = '-' THEN NULL WHEN p_addressline3 != '-' THEN p_addressline3 WHEN p_addressline3 IS NULL THEN l_addressline3 END||'",
+                                        "AddressLine4": "'||
+                                        CASE WHEN p_addressline4 = '-' THEN NULL WHEN p_addressline4 != '-' THEN p_addressline4 WHEN p_addressline4 IS NULL THEN l_addressline4 END||'",
+                                        "TownOrCity": "'||
+                                        CASE WHEN p_townorcity = '-' THEN NULL WHEN p_townorcity != '-' THEN p_townorcity WHEN p_townorcity IS NULL THEN l_townorcity END||'",
+                                        "Region1": "'||
+                                        CASE WHEN p_region1 = '-' THEN NULL WHEN p_region1 != '-' THEN p_region1 WHEN p_region1 IS NULL THEN l_region1 END||'",
+                                        "Region2": "'||
+                                        CASE WHEN p_region2 = '-' THEN NULL WHEN p_region2 != '-' THEN p_region2 WHEN p_region2 IS NULL THEN l_region2 END||'",
+                                        "Region3": "'||
+                                        CASE WHEN p_region3 = '-' THEN NULL WHEN p_region3 != '-' THEN p_region3 WHEN p_region3 IS NULL THEN l_region3 END||'",
+                                        "Country": "'||
+                                        CASE WHEN p_country = '-' THEN NULL WHEN p_country != '-' THEN p_country WHEN p_country IS NULL THEN l_country END||'",
+                                        "PostalCode": "'||
+                                        CASE WHEN p_postalcode = '-' THEN NULL WHEN p_postalcode != '-' THEN p_postalcode WHEN p_postalcode IS NULL THEN l_postalcode END||'",
+                                        "AddlAddressAttribute1": "'||
+                                        CASE WHEN p_addlAddressattribute1 = '-' THEN NULL WHEN p_addlAddressattribute1 != '-' THEN p_addlAddressattribute1 WHEN p_addlAddressattribute1 IS NULL THEN l_addlAddressattribute1 END||'",
+                                        "AddlAddressAttribute2": "'||
+                                        CASE WHEN p_addlAddressattribute2 = '-' THEN NULL WHEN p_addlAddressattribute2 != '-' THEN p_addlAddressattribute2 WHEN p_addlAddressattribute2 IS NULL THEN l_addlAddressattribute2 END||'"
+                                    }';  
+
+                        DBMS_OUTPUT.PUT_LINE('body: ' || v_body);
+
+                        apex_web_service.g_request_headers (1).name  := 'Authorization'; 
+                        apex_web_service.g_request_headers (1).value := v_bearer_token; 
+                        --+
+                         IF TO_DATE(l_EffectiveStartDate,'YYYY-MM-DD') <= TO_DATE('2022-08-01','YYYY-MM-DD') THEN
+                             l_date := '2022-08-01';
+                         ELSE 
+                             l_date := TO_CHAR(TO_DATE(l_EffectiveStartDate,'YYYY-MM-DD') + 1,'YYYY-MM-DD');
+                         END IF;
+                        --+
+                        apex_web_service.g_request_headers (2).name  := 'Effective-Of'; 
+                        apex_web_service.g_request_headers (2).value := 'RangeMode=RECONCILE_UPDATE;RangeStartDate='||l_date; 
+                        --+
+                        /* Set Content Type */
+                        apex_web_service.g_request_headers(3).name := 'Content-Type';
+                        /* Set Webservice Response Output */
+                        apex_web_service.g_request_headers(3).value := 'application/json';
+                        --+
+                        l_response_3 := apex_web_service.make_rest_request(
+                                p_url           => v_url_3,                                                  
+                                p_http_method   => 'PATCH',
+                                p_body          => v_body
+                            );  
+                        
+                        IF apex_web_service.g_status_code = 200 THEN
+
+                            APEX_JSON.parse(l_response_3);
+
+                            r_addressline1 			:= apex_json.get_varchar2(p_path => 'AddressLine1');
+                            r_addressline2 			:= apex_json.get_varchar2(p_path => 'AddressLine2');
+                            r_addressline3 			:= apex_json.get_varchar2(p_path => 'AddressLine3');
+                            r_addressline4 			:= apex_json.get_varchar2(p_path => 'AddressLine4');
+                            r_townorcity 			:= apex_json.get_varchar2(p_path => 'TownOrCity');
+                            r_region1 				:= apex_json.get_varchar2(p_path => 'Region1');
+                            r_region2 				:= apex_json.get_varchar2(p_path => 'Region2');
+                            r_region3 				:= apex_json.get_varchar2(p_path => 'Region3');
+                            r_country 				:= apex_json.get_varchar2(p_path => 'Country');
+                            r_postalcode 			:= apex_json.get_varchar2(p_path => 'PostalCode');
+                            r_addlAddressattribute1 := apex_json.get_varchar2(p_path => 'AddlAddressAttribute1');
+                            r_addlAddressattribute2 := apex_json.get_varchar2(p_path => 'AddlAddressAttribute2');
+                            r_EffectiveStartDate    := apex_json.get_varchar2(p_path => 'EffectiveStartDate');
+                            r_EffectiveEndDate      := apex_json.get_varchar2(p_path => 'EffectiveEndDate');
+
+                            DBMS_OUTPUT.PUT_LINE(apex_web_service.g_status_code || ' PUT: '|| SQLERRM); 
+
+                            apex_json.open_object; 
+                            --apex_json.write ('URL1', v_output); 
+                            --apex_json.write ('URL', v_url_3); 
+                            apex_json.write ('statusCode', 200); 
+                            apex_json.write ('statusMsg', 'Se proceso con éxito la solicitud'); 
+                            apex_json.write ('user', p_person_number); 
+                                apex_json.open_object('BeforeChanges'); 
+                                    apex_json.write ('AddressLine1', l_addressline1); 
+                                    apex_json.write ('AddressLine2', l_addressline2); 
+                                    apex_json.write ('AddressLine3', l_addressline3); 
+                                    apex_json.write ('AddressLine4', l_addressline4); 
+                                    apex_json.write ('TownOrCity', l_townorcity); 
+                                    apex_json.write ('Region1', l_region1); 
+                                    apex_json.write ('Region2', l_region2); 
+                                    apex_json.write ('Region3', l_region3); 
+                                    apex_json.write ('Country', l_country); 
+                                    apex_json.write ('PostalCode', l_postalcode); 
+                                    apex_json.write ('AddlAddressAttribute1', l_addlAddressattribute1); 
+                                    apex_json.write ('AddlAddressAttribute2', l_addlAddressattribute2); 
+                                    apex_json.write ('EffectiveStartDate', l_EffectiveStartDate); 
+                                    apex_json.write ('EffectiveEndDate', l_EffectiveEndDate); 
+                                apex_json.close_object;						   
+                                apex_json.open_object('AfterChanges');
+                                    apex_json.write ('AddressLine1', r_addressline1); 
+                                    apex_json.write ('AddressLine2', r_addressline2); 
+                                    apex_json.write ('AddressLine3', r_addressline3); 
+                                    apex_json.write ('AddressLine4', r_addressline4); 
+                                    apex_json.write ('TownOrCity', r_townorcity); 
+                                    apex_json.write ('Region1', r_region1); 
+                                    apex_json.write ('Region2', r_region2); 
+                                    apex_json.write ('Region3', r_region3); 
+                                    apex_json.write ('Country', r_country); 
+                                    apex_json.write ('PostalCode', r_postalcode); 
+                                    apex_json.write ('AddlAddressAttribute1', r_addlAddressattribute1); 
+                                    apex_json.write ('AddlAddressAttribute2', r_addlAddressattribute2); 
+                                    apex_json.write ('EffectiveStartDate', r_EffectiveStartDate); 
+                                    apex_json.write ('EffectiveEndDate', r_EffectiveEndDate); 
+                                apex_json.close_object;						   
+                            apex_json.close_object;		
+                        
+                        ELSE
+
+                            DBMS_OUTPUT.PUT_LINE(apex_web_service.g_status_code||' ERROR EN PUT: '||SQLERRM);
+
+                        END IF;
+
+                    ELSE
+
+                        DBMS_OUTPUT.PUT_LINE('ERROR EN GET ADD: ' || SQLERRM);
+
+                    END IF; --IF PATCH ADDRESS
+                
+                ELSE
+
+                    DBMS_OUTPUT.PUT_LINE(apex_web_service.g_status_code || ' ERROR-U2: '|| SQLERRM); 
+
+                END IF; --IF GET ADDRESS	
+
+            ELSE 
+
+            apex_json.open_object; 
+            apex_json.write ('statusCode', 404); 
+            apex_json.write ('statusMsg', 'El usuario a actualizar no cuenta con una dirección'); 
+            apex_json.write ('user', p_person_number); 
+            apex_json.close_object;
+
+            END IF; --IF COUNT
+
+        ELSE
+
+            DBMS_OUTPUT.PUT_LINE(apex_web_service.g_status_code || ' ERROR-U1: '|| SQLERRM); 
+        
+        END IF; --IF GET WORKER
+
+    -- ELSE 
+
+    --     apex_json.open_object; 
+    --     apex_json.write ('statusCode', 404); 
+    --     apex_json.write ('statusMsg', 'El parametro p_person_number es obligatorio'); 
+    --     apex_json.write ('user', p_person_number); 
+    --     apex_json.close_object;
+
+    -- END IF; --IF P_PERSON_NUMBER
+
+    EXCEPTION WHEN OTHERS THEN 
+
+        apex_json.open_object; 
+        apex_json.write ('statusCode', 400); 
+        apex_json.write ('statusMsg', 'La solicitud se encuentra incompleta, revise los parámetros'); 
+        apex_json.write ('user', p_person_number); 
+        apex_json.close_object;
+
+END;
