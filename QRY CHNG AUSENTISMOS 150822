@@ -1,0 +1,136 @@
+--QRY CHNG AUSENTISMOS 150822
+SELECT  ple.name                    						Employer,
+        ple.organization_id         						EmployerId,
+        per.person_number           						PersonNumber,
+        per.person_id               						PersonId,
+        abs.name                    						AbsenceType,
+        abs.absence_type_id         						AbsenceTypeId,
+        apae.absence_status_cd      						AbsenceStatus,
+        apae.approval_status_cd     						ApprovalStatus,
+        apae.per_absence_entry_id   						PerAbsenceEntryId,
+        apae.start_date_duration    						StartDateDuration,
+        apae.end_date_duration      						EndDateDuration,
+        TO_CHAR(apae.planned_end_date,'YYYY/MM/DD')     	PlannedEndDate,
+        TO_CHAR(apae.submitted_date,'YYYY/MM/DD')       	SubmittedDate,
+        TO_CHAR(apae.notification_date,'YYYY/MM/DD')    	NotificationDate,
+        TO_CHAR(apae.condition_start_date,'YYYY/MM/DD') 	ConditionStartDate,
+        TO_CHAR(apae.confirmed_date,'YYYY/MM/DD')       	ConfirmedDate,
+        apae.comments               						Comments,
+        TO_CHAR(apae.start_date,'YYYY/MM/DD')           	StartDate,
+		TO_CHAR(apae.start_date,'DD/MM/YYYY')           	StartDateC,
+        apae.start_time             						StartTime,
+        TO_CHAR(apae.end_date,'YYYY/MM/DD')             	EndDate,
+        apae.end_time               						EndTime,
+        duration                    						Duration,
+        --+ELEMENT
+        TRIM(pwav.absence_element_component_name) 			Element,
+        poga.object_group_id 								Asignacion,
+		--+MAT
+		TO_CHAR(apam.planned_st_dt,'YYYY/MM/DD') 			MAT_PLANNEDSTARTDATE,
+		TO_CHAR(apam.planned_return_dt,'YYYY/MM/DD') 		MAT_PLANNEDRETURNDATE,
+		apam.leave_duration 								MAT_LEAVEDURATION,
+		apam.intend_to_work									MAT_INTENDTOWORK,
+		TO_CHAR(apam.expected_wk_child_birth,'YYYY/MM/DD')	MAT_EXPECTEDDATEOFCHILDBIRTH,
+		TO_CHAR(apam.actual_st_dt,'YYYY/MM/DD')				MAT_ACTUALSTARTDATE,
+		TO_CHAR(apam.actual_return_dt,'YYYY/MM/DD')			MAT_ACTUALRETURNDATE,
+		apam.actual_duration								MAT_ACTUALDURATION,
+		apam.per_absence_entry_id							MAT_PERABSENCEENTRYID,
+		apam.per_abs_mat_id									MAT_PERABSMATID,
+		apam.open_ended_flag								MAT_OPENENDEDFLAG,
+		TO_CHAR(apam.actual_child_birth_dt,'YYYY/MM/DD')	MAT_ACTUALCHILDBIRTHDATE,
+        apae.INFORMATION_CATEGORY                           FLEX_ANC_PER_ABS_ENTRIES_DDF,
+        apae.INFORMATION1                                   ORAHRXMXDISA,
+(SELECT  unique(peevl.PROCESSED_FLAG)
+                        FROM    PAY_ELEMENT_ENTRIES_VL peevl
+                        WHERE   1 = 1
+                                AND peevl.element_type_id   = pet.element_type_id
+                                AND peevl.PROCESSED_FLAG    = 'N'
+                                AND peevl.PERSON_ID         = per.person_id
+                                AND peevl.PAYROLL_RELATIONSHIP_ID = prgd.PAYROLL_RELATIONSHIP_ID
+                                AND peevl.ENTRY_TYPE = 'Element Entry'
+                                AND peevl.ASSIGNMENT_ID = paaf.ASSIGNMENT_ID
+                                AND peevl.EFFECTIVE_START_DATE = apae.start_date
+                                AND peevl.EFFECTIVE_END_DATE = apae.end_date) FLAG,
+pet.element_type_id,
+(SELECT  unique(peevl.ELEMENT_ENTRY_ID)
+                        FROM    PAY_ELEMENT_ENTRIES_VL peevl
+                        WHERE   1 = 1
+                                AND peevl.element_type_id   = pet.element_type_id
+                                AND peevl.PROCESSED_FLAG    = 'N'
+                                AND peevl.PERSON_ID         = per.person_id
+                                AND peevl.PAYROLL_RELATIONSHIP_ID = prgd.PAYROLL_RELATIONSHIP_ID
+                                AND peevl.ENTRY_TYPE = 'Element Entry'
+                                AND peevl.ASSIGNMENT_ID = paaf.ASSIGNMENT_ID
+                                AND peevl.EFFECTIVE_START_DATE = apae.start_date
+                                AND peevl.EFFECTIVE_END_DATE = apae.end_date) ELEMENT_ENTRY_ID
+
+FROM    ANC_PER_ABS_ENTRIES     apae,
+        PER_PERIODS_OF_SERVICE  pps,
+        PER_ALL_PEOPLE_F        per,
+        ANC_ABSENCE_TYPES_VL    abs,
+        PER_LEGAL_EMPLOYERS     ple,
+        PAY_WORKER_ABSENCE_VL   pwav,
+        --PAY_ELEMENT_ENTRIES_VL  peev,
+        PAY_ELEMENT_TYPES_F     pet,
+        --+
+        PAY_OBJECT_GROUP_AMENDS poga,
+        PAY_REL_GROUPS_DN       prgd,
+        PER_ALL_ASSIGNMENTS_F   paaf,
+        --+
+        ANC_PER_ABS_MATERNITY   apam
+
+WHERE   apae.period_of_service_id   = pps.period_of_service_id
+        AND apae.absence_type_id    = abs.absence_type_id
+	    AND pps.legal_entity_id     = ple.organization_id
+        AND pps.person_id           = per.person_id
+        AND pps.period_type         = 'E'
+        AND pwav.absence_id         = apae.per_absence_entry_id
+        AND pwav.person_id          = per.person_id
+        AND UPPER(abs.name)         IN (
+                                        'ACCIDENTETRABAJO',
+                                        'ACCIDENTETRABAJOHRS',
+                                        'ACCIDENTETRAYECTO',
+                                        'ACCIDENTETRAYECTOHRS',
+                                        'ENFERMEDADGENERAL',
+                                        'ENFERMEDADGENERALHRS',
+                                        'FALTA',
+                                        'FALTAHRS',
+                                        'MATERNIDAD',
+                                        'MATERNIDADHRS',
+                                        'PERMISOSINSUELDO',
+                                        'PERMISOSINSUELDOHRS',
+                                        'SUSPENCIÓN',
+                                        'SUSPENCIÓNHRS'
+                                    )
+        --AND per.person_number       = '166286'
+        --+
+        AND paaf.person_id                  = per.person_id
+        AND paaf.assignment_type            = 'E'
+        AND paaf.effective_latest_change    = 'Y'
+        AND prgd.assignment_id              = paaf.assignment_id
+        AND prgd.relationship_group_id      = poga.object_id
+        AND poga.object_group_id            = :p_assigment_set
+        AND prgd.group_type                 = 'A'
+        --+
+        AND apae.per_absence_entry_id		= apam.per_absence_entry_id (+)
+        --+
+        AND EXISTS  (
+                        SELECT  1
+                        FROM    PAY_ELEMENT_ENTRIES_VL peevl
+                        WHERE   1 = 1
+                                AND peevl.element_type_id           = pet.element_type_id
+                                AND peevl.PROCESSED_FLAG            = 'N'
+                                AND peevl.PERSON_ID                 = per.person_id
+                                AND peevl.PAYROLL_RELATIONSHIP_ID   = prgd.PAYROLL_RELATIONSHIP_ID
+                                AND peevl.ENTRY_TYPE                = 'Element Entry'
+                                AND peevl.ASSIGNMENT_ID             = paaf.ASSIGNMENT_ID
+                                AND peevl.EFFECTIVE_START_DATE      = apae.start_date
+                                AND peevl.EFFECTIVE_END_DATE        = apae.end_date
+                    )
+        AND UPPER(pet.base_element_name)        = TRIM(pwav.absence_element_component_name) || ' ENTITLEMENT'
+        --
+        AND NVL(pps.actual_termination_date,SYSDATE)   BETWEEN per.effective_start_date 
+                                                        AND per.effective_end_date
+        AND NVL(pps.actual_termination_date,SYSDATE)   BETWEEN paaf.effective_start_date 
+                                                        AND paaf.effective_end_date
+ORDER BY per.person_number, apae.start_date asc
