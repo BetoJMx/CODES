@@ -1,0 +1,46 @@
+--QRY PTU VALID 0504
+WITH LIM AS (
+    SELECT  *  
+    FROM    GRG_PTU_V3_INFO 
+    WHERE   EE_LEGAL_EMPLOYER_ID = :legal_emp_id
+)
+
+SELECT  gpvh.*,
+        NVL(
+            (
+                SELECT  MONTO
+                FROM    GRG_PTU_V3_CARGAS
+                WHERE   ANIO = '2018'
+                        AND ESTAFETA = gpvh.ESTAFETA
+            )
+            ,0
+            ) "2018",
+        NVL(
+            (
+                SELECT  MONTO
+                FROM    GRG_PTU_V3_CARGAS
+                WHERE   ANIO = '2019'
+                        AND ESTAFETA = gpvh.ESTAFETA
+            )
+            ,0
+            ) "2019",
+        NVL(
+            (
+                SELECT  MONTO
+                FROM    GRG_PTU_V3_CARGAS
+                WHERE   ANIO = '2020'
+                        AND ESTAFETA = gpvh.ESTAFETA
+            )
+            ,0
+            ) "2020"
+ 
+FROM    GRG_PTU_V3_HEADER gpvh
+WHERE   LEGAL_EMPLOYER_ID = :legal_emp_id
+        AND gpvh.DIAS_BASE > 0
+        AND EXISTS  ( 
+                        SELECT  NULL
+                        FROM    GRG_PTU_V3_SECURED_USERS
+                        WHERE   USERNAME = :username
+                                AND LEGAL_EMPLOYER_ID = :legal_emp_id
+                    )
+ORDER BY ESTAFETA
