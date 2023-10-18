@@ -1,0 +1,47 @@
+--QRY NEW REST RESUMEN_MON_NOMINA_H2H
+WITH BASE AS (
+    select 
+    tmrv.ORG_ID, 
+    tmrv.ORG_NAME, 
+    tmrv.STATUS,
+    decode( 
+            tmrv.STATUS, 'C', 'PENDIENTE',
+                    'V', 'REVISADO',
+                    'P', 'APROBADO',
+                    'R', 'RECHAZADO',
+                    'AUTORIZADO' ) STATUS_DESC, 
+    to_char(tmrv.FECHA_H2H,'yyyy-mm-dd') FECHA_H2H,
+	tmrv.FECHA_H2H FECHA_DESC,
+    sum( tmrv.MONTO ) MONTO,
+	TO_NUMBER(sum(tmrv.monto)) MONTO_DISPLAY,
+    (SELECT 
+        SUM(TO_NUMBER(num_registros))
+     FROM
+        TOKS_MONITOR_NOM_H2H_V tmnv
+     WHERE tmnv.ORG_ID = tmrv.ORG_ID
+       AND tmnv.status = tmrv.status
+       AND tmnv.fecha_h2h = tmrv.fecha_h2h) num_registros
+
+from   
+       TOKS_MONITOR_H2H_RESUMEN_NOM_V  tmrv
+where  1=1
+  and  tmrv.FECHA_H2H between to_date( :p_fecha_inicio, 'yyyy-mm-dd'  )
+                     and to_date( :p_fecha_fin, 'yyyy-mm-dd' )
+and    ( :p_stat1 is null and :p_stat3 is null and :p_stat2 is null
+         or tmrv.STATUS = any ( :p_stat1, :p_stat2, :p_stat3 ) ) 
+group by tmrv.ORG_ID, tmrv.ORG_NAME, tmrv.FECHA_H2H, tmrv.status
+)
+
+SELECT 
+STATUS_DESC || FECHA_H2H || ORG_ID  || dbms_random.random MONITOR_ID, 
+ORG_ID,
+ORG_NAME,
+FECHA_H2H,
+FECHA_DESC,
+STATUS_DESC,
+SUM(MONTO) MONTO,
+SUM(MONTO_DISPLAY) MONTO_DISPLAY,
+SUM(NUM_REGISTROS) NUM_REGISTROS
+FROM BASE
+group by ORG_ID, ORG_NAME, FECHA_H2H, FECHA_DESC, STATUS_DESC
+order by fecha_h2h, org_name
