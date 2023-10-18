@@ -1,0 +1,47 @@
+--QRY LOV X NOMBRE CARTA_REN
+SELECT  UPPER (trim(ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)) AS name,
+        papf.person_id
+FROM    
+        per_person_secured_list_v       papf,
+        --per_all_people_f                papf,
+        per_assignment_secured_list_v   paaf,
+        --per_all_assignments_f           paaf,
+        per_location_secured_list_v     pl,
+        --per_locations                   pl
+        per_person_names_f              ppn
+WHERE   1 = 1 
+        AND papf.person_id = paaf.person_id
+        AND paaf.assignment_type = 'E'
+        AND paaf.primary_flag = 'Y'
+        AND paaf.assignment_status_type = 'ACTIVE'
+        AND paaf.location_id = pl.location_id
+        --+
+        AND papf.person_id = ppn.person_id
+        AND ppn.name_type = 'MX'
+        --+
+        AND NOT EXISTS (
+            SELECT  1
+            FROM    
+                    pay_rel_groups_dn               prg,
+                    pay_payroll_terms               pt,
+                    pay_assigned_payrolls_dn        apd,
+                    --pay_all_payrolls_f              py,
+                    pay_payroll_secured_list_v py,
+                    fnd_lookup_values_vl            flv
+            WHERE   1 = 1
+                    AND prg.assignment_id   = paaf.assignment_id
+                    AND pt.hr_term_id       = prg.term_id
+                    AND apd.payroll_term_id = pt.payroll_term_id
+                    AND py.payroll_id       = apd.payroll_id
+                    AND TRUNC(SYSDATE)      BETWEEN py.effective_start_date AND py.effective_end_date
+                    --+
+                    AND flv.lookup_type     = 'GRG_PAY_CARTA_REN_USER_RSTRGDS'
+                    AND flv.lookup_code     = :xdo_user_name
+                    AND flv.enabled_flag    = 'Y'
+                    AND flv.tag             LIKE '%' || py.payroll_name || '%'
+        )
+        --+
+        AND TRUNC(SYSDATE) BETWEEN papf.effective_start_date AND papf.effective_end_date
+        AND TRUNC(SYSDATE) BETWEEN paaf.effective_start_date AND paaf.effective_end_date
+        AND trunc(SYSDATE) BETWEEN ppn.EFFECTIVE_START_DATE AND ppn.EFFECTIVE_END_DATE
+ORDER BY 1
