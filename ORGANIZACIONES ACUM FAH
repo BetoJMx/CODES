@@ -1,0 +1,88 @@
+--ORGANIZACIONES ACUM FAH
+SELECT    hoi_unidad.organization_id AS organization_id
+        , CONVERT (   REPLACE (  REPLACE (  TRIM (UPPER (haou_unidad.name))
+                                          , 'Ñ'
+                                          , 'N'
+                                         )
+                               , 'ñ'
+                               , 'n'
+                              )
+                    , 'us7ascii'
+                    , 'al32utf8'
+                  ) AS organization_name
+        , COUNT(DISTINCT pap.person_number) numero_empleados
+FROM      pay_payroll_actions             ppa
+        , pay_payroll_rel_actions         ppra
+        , pay_rel_groups_dn               prg
+        , per_all_assignments_f           paa 
+        --PER_ASSIGNMENT_SECURED_LIST_V    
+        , per_all_people_f                pap 
+        --PER_PERSON_SECURED_LIST_V        
+        , hr_organization_information_f   hoi_unidad
+        , hr_all_organization_units       haou_unidad
+WHERE     1 = 1
+AND       pap.person_number = NVL(:estafeta, pap.person_number)
+AND       ppa.payroll_action_id = ppra.payroll_action_id
+AND       ppa.action_type IN ('R', 'Q', 'B')
+AND       ppra.action_status = 'C'
+AND       ppa.payroll_id = NVL ( :nomina, ppa.payroll_id)
+AND       ppa.consolidation_set_id = NVL ( :juegoconsolidacion, ppa.consolidation_set_id)
+AND       ppra.payroll_relationship_id = prg.payroll_relationship_id
+AND       prg.assignment_id = paa.assignment_id
+AND       paa.legal_entity_id = NVL(:empLegal, paa.legal_entity_id)
+AND       paa.assignment_type = 'E'
+--AND       paa.assignment_status_type = 'ACTIVE'
+AND       paa.effective_latest_change = 'Y'
+AND       paa.person_id = pap.person_id
+AND       paa.organization_id = hoi_unidad.organization_id(+)
+AND       hoi_unidad.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+AND       hoi_unidad.org_information7(+) = '1'
+AND       paa.organization_id = haou_unidad.organization_id
+--
+AND       ppa.date_earned BETWEEN TO_DATE ( :fechainicio, 'yyyy-mm-dd') AND TO_DATE ( :fechafin, 'yyyy-mm-dd')
+AND       ppa.effective_date BETWEEN prg.start_date AND prg.end_date
+AND       ppa.effective_date BETWEEN paa.effective_start_date AND paa.effective_end_date
+AND       ppa.effective_date BETWEEN pap.effective_start_date AND pap.effective_end_date
+AND       ppa.effective_date BETWEEN hoi_unidad.effective_start_date AND hoi_unidad.effective_end_date
+--
+AND       EXISTS (
+            SELECT  1
+            FROM      pay_payroll_rel_actions         ppra
+                    , pay_run_results                 prr
+                    , pay_run_result_values           prrv
+                    , pay_element_types_f             pet
+                    , pay_element_types_tl            pettl
+                    , pay_input_values_f              piv
+                    , pay_input_values_tl             pivtl
+            WHERE     1 = 1
+            AND       ppra.payroll_action_id = ppa.payroll_action_id
+            AND       ppra.payroll_relationship_id = prg.payroll_relationship_id
+            AND       ppra.action_status = 'C'
+            AND       ppra.retro_component_id IS NULL
+            AND       ppra.run_type_id IS NOT NULL
+            AND       ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+            AND       prr.run_result_id = prrv.run_result_id
+            AND       prr.status IN ('P', 'PA')
+            AND       prr.element_type_id = pet.element_type_id
+            AND       pet.element_type_id = pettl.element_type_id
+            AND       pet.element_type_id = piv.element_type_id
+            AND       prrv.input_value_id = piv.input_value_id
+            AND       piv.input_value_id = pivtl.input_value_id
+            AND       piv.user_display_flag = 'Y'
+            AND       pettl.element_name IN (
+                                              'FP041 Earnings Results'
+                                            , 'FP042 Earnings Results'
+                                            , 'ND517 Results'
+                                            , 'ND593 Earnings Results'
+                                            , 'NP066 Earnings Results'
+                                            , 'NP067'
+                                            )    
+            AND       pivtl.name IN ('Pay Value', 'Earnings Calculated')
+            AND       ppa.effective_date BETWEEN pet.effective_start_date AND pet.effective_end_date
+            AND       ppa.effective_date BETWEEN piv.effective_start_date AND piv.effective_end_date
+            AND       pettl.language = 'US'
+            AND       pivtl.language = 'US'
+          )
+GROUP BY  hoi_unidad.organization_id
+        , haou_unidad.name
+ORDER BY hoi_unidad.organization_id
