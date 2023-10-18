@@ -1,0 +1,323 @@
+--QRY PTU INFORMACION
+SELECT  DISTINCT
+        CONVERT ( REPLACE ( UPPER ( 
+                  ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names ),
+                  'Ñ', 'N'),
+            'us7ascii', 'al32utf8')
+            AS EE_Nombre,
+        pap.person_number 
+            AS EE_Estafeta,
+        CONVERT (UPPER (xler.registered_name),'us7ascii', 'al32utf8') 
+            AS EE_Empleador_Legal,
+        CONVERT (REPLACE ( UPPER (hapft.name), 'Ñ', 'N'), 'us7ascii', 'al32utf8')
+            AS EE_Puesto,
+        TO_CHAR(
+                NVL(
+                   (SELECT psdf.seniority_date
+                    FROM   per_seniority_dates_f  psdf, -- Seniority Date
+                           per_seniority_dates_setup   psds
+                    WHERE  psdf.person_id = pap.person_id
+                    AND    psdf.seniority_field = 'ORA_ENT'
+                    AND    psds.seniority_date_code = psdf.seniority_date_code
+                    AND    psds.active_flag = 'Y'
+                    AND    TRUNC(SYSDATE) BETWEEN psdf.effective_start_date AND psdf.effective_end_date
+                   ),
+                   pap.start_date ),
+                'DD/MM/YYYY' )
+            AS EE_Fecha_Contratacion,
+        TO_CHAR (ppos.actual_termination_date, 'DD/MM/YYYY')
+            AS EE_Fecha_Baja,
+        TO_CHAR (ppos.date_start, 'DD/MM/YYYY') 
+            AS EE_Fecha_Cambio_Comp,
+        CONVERT (TO_CHAR (hoi_unidad.org_information1),'us7ascii', 'al32utf8') 
+            AS EE_Unidad,
+        CONVERT (pldft.location_name, 'us7ascii', 'al32utf8')
+            AS EE_Organizacion,
+        NVL (SUBSTR (pni_rfc.national_identifier_number, 1, 4), '0000')
+         || '-'
+         || NVL (SUBSTR (pni_rfc.national_identifier_number, 5, 6), '000000')
+         || '-'
+         || NVL (SUBSTR (pni_rfc.national_identifier_number, 10, 3), '000')
+            AS EE_RFC,
+        NVL (SUBSTR (pni_imss.national_identifier_number, 1, 2), '00')
+         || '-'
+         || NVL (SUBSTR (pni_imss.national_identifier_number, 3, 2), '00')
+         || '-'
+         || NVL (SUBSTR (pni_imss.national_identifier_number, 5, 2), '00')
+         || '-'
+         || NVL (SUBSTR (pni_imss.national_identifier_number, 7, 4), '0000')
+         || '-'
+         || NVL (SUBSTR (pni_imss.national_identifier_number, 11, 1), '0')
+            AS EE_NSS,
+        NVL(pni_curp.national_identifier_number,'000000000000000000')   
+            AS EE_CURP,
+        DECODE (paa.employee_category,
+                 'BC', 'Sindicalizado',
+                 'WC', 'Empleado Ejecutivo',
+                 'Empleado de Confianza')
+            AS EE_Categoria,
+        (   SELECT  MAX(CONVERT (REPLACE ( UPPER (hapft2.name), 'Ñ', 'N'), 'us7ascii', 'al32utf8'))
+            FROM    per_all_assignments_f   paa2,
+                    hr_all_positions_f      hapf2,
+                    hr_all_positions_f_tl   hapft2
+            WHERE   1 = 1
+                    AND paa2.person_id = pap.person_id
+                    AND paa2.assignment_type = 'E'
+                    AND paa2.effective_latest_change = 'Y'
+                    AND paa2. ASSIGNMENT_SEQUENCE = (
+                                                        SELECT  MAX(ASSIGNMENT_SEQUENCE) 
+                                                        FROM    PER_ALL_ASSIGNMENTS_M
+                                                        WHERE   paa2.person_id = person_id
+                                                                AND assignment_type = 'E'
+                                                                AND effective_latest_change = 'Y'
+                                                    )
+                    AND paa2.position_id = hapf2.position_id
+                    AND hapft2.position_id = hapf2.position_id
+                    AND hapft2.language = SYS_CONTEXT ('USERENV', 'LANG')
+                    AND sysdate BETWEEN paa2.effective_start_date
+                                    AND paa2.effective_end_date
+                    AND sysdate BETWEEN hapf2.effective_start_date
+                                    AND hapf2.effective_end_date
+        )   AS EE_Puesto_Act,
+        (   SELECT  MAX(CONVERT (hoi_uni2.org_information1,'us7ascii', 'al32utf8')) uni
+            FROM    per_all_assignments_f         paa2,
+                    hr_organization_information_f hoi_uni2
+            WHERE   1 = 1
+                    AND paa2.person_id = pap.person_id
+                    AND paa2.assignment_type = 'E'
+                    AND paa2.effective_latest_change = 'Y'
+                    AND paa2. ASSIGNMENT_SEQUENCE = (
+                                                        SELECT  MAX(ASSIGNMENT_SEQUENCE) 
+                                                        FROM    PER_ALL_ASSIGNMENTS_M
+                                                        WHERE   paa2.person_id = person_id
+                                                                AND assignment_type = 'E'
+                                                                AND effective_latest_change = 'Y'
+                                                    )
+                    AND paa2.organization_id = hoi_uni2.organization_id
+                    AND hoi_uni2.org_information_context = 'PER_GL_COST_CENTER_INFO'
+                    AND hoi_uni2.org_information7 = '1'
+                    AND sysdate BETWEEN hoi_uni2.effective_start_date
+                                    AND hoi_uni2.effective_end_date
+                    AND sysdate BETWEEN paa2.effective_start_date
+                                    AND paa2.effective_end_date
+        )   AS EE_Unidad_Act,
+        (   SELECT  max(CONVERT (pldft2.location_name, 'us7ascii', 'al32utf8'))
+            FROM    per_all_assignments_f         paa2,
+                    per_locations                 pl2,
+                    per_location_details_f        pldf2,
+                    per_location_details_f_tl     pldft2
+            WHERE   1 = 1
+                    AND paa2.person_id = pap.person_id
+                    AND paa2.assignment_type = 'E'
+                    AND paa2.effective_latest_change = 'Y'
+                    AND paa2. ASSIGNMENT_SEQUENCE = (
+                                                        SELECT  MAX(ASSIGNMENT_SEQUENCE) 
+                                                        FROM    PER_ALL_ASSIGNMENTS_M
+                                                        WHERE   paa2.person_id = person_id
+                                                                AND assignment_type = 'E'
+                                                                AND effective_latest_change = 'Y'
+                                                    )
+                    AND pl2.location_id = paa2.location_id
+                    AND pldf2.location_id = pl2.location_id
+                    AND pldft2.location_details_id = pldf2.location_details_id
+                    AND pldft2.language = SYS_CONTEXT ('USERENV', 'LANG')   -- 'E'
+                    AND sysdate BETWEEN paa2.effective_start_date
+                                    AND paa2.effective_end_date
+                    AND sysdate BETWEEN pldf2.effective_start_date
+                                    AND pldf2.effective_end_date
+        )   AS EE_Organizacion_Act,
+        paa.assignment_number                 EE_assignment_number,
+        pap.person_id                         EE_person_id,
+        paa.assignment_id                     EE_assignment_id,
+        paa.legal_entity_id                   EE_legal_employer_id,
+        (   SELECT  max( ppra.payroll_rel_action_id )
+                    --+
+            FROM    pay_payroll_actions            ppa,
+                    pay_payroll_rel_actions        ppra,
+                    pay_action_classes             pac
+                    --+
+            WHERE   1 = 1
+                    AND ppra.payroll_relationship_id = pprd.payroll_relationship_id
+                    AND ppra.payroll_relationship_id = prg.payroll_relationship_id
+					AND ppra.payroll_rel_action_id not in(742350915)
+                    AND (   ppa.action_type = 'R'
+                        AND ppra.retro_component_id IS NULL
+                        AND ppra.run_type_id IS NOT NULL
+                        OR  ppa.action_type IN ('B', 'I')
+                        AND pap.person_number = '167678'
+                    )
+                    --+
+                    AND ppa.payroll_action_id = ppra.payroll_action_id
+                    --AND ppa.payroll_id = pay.payroll_id
+                    --AND ppa.action_type IN ('R', 'B', 'I')
+                    AND ppa.action_status = 'C'
+                    AND EXTRACT (YEAR FROM ppa.effective_date) = :p_process_year --'2020'
+                    --+
+                    AND pac.action_type = ppa.action_type
+                    AND pac.classification_name = 'SEQUENCED'
+        )   AS EE_payroll_rel_action_id,
+        --+
+        (   SELECT  MAX(peef.multiple_entry_count)
+            FROM    pay_entry_usages              peu,
+                    pay_element_entries_f         peef,
+                    pay_element_types_vl          pet
+            WHERE   1 = 1
+                    AND peu.payroll_relationship_id = prg.payroll_relationship_id
+                    AND peu.element_entry_id = peef.element_entry_id
+                    AND peef.element_type_id = pet.element_type_id
+                    AND pet.element_name = 'NP021'     
+        )   AS SECUENCIA_NP021,
+        (   SELECT  MAX(peef.multiple_entry_count)
+            FROM    pay_entry_usages              peu,
+                    pay_element_entries_f         peef,
+                    pay_element_types_vl          pet
+            WHERE   1 = 1
+                    AND peu.payroll_relationship_id = prg.payroll_relationship_id
+                    AND peu.element_entry_id = peef.element_entry_id
+                    AND peef.element_type_id = pet.element_type_id
+                    AND pet.element_name = 'NP022'     
+        )   AS SECUENCIA_NP022,
+        CONVERT (REPLACE ( UPPER (pay.PAYROLL_NAME), 'Ñ', 'N'), 'us7ascii', 'al32utf8') AS NOMINA,
+        pay.PAYROLL_ID AS NOMINA_ID,
+        (
+            SELECT  MAX (cs.salary_amount)
+            FROM    CMP_SALARY cs
+            WHERE   cs.salary_approved = 'Y'
+                    AND cs.person_id = pap.person_id
+                    --AND cs.assignment_id = paa.assignment_id
+                    AND cs.assignment_type = 'E'
+                    AND cs.legal_entity_id = :p_legal_employeer_id
+                    AND least( nvl( ppos.actual_termination_date, sysdate), to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+                        BETWEEN cs.date_from
+                        AND cs.date_to
+                    --AND EXTRACT(YEAR FROM cs.date_from) = :p_process_year
+        ) DAILY_SALARY,
+        NVL(
+            (
+                SELECT  TO_CHAR(p.actual_termination_date, 'DD/MM/YYYY','NLS_DATE_LANGUAGE=SPANISH')
+                FROM    per_periods_of_service  p,
+                        per_action_occurrences  pao, --Action Reasons
+                        per_actions_vl          pa
+                WHERE   1 = 1
+                        AND pao.action_occurrence_id    = p.action_occurrence_id
+                        AND pa.action_id                = pao.action_id
+                        AND pa.action_type_code         = 'EMPL_TERMINATE'
+                        AND p.person_id                 = pap.person_id
+                        AND p.period_type               = 'E'
+            ),null
+        ) EE_Fecha_Baja_R
+   FROM per_all_people_f                pap,
+        per_person_names_f              ppn,
+        per_all_assignments_f           paa,
+        per_periods_of_service          ppos,
+        per_jobs_f_tl                   pj,
+        hr_organization_information_f   hoi_unidad,
+        hr_lookups                      hl_categoria,
+        per_national_identifiers        pni_curp,
+        per_national_identifiers        pni_rfc,
+        per_national_identifiers        pni_imss,
+        per_legal_employers             ple,
+        xle_entity_profiles             xlep,
+        xle_registrations               xler,
+        per_locations                   pl,
+        per_location_details_f          pldf,
+        per_location_details_f_tl       pldft,
+        --+
+        hr_all_positions_f              hapf,
+        hr_all_positions_f_tl           hapft,
+        --+
+        pay_pay_relationships_dn        pprd, 
+        pay_rel_groups_dn               prg,
+        pay_payroll_terms               ppt,
+        pay_assigned_payrolls_dn        paypd,
+        pay_all_payrolls_f              pay
+        --+
+  WHERE 1 = 1
+    AND pap.person_number = nvl( :p_person_number, pap.person_number ) 
+    --AND pap.person_number = '163739'
+    AND pap.person_id = ppn.person_id
+    AND ppn.name_type = 'MX'
+    --+ASS
+    AND paa.person_id = pap.person_id
+    AND paa.assignment_type = 'E'
+    AND paa.effective_latest_change = 'Y'
+    AND paa.legal_entity_id = NVL (:p_legal_employeer_id, paa.legal_entity_id)
+    --+PERIOD_SERVICE
+    AND paa.period_of_service_id = ppos.period_of_service_id
+    AND paa.legal_entity_id = ppos.legal_entity_id
+    AND pap.person_id = ppos.person_id
+    AND to_char( ppos.date_start, 'YYYY' ) <= :p_process_year
+    AND nvl( to_char( ppos.actual_termination_date, 'YYYY' ), :p_process_year ) >= :p_process_year 
+    --+JOB
+    AND paa.job_id = pj.job_id
+    AND pj.language = SYS_CONTEXT ('USERENV', 'LANG')
+    --+ORG
+    AND paa.organization_id = hoi_unidad.organization_id(+)
+    AND hoi_unidad.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+    AND hoi_unidad.org_information7(+) = '1'
+    --+INFO EMP
+    AND paa.employee_category = hl_categoria.lookup_code
+    AND hl_categoria.lookup_type = 'EMPLOYEE_CATG'
+    AND pap.person_id = pni_curp.person_id(+)
+    AND UPPER (pni_curp.national_identifier_type(+)) = 'CURP'
+    AND pap.person_id = pni_rfc.person_id(+)
+    AND UPPER (pni_rfc.national_identifier_type(+)) = 'RFC'
+    AND pap.person_id = pni_imss.person_id(+)
+    AND UPPER (pni_imss.national_identifier_type(+)) = 'IMSS'
+     --+ LEGAL
+    AND paa.legal_entity_id = ple.organization_id
+    AND ple.legal_entity_id = xlep.legal_entity_id
+    AND xlep.legal_entity_id = xler.source_id
+    AND xler.source_table = 'XLE_ENTITY_PROFILES'
+     --+ LOC
+    AND paa.location_id = nvl( :p_unidad_proceso, paa.location_id )
+    AND pl.location_id = paa.location_id
+    AND pldf.location_id = pl.location_id
+    AND pldft.location_details_id = pldf.location_details_id
+    AND pldft.language = SYS_CONTEXT ('USERENV', 'LANG')   -- 'E'
+    --+ POS
+    AND paa.position_id = hapf.position_id
+    AND hapft.position_id = hapf.position_id
+    AND hapft.language = SYS_CONTEXT ('USERENV', 'LANG')
+    --+ TERM
+    AND pprd.person_id = pap.person_id
+    AND prg.payroll_relationship_id = pprd.payroll_relationship_id 
+    AND prg.assignment_id = paa.assignment_id
+    AND prg.group_type = 'A'
+    AND ppt.payroll_relationship_id = pprd.payroll_relationship_id
+    AND ppt.hr_term_id = prg.term_id
+    AND paypd.payroll_term_id = ppt.payroll_term_id
+    AND pay.payroll_id = paypd.payroll_id
+    AND pay.payroll_id = nvl(:p_nomina, pay.payroll_id )
+    --+ DATES
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN pap.effective_start_date
+            AND pap.effective_end_date
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN ppn.effective_start_date
+            AND ppn.effective_end_date
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN paa.effective_start_date
+            AND paa.effective_end_date
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN hapf.effective_start_date
+            AND hapf.effective_end_date
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN pj.effective_start_date
+            AND pj.effective_end_date
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN pldf.effective_start_date
+            AND pldf.effective_end_date
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN hoi_unidad.effective_start_date
+            AND hoi_unidad.effective_end_date
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN prg.start_date 
+            AND prg.end_date
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN paypd.start_date
+            AND paypd.end_date
+    AND nvl( ppos.actual_termination_date, to_date('31/12/'||:p_process_year,'dd/mm/yyyy') ) 
+        BETWEEN pay.effective_start_date 
+            AND pay.effective_end_date
+--order by 1, 2, 3
