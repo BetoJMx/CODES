@@ -1,0 +1,67 @@
+--QRY G_1 REP_COMP_NOM PERIODOS 200923
+SELECT  period_name,
+        period_num,
+        period_type,
+        TO_CHAR(start_date, 'YYYY-MM-DD') AS start_date,
+        TO_CHAR(end_date, 'YYYY-MM-DD') AS end_date,
+        'DE ' || EXTRACT(DAY FROM start_date) || ' ' ||
+        CASE
+            WHEN EXTRACT(MONTH FROM start_date) = 1 THEN
+                'ENE'
+            WHEN EXTRACT(MONTH FROM start_date) = 2 THEN
+                'FEB'
+            WHEN EXTRACT(MONTH FROM start_date) = 3 THEN
+                'MAR'
+            WHEN EXTRACT(MONTH FROM start_date) = 4 THEN
+                'ABR'
+            WHEN EXTRACT(MONTH FROM start_date) = 5 THEN
+                'MAY'
+            WHEN EXTRACT(MONTH FROM start_date) = 6 THEN
+                'JUN'
+            WHEN EXTRACT(MONTH FROM start_date) = 7 THEN
+                'JUL'
+            WHEN EXTRACT(MONTH FROM start_date) = 8 THEN
+                'AGO'
+            WHEN EXTRACT(MONTH FROM start_date) = 9 THEN
+                'SEP'
+            WHEN EXTRACT(MONTH FROM start_date) = 10 THEN
+                'OCT'
+            WHEN EXTRACT(MONTH FROM start_date) = 11 THEN
+                'NOV'
+            WHEN EXTRACT(MONTH FROM start_date) = 12 THEN
+                'DIC'
+        END
+        || ' ' || EXTRACT(YEAR FROM start_date) || 
+        ' AL ' || EXTRACT(DAY FROM end_date) || ' ' ||
+        CASE
+            WHEN EXTRACT(MONTH FROM end_date) = 1 THEN
+                'ENE'
+            WHEN EXTRACT(MONTH FROM end_date) = 2 THEN
+                'FEB'
+            WHEN EXTRACT(MONTH FROM end_date) = 3 THEN
+                'MAR'
+            WHEN EXTRACT(MONTH FROM end_date) = 4 THEN
+                'ABR'
+            WHEN EXTRACT(MONTH FROM end_date) = 5 THEN
+                'MAY'
+            WHEN EXTRACT(MONTH FROM end_date) = 6 THEN
+                'JUN'
+            WHEN EXTRACT(MONTH FROM end_date) = 7 THEN
+                'JUL'
+            WHEN EXTRACT(MONTH FROM end_date) = 8 THEN
+                'AGO'
+            WHEN EXTRACT(MONTH FROM end_date) = 9 THEN
+                'SEP'
+            WHEN EXTRACT(MONTH FROM end_date) = 10 THEN
+                'OCT'
+            WHEN EXTRACT(MONTH FROM end_date) = 11 THEN
+                'NOV'
+            WHEN EXTRACT(MONTH FROM end_date) = 12 THEN
+                'DIC'
+        END
+        || ' ' || EXTRACT(YEAR FROM start_date) AS period_label
+FROM    pay_time_periods
+WHERE   1 = 1
+        AND payroll_id      = :p_payroll_id
+        AND time_period_id  = :p_time_period_id
+        AND status          = 'O'
