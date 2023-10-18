@@ -1,0 +1,219 @@
+--FINQ 0'S
+
+WITH cat_elements as (
+		SELECT meaning AS element_name
+			, regexp_substr (description, '[^' || '|' || ']+', 1, 1) element_name_reporte
+			, regexp_substr (meaning, '[^' || '|' || ']+', 1, 2) element_description_reporte
+		FROM fnd_lookup_values
+		WHERE 1 = 1
+		AND TRIM(lookup_type) IN ('XXGRG_PERCEP_RECIBO_FIN_CFDI')
+		AND language = SYS_CONTEXT('USERENV','LANG')
+		AND enabled_flag = 'Y'
+		)
+		,
+--
+	cantidad_dias_w_h as (
+		SELECT SUM(TRUNC(cantidad,2)) cantidad,
+			payroll_rel_action_id,
+			reporting_name,
+			element_name,
+			SUM(TRUNC(cantidadw,2)) cantidadw,
+			SUM(TRUNC(cantidadh,2)) cantidadh
+		FROM (SELECT DECODE(pivtl.name,'Dias',ABS(prrv.result_value)) cantidad,
+				prr.payroll_rel_action_id,
+				pet.element_type_id,
+				REPLACE(pettl.reporting_name,'Results','') reporting_name,
+				pettl.element_name,
+				pivtl.name,
+				DECODE(pivtl.name,'Days Worked',prrv.result_value) cantidadw,		
+				DECODE(pivtl.name, 'Hours',ABS(prrv.result_value),'Horas',ABS(prrv.result_value)) cantidadh
+			FROM pay_run_results        prr,
+				pay_run_result_values   prrv,
+				pay_element_types_f     pet,
+				pay_element_types_tl    pettl,
+				pay_input_values_f      piv,
+				pay_input_values_tl     pivtl
+			WHERE 1=1 
+			AND prr.status              IN ('P', 'PA')
+			AND prrv.run_result_id       = prr.run_result_id
+			AND pet.element_type_id     = prr.element_type_id
+			AND TRUNC(SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+			AND pettl.element_type_id   = pet.element_type_id
+			AND pettl.language          = SYS_CONTEXT('USERENV','LANG')
+			AND piv.element_type_id     = pettl.element_type_id
+			AND piv.input_value_id      = prrv.input_value_id
+			AND trunc(sysdate) between piv.effective_start_date AND piv.effective_end_date
+			AND pivtl.input_value_id    = piv.input_value_id
+			AND pivtl.language          = SYS_CONTEXT('USERENV','LANG')
+			AND TRIM(pivtl.name)        IN ('Dias', 'Days Worked', 'Horas', 'Hours')
+			AND prrv.result_value       IS NOT NULL)
+		GROUP BY payroll_rel_action_id,reporting_name,element_name)
+	SELECT element_name
+	, description clave
+	, CASE
+		WHEN importeexento = 0 AND importegravado = 0 THEN 
+			importe
+		WHEN ((importeexento + importegravado) > importe) OR ((importeexento + importegravado) < importe) THEN
+			ROUND((importe - importegravado), 2)
+		ELSE
+			importeexento
+		END importeexento
+	,importegravado
+	,importe total_percep
+	,payroll_rel_action_id
+	,TRUNC(cantidad,2) cantidad
+FROM (SELECT element_name
+		, description
+		, SUM(importeexento) importeexento
+		, SUM(importegravado) importegravado
+		, SUM(importe) importe
+		, payroll_rel_action_id
+		, cantidad
+	FROM(SELECT    element_name
+			, description
+			, CASE
+				WHEN input_name = 'ISR EXEMPT' THEN
+					result_value
+				ELSE
+					0
+			END importeexento
+			, CASE
+				WHEN input_name = 'ISR SUBJECT' THEN
+					result_value
+				ELSE
+					0
+			END importegravado
+			, CASE
+				WHEN input_name <> 'ISR EXEMPT' AND input_name <> 'ISR SUBJECT' THEN
+					result_value
+				ELSE
+					0
+				END importe
+				, payroll_rel_action_id
+				, cantidad
+				,element_name_or
+		FROM(SELECT    CONVERT(  REPLACE(  TRIM(UPPER(elem.element_name_reporte))
+				, 'Ñ', 'N'), 'US7ASCII', 'AL32UTF8') element_name
+				, pettl.reporting_name description
+				, UPPER(TRIM(pivtl.name)) input_name
+				, CASE 
+					WHEN UPPER (TRIM (pec.base_classification_name)) = 'SOCIAL INSURANCE DEDUCTIONS' AND UPPER(TRIM(pivtl.name)) = 'SDI' AND prtf.shortname <> 'REGNOR' THEN
+						0
+					ELSE        
+						ABS(SUM(prrv.result_value))
+				END AS result_value
+				, ppra.payroll_rel_action_id
+				, (select 
+				    case 
+                        when cantidadh is not null
+                            then cantidadh
+                        when cantidad is not null
+                            then cantidad
+                        else cantidadw
+                    end						 
+                from cantidad_dias_w_h cd
+						where cd.payroll_rel_action_id  = ppra.payroll_rel_action_id
+						and pettl.reporting_name  = cd.element_name) cantidad			
+				,pettl.element_name element_name_or   
+			FROM      pay_payroll_actions             ppa
+				, pay_payroll_rel_actions         ppra
+				, pay_run_types_f                 prtf
+				, pay_run_results                 prr
+				, pay_run_result_values           prrv
+				, pay_element_types_f             pet
+				, pay_element_types_tl            pettl
+				, fusion.pay_ele_classifications  pec
+				, fusion.pay_input_values_f       piv
+				, pay_input_values_tl             pivtl
+				, cat_elements                    elem
+			WHERE     1 = 1
+			AND     ppa.payroll_action_id = ppra.payroll_action_id
+			AND     ppa.assignment_set_id = NVL(:p_object_group_id, ppa.assignment_set_id)
+			AND     ppa.payroll_id = NVL(:p_payroll_id, ppa.payroll_id)
+			AND     ppa.consolidation_set_id = NVL(:p_consolidation_set_id, ppa.consolidation_set_id)
+			AND     ppa.earn_time_period_id = NVL(:p_time_period_id, ppa.earn_time_period_id)
+			AND     ppra.run_type_id  = prtf.run_type_id
+			--AND     ppra.payroll_rel_action_id IN (443671043)
+			AND     ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+			AND     prr.run_result_id = prrv.run_result_id
+			AND     prr.status IN ('P', 'PA')
+			AND     ppra.action_status = 'C'
+			AND     ppra.retro_component_id IS NULL     
+			AND     prr.element_type_id = pet.element_type_id
+			AND     pet.element_type_id = pettl.element_type_id
+			AND     pet.classification_id = pec.classification_id
+			AND     pet.element_type_id = piv.element_type_id
+			AND     prrv.input_value_id = piv.input_value_id
+			AND     piv.input_value_id = pivtl.input_value_id
+			AND     piv.user_display_flag = 'Y'
+			AND     UPPER(pettl.element_name) = UPPER(elem.element_name)
+						AND     ((UPPER (pec.base_classification_name) IN ('STANDARD EARNINGS', 
+																			'SUPPLEMENTAL EARNINGS', 
+																			'TAXABLE BENEFITS'
+																		)
+						AND UPPER (TRIM (pivtl.name)) IN ('PAY VALUE', 
+															'VALOR PAGO',
+															'EARNINGS CALCULATED',
+															'ISR SUBJECT',
+															'ISR EXEMPT'
+														))
+						OR ((UPPER (pec.base_classification_name) IN ('TAX DEDUCTIONS', 
+																	'SOCIAL INSURANCE DEDUCTIONS', 
+																	'EMPLOYER TAXES'
+																)
+						AND UPPER (TRIM (pivtl.name)) IN ('EMPLOYER SOCIAL SECURITY QUOTA'
+															, 'SDI'
+															, 'PAY VALUE'
+															, 'VALOR PAGO'
+															, 'ISR WITHHELD'
+															, 'ISR SUBSIDY FOR EMPLOYMENT PAID'
+															, 'ISR SUBJECT'
+															, 'ISR EXEMPT'
+														))
+						OR (UPPER (pec.base_classification_name) IN ('ABSENCES'
+																		, 'VOLUNTARY DEDUCTIONS'
+																		, 'INVOLUNTARY DEDUCTIONS'
+																	)
+						 AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+															, 'VALOR PAGO'
+															, 'NET PAY'
+															, 'ISR SUBJECT'
+															, 'ISR EXEMPT'
+														)
+							))
+						OR (UPPER (pec.base_classification_name) = 'INFORMATION'
+						AND UPPER (TRIM (pivtl.name)) IN ('PAY VALUE'
+															, 'VALOR PAGO'
+															, 'EARNINGS AMOUNT'
+															, 'DIAS'
+															, 'HORAS'
+															, 'ISR SUBJECT'
+															, 'ISR EXEMPT'
+							))
+						OR (UPPER (pec.base_classification_name) = 'GLB_SEVERANCE_PAY'
+						AND UPPER (TRIM (pivtl.name)) IN ('EARNINGS CALCULATED'
+															, 'ISR SUBJECT'
+															, 'ISR EXEMPT'
+							))
+					   )
+		AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+		AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+		AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+		AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+		GROUP BY  pettl.reporting_name,
+		CONVERT(  REPLACE(  TRIM(UPPER(elem.element_name_reporte)), 'Ñ', 'N'), 'US7ASCII', 'AL32UTF8')
+                                            , UPPER (TRIM (pec.base_classification_name))
+		, UPPER(TRIM(pivtl.name))
+		, prtf.shortname
+		, ppra.payroll_rel_action_id
+		, pettl.element_name
+			)
+		)
+    WHERE importe > 0
+	GROUP BY  element_name
+	, description
+	, payroll_rel_action_id
+	, cantidad
+	,element_name_or
+ORDER BY  SUBSTR(element_name_or,3) ASC
+)
