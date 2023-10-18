@@ -1,0 +1,50 @@
+--FUNCTION GET_VACATION_KARDEX
+create or replace FUNCTION GET_VACATION_KARDEX (
+    p_estafeta   IN VARCHAR2,
+    p_user_token IN VARCHAR2 
+)   RETURN GRG_KARDEX_VACATIONS_TBL PIPELINED IS
+    CURSOR c_info (l_ws_resp_xml XMLTYPE) IS
+        SELECT  XML_DATA.ESTAFETA,
+                XML_DATA.PERIODO,
+                XML_DATA.DIAS,
+                XML_DATA.TOMADOS,
+                XML_DATA.PENDIENTES
+        FROM    XMLTABLE (
+                '/ROWSET/G_H/_B1/G_ROW' PASSING l_ws_resp_xml
+                COLUMNS ESTAFETA   VARCHAR2 (250) PATH 'ESTAFETA',
+                        PERIODO    VARCHAR2 (250) PATH 'PERIODO',
+                        DIAS       VARCHAR2 (250) PATH 'DIAS',
+                        TOMADOS    VARCHAR2 (250) PATH 'TOMADOS',
+                        PENDIENTES VARCHAR2 (250) PATH 'PENDIENTES'
+                ) XML_DATA;
+        TYPE info_type      IS TABLE OF c_info%ROWTYPE INDEX BY PLS_INTEGER;
+        v_array             info_type;
+        v_lines             GRG_KARDEX_VAC_TYPE := GRG_KARDEX_VAC_TYPE(NULL,NULL,NULL,NULL,NULL);
+        l_ws_resp_xml       XMLTYPE;
+        v_error             VARCHAR2(1000);
+BEGIN
+    l_ws_resp_xml := XXTOKS_KARDEX_2_PKG.get_xml_information( 
+        'VACATIONS CLOUD KARDEX-RT.xdo',
+        p_estafeta,
+        p_user_token
+    );
+    
+    OPEN c_info (l_ws_resp_xml);
+    FETCH c_info BULK COLLECT INTO v_array;
+
+    FOR v_i IN v_array.FIRST .. v_array.LAST LOOP
+
+    --     --INSERT INTO GRG_KARDEX_LOG_E (ERROR) VALUES (v_array(v_i).ESTAFETA);
+
+        v_lines.ESTAFETA        := v_array(v_i).ESTAFETA;  
+        v_lines.PERIODO         := v_array(v_i).PERIODO;  
+        v_lines.DIAS            := v_array(v_i).DIAS;  
+        v_lines.TOMADOS         := v_array(v_i).TOMADOS;  
+        v_lines.PENDIENTES      := v_array(v_i).PENDIENTES;  
+        
+        PIPE ROW (v_lines);  
+    END LOOP;
+    --v_error := DBMS_UTILITY.FORMAT_ERROR_BACKTRACE;
+    --INSERT INTO GRG_KARDEX_LOG_E (ERROR) VALUES (v_error);
+END GET_VACATION_KARDEX;
+/
