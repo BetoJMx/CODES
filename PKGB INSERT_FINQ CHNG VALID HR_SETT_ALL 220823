@@ -1,0 +1,1003 @@
+--PKGB INSERT_FINQ CHNG VALID HR_SETT_ALL 220823
+CREATE OR REPLACE PACKAGE BODY PAY.XXTOKS_INSERT_FINIQUITO_PKG   
+AS
+    PROCEDURE write_log (
+        p_mensaje   VARCHAR2
+    ) IS PRAGMA AUTONOMOUS_TRANSACTION;
+    BEGIN
+        INSERT INTO xxtoks_hr_settlement_log VALUES(
+              pay.xxtoks_hr_settlement_seq.nextval 
+            , current_date
+            , p_mensaje);
+        --+
+        COMMIT;
+    EXCEPTION 
+        WHEN OTHERS THEN
+            rollback;
+    END write_log;
+    
+    PROCEDURE get_insert_finiquito (p_id_person      IN     NUMBER,   
+                                    x_id_finiquito      OUT VARCHAR2,   
+                                    v_user_id        IN     NUMBER,   
+                                    v_user_name      IN     VARCHAR2)   
+    IS   
+        l_id_finiquito          VARCHAR2 (255);   
+        l_id_period             NUMBER;   
+        l_message               VARCHAR2 (2000);   
+        l_message_unidad_pago   VARCHAR2 (500);   
+        l_status_unidad         VARCHAR2 (300);   
+        l_description           CLOB;   
+        l_proposa_date          VARCHAR2 (250);   
+        --l_finish_date           DATE;   
+        l_finish_date_local     VARCHAR2 (15); --DATE;   
+        l_fecha_entrega         VARCHAR2 (15);--DATE;   
+        l_estafeta_emp          VARCHAR2 (100);   
+        l_dir_loc               VARCHAR2 (300);   
+        l_hours                 VARCHAR2 (300);   
+        l_tipo                  VARCHAR2 (20);   
+        l_init_random           NUMBER;   
+        l_end_random            NUMBER;   
+        l_random                NUMBER;   
+        l_horario_local         VARCHAR2 (100);   
+        l_secuencua             NUMBER;   
+        l_secu                  NUMBER;   
+        l_horario               VARCHAR2 (100);   
+        l_id_finiquito2         VARCHAR2 (100);   
+        l_settlement_number     VARCHAR2 (50);   
+        l_nip                   VARCHAR2 (100);   
+        l_person_id             VARCHAR2 (100);   
+        l_fecha_baja            VARCHAR2 (100);   
+        l_unidad_pago_loc       VARCHAR (200);   
+        v_val                   NUMBER;   
+    -- x_id_finiquito         varchar2(200);   
+        l_estatus               VARCHAR2(20);   
+   
+  	   l_ntf_settlement_id      number;   
+   
+    BEGIN  
+        write_log('GET_INSERT_FINIQUITO...Inicio!');
+        write_log('     -> p_id_person: '||p_id_person);
+        
+        BEGIN   
+            SELECT period_id,   
+                   to_char( proposal_date, 'DD-MON-YY', 'NLS_DATE_LANGUAGE = Spanish' ),   
+                   to_char( proposal_date_local, 'DD-MON-YY', 'NLS_DATE_LANGUAGE = Spanish' ) --,   
+                   --to_char( finish_date, 'DD-MON-YY', 'NLS_DATE_LANGUAGE = Spanish' )   
+              INTO l_id_period,   
+                   l_proposa_date,   
+                   l_finish_date_local --,   
+                   --l_finish_date   
+              FROM xxtoks_hr_finiquito_period_all   
+             WHERE     1 = 1   
+                   AND enabled_flag = 'Y'   
+                   AND TRUNC (SYSDATE) BETWEEN start_date AND end_date;   
+   
+            write_log ('    -> periodo'||' '||l_id_period);   
+            write_log ('    -> l_proposa_date' || l_proposa_date);   
+              
+        EXCEPTION   
+            WHEN NO_DATA_FOUND   
+            THEN   
+                l_description := 'No se encuentra fecha de pago configurada';   
+                 write_log ('No se encuentra fecha de pago configurada');  
+            WHEN OTHERS   
+            THEN   
+                l_id_period := NULL;   
+        END;   
+   
+        BEGIN   
+            SELECT MAX (settlement_id)   
+              INTO l_id_finiquito2   
+              FROM xxtoks_hr_settlement_all;   
+            
+            write_log('l_id_finiquito2: ' ||l_id_finiquito2);
+            
+            SELECT NVL (MAX (attribute2), 0)   
+              INTO l_secuencua   
+              FROM xxtoks_hr_settlement_all   
+             WHERE 1 = 1 AND settlement_id = l_id_finiquito2;
+             
+             write_log('l_secuencua: '||l_secuencua);   
+   
+            l_secuencua := l_secuencua + 1;   
+   
+            l_horario_local :=   
+                asigna_horarios_locales (p_no_intevalo   => l_secuencua,   
+                                         x_hora          => l_horario,   
+                                         x_cont          => l_secu);   
+            write_log ('    -> l_horario_local: '||l_horario_local);   
+        --  dbms_output.put_line(p_no_intevalo);   
+            
+        EXCEPTION   
+            WHEN OTHERS   
+            THEN   
+                NULL;   
+                write_log ('asigna_horarios_locales');  
+        END;   
+   
+        BEGIN   
+            SELECT XFE.PERSON_ID, XFE.EMP_NUMBER, XFE.EMP_FECHA_BAJA   
+              INTO l_person_id, l_estafeta_emp, l_fecha_baja   
+              FROM XXTOKS_FINIQUITO_EMPLEADOS XFE   
+             WHERE     1 = 1   
+                   AND XFE.PERSON_ID = p_id_person   
+                   AND XFE.EMP_FECHA_BAJA IS NOT NULL   
+                   AND XFE.PERSON_ID NOT IN   
+                           (SELECT PERSON_ID   
+                              FROM XXTOKS_HR_NTF_SETTLEMENT_ALL);   
+        EXCEPTION   
+            WHEN OTHERS   
+            THEN   
+                l_person_id := NULL;   
+                l_nip := NULL;   
+                write_log ('Error valida empleado baja' || SQLERRM);  
+        END;   
+        write_log('     -> l_person_id: ' || l_person_id);
+        write_log('     -> l_estafeta_emp: ' || l_estafeta_emp);
+        write_log('     -> l_fecha_baja: ' || l_fecha_baja);
+   
+        BEGIN   
+            IF l_person_id IS NOT NULL   
+            THEN   
+                l_nip :=   
+                       TO_CHAR (SYSDATE, 'YYYYMMDDHH24')   
+                    || XXTOKS_HR_NTF_SETTLEMENT_S.NEXTVAL; 
+                      
+                write_log ('    -> l_nip: '||l_nip);   
+   
+                Begin
+                SELECT 1   
+                  INTO v_val   
+                  FROM XXTOKS_HR_NTF_SETTLEMENT_ALL   
+                 WHERE EMPLOYEE_NUMBER = l_estafeta_emp   
+				  AND status not in ( '03' );
+				Exception 
+                    when too_many_rows then
+                        v_val := 1;
+                    when no_data_found then
+                        v_val := 0;
+                    when others then
+                        v_val := 0;
+                End;
+                
+                write_log('     -> v_val: '||v_val);
+                
+                IF v_val = 0   
+                THEN   
+                write_log ('entro al if: XXTOKS_HR_NTF_SETTLEMENT_ALL ');   
+                DBMS_OUTPUT.put_line (' '|| p_id_person || ' '|| l_estafeta_emp || ' '|| l_nip || ' '|| SYSDATE || ' '|| l_fecha_baja || ' '|| '01' || ' '|| FECHA || ' '|| v_user_id || ' '|| SYSDATE || ' '|| v_user_id || ' '|| SYSDATE);   
+                    INSERT INTO XXTOKS_HR_NTF_SETTLEMENT_ALL (   
+                                    NTF_SETTLEMENT_ID,   
+                                    PERSON_ID,   
+                                    EMPLOYEE_NUMBER,   
+                                    NIP,   
+                                    NTF_DATE,   
+                                    ACTUAL_TERMINATION_DATE,   
+                                    STATUS,   
+                                    ATTRIBUTE3,   
+                                    created_by,   
+                                    creation_date,   
+                                    LAST_UPDATED_BY,   
+                                    LAST_UPDATE_DATE)   
+                         VALUES (XXTOKS_HR_NTF_SETTLEMENT_S.NEXTVAL,   
+                                 p_id_person,   
+                                 l_estafeta_emp,   
+                                 l_nip,   
+                                 to_char( SYSDATE, 'DD-MON-YY', 'NLS_DATE_LANGUAGE = Spanish' ),   
+                                 l_fecha_baja,   
+                                 '01',   
+                                 FECHA,   
+                                 v_user_id,   
+                                 SYSDATE,   
+                                 v_user_id,   
+                                 SYSDATE)   
+								 returning NTF_SETTLEMENT_ID into l_NTF_SETTLEMENT_ID;   
+                ELSE   
+                    UPDATE XXTOKS_HR_NTF_SETTLEMENT_ALL   
+                       SET ATTRIBUTE3 = FECHA   
+                     WHERE EMPLOYEE_NUMBER = l_estafeta_emp;   
+                END IF;   
+            END IF;   
+            write_log ('sale del if: XXTOKS_HR_NTF_SETTLEMENT_ALL ');   
+               
+            COMMIT;   
+        EXCEPTION   
+            WHEN OTHERS THEN 
+                write_log('error insert XXTOKS_HR_NTF_SETTLEMENT_ALL -->' || SQLERRM);        
+        END;   
+                   
+        --+Obtener el numer de NIP existente   
+        BEGIN   
+            SELECT nip   
+              INTO l_nip   
+              FROM XXTOKS_HR_NTF_SETTLEMENT_ALL   
+             WHERE 1 = 1 AND PERSON_ID = p_id_person;   
+  
+        EXCEPTION   
+            WHEN OTHERS THEN 
+                write_log('Obtener el numer de NIP existente  -->' || SQLERRM);    
+               l_nip := NULL;      
+        END;   
+         
+        write_log('     -> l_id_period: ' || l_id_period);
+          
+        IF (l_id_period IS NOT NULL)           
+        THEN   
+            l_id_finiquito := XXTOKS_HR_SETTLEMENT_S.NEXTVAL || '';   
+            l_settlement_number :=   
+                   l_nip   
+                || (EXTRACT (YEAR FROM TRUNC (SYSDATE)) || l_id_finiquito);   
+            --l_nip := TO_CHAR (SYSDATE, 'YYYYMMDDHH24')|| XXTOKS_HR_NTF_SETTLEMENT_S.NEXTVAL;   
+               
+            DBMS_OUTPUT.put_line (l_id_finiquito);   
+            write_log ('    -> Entro aqui...');   
+   
+            --dbms_output.put_line(l_nip);   
+   
+            begin
+                SELECT 1--, max( decode( status, 'CA', 'CA' ) )   
+                  INTO v_val --, l_estatus   
+                  FROM xxtoks_hr_settlement_all   
+                 WHERE person_id = p_id_person   
+                   AND status not in ( 'CA' );
+            Exception 
+                when too_many_rows then
+                    v_val := 1;
+                when no_data_found then
+                    v_val := 0;
+                when others then
+                    v_val := 0;
+			end;   
+			
+			write_log(' -> v_val: '||v_val);
+            BEGIN  
+                IF v_val = 0   
+                THEN   
+                    INSERT INTO xxtoks_hr_settlement_all (settlement_id,   
+                                                          settlement_number,   
+                                                          person_id,   
+                                                          status,   
+                                                          request_type,   
+                                                          user_id,   
+                                                          user_name,   
+                                                          period_id,   
+                                                          attribute2,   
+                                                          attribute3,   
+                                                          created_by,   
+                                                          creation_date)   
+                         VALUES (TO_NUMBER (l_id_finiquito),   
+                                 l_settlement_number,   
+                                 TO_NUMBER (p_id_person),   
+                                 'EP',   
+                                 '01',   
+                                 v_user_id,   
+                                 v_user_name,   
+                                 l_id_period,                              --l_nip   
+                                 l_secu,   
+                                 FECHA,   
+                                 v_user_id,   
+                                 (SYSDATE - 5/24));   
+							                 
+					begin   
+                         update XXTOKS_HR_NTF_SETTLEMENT_ALL   
+                          set SETTLEMENT_ID = TO_NUMBER (l_id_finiquito),   
+                              SETTLEMENT_NUMBER = l_settlement_number   
+                            where NTF_SETTLEMENT_ID = l_NTF_SETTLEMENT_ID;   
+						   
+					exception    
+						when others then   
+						 dbms_output.put_line('sqlerrm');   
+					end;   
+	   
+                    BEGIN  
+                        XXTOKS_HR_FINIQUITO_PKG.get_obtiene_unidad_pago (   
+                            p_person      => TO_NUMBER (l_id_finiquito),   
+                            x_status      => l_status_unidad,   
+                            x_message     => l_message_unidad_pago,   
+                            x_estafeta    => l_estafeta_emp,   
+                            x_dir_local   => l_dir_loc,   
+                            x_hour        => l_hours,   
+                            x_tipo        => l_tipo);   
+                              
+                        write_log ('l_id_finiquito ' || l_id_finiquito);   
+                        write_log ('l_status_unidad ' || l_status_unidad);   
+                        write_log ('l_message_unidad_pago ' || l_message_unidad_pago);   
+                        write_log ('l_estafeta_emp ' || l_estafeta_emp);   
+                        write_log ('l_dir_loc ' || l_dir_loc);   
+                        write_log ('l_hours ' || l_hours);   
+                        write_log ('l_tipo ' || l_tipo);   
+                          
+                    EXCEPTION   
+                        WHEN OTHERS   
+                        THEN   
+                            l_description := NULL;   
+                            write_log ('error get_obtiene_unidad_pago'||SQLERRM);   
+                    END;   
+                          
+                    BEGIN   
+                        SELECT flv.description   
+                          INTO l_description   
+                          FROM XXTOKS_FND_LOOKUP_VALUES flv   
+                         WHERE     1 = 1   
+                               AND flv.LOOKUP_TYPE = 'XXTOKS_HR_FINIQUITO_CONFIG'   
+                               AND flv.LANGUAGE = SYS_CONTEXT ('USERENV', 'LANG')   
+                               AND flv.ENABLED_FLAG = 'Y'   
+                               AND flv.lookup_code = 'MSG_CREATE';   
+  
+                        write_log ( 'l_description ' || l_description);   
+                    EXCEPTION   
+                        WHEN OTHERS   
+                        THEN   
+                            l_description := NULL;   
+                            write_log ('error XXTOKS_HR_FINIQUITO_CONFIG'||SQLERRM);   
+                    END;   
+           
+                    BEGIN   
+                        SELECT flv.description   
+                          INTO l_unidad_pago_loc   
+                          FROM XXTOKS_FND_LOOKUP_VALUES flv   
+                         WHERE     1 = 1   
+                               AND flv.LOOKUP_TYPE = 'XXTOKS_HR_UNIDAD_PAGO_LOC'   
+                               AND flv.LANGUAGE = SYS_CONTEXT ('USERENV', 'LANG')   
+                               AND flv.MEANING = l_message_unidad_pago;   
+  
+                        l_message_unidad_pago := l_unidad_pago_loc;   
+                          
+                        write_log ('l_message_unidad_pago: ' || l_message_unidad_pago);  
+                    EXCEPTION   
+                        WHEN OTHERS   
+                        THEN   
+                            write_log (   
+                                'Error l_unidad_pago_loc: ' ||SQLERRM|| l_message_unidad_pago);   
+                            l_unidad_pago_loc := NULL;   
+                    END;   
+                    
+                    write_log('     -> l_status_unidad: '|| l_status_unidad);
+                    IF l_status_unidad = 'Y'   
+                    THEN   
+                        write_log ('entro en la y');   
+  
+                        IF l_tipo = '02'   
+                        THEN   
+                            l_fecha_entrega := l_proposa_date;   
+                            l_message :=   
+                                   l_description   
+                                || ' con numero de folio '   
+                                || l_settlement_number   
+                                || ', unidad de pago '   
+                                || l_message_unidad_pago;   
+                            l_message :=   
+                                   'Notificar al colaborador que se presente a la unidad de pago '   
+                                || l_message_unidad_pago   
+                                || ' el dia '   
+                                || l_proposa_date   
+                                || ' '   
+                                || l_hours   
+                                || ' con el numero de folio '   
+                                || l_settlement_number;   
+                        ELSIF l_tipo = '01'   
+                        THEN   
+                            l_message :=   
+                                   'Notificar al colaborador que se presente a la unidad de pago '   
+                                || l_message_unidad_pago   
+                                || ' el dia '   
+                                || l_finish_date_local   
+                                || ', "Solo puede pasar en el horario de '   
+                                || l_horario_local   
+                                || '" con el numero de folio '   
+                                || l_settlement_number   
+                                || ' en la dirección '   
+                                || l_dir_loc;   
+                            l_fecha_entrega := l_finish_date_local;   
+                        END IF;   
+                          
+                    ELSE   
+                        write_log ('entro EN ELSE DE LA Y');   
+                        l_message :=   
+                               l_message_unidad_pago   
+                            || ' y se presente el dia '   
+                            || l_proposa_date   
+                            || ' con el numero de folio '   
+                            || l_settlement_number;   
+                        write_log ('->' || l_message_unidad_pago);   
+                        write_log ('->' || l_proposa_date);   
+                        write_log ('->' || l_settlement_number);   
+                        write_log (l_message);   
+                    END IF;   
+           
+                        UPDATE xxtoks_hr_settlement_all   
+                           SET attribute4 = l_fecha_entrega,   
+                               attribute3 = l_horario_local   
+                         WHERE settlement_id = l_id_finiquito;   
+           
+                        COMMIT;    
+                          
+                x_id_finiquito :=  '' || l_message;   
+                             
+                END IF;  
+			EXCEPTION   
+                WHEN OTHERS THEN 
+                    write_log('Error de insert xxtoks_hr_settlement_all  -->' || SQLERRM);                    
+            END;   
+            COMMIT;   
+              
+        ELSE   
+            x_id_finiquito := '' || l_description;   
+        END IF;
+        write_log('GET_INSERT_FINIQUITO...Fin!');   
+    EXCEPTION   
+        WHEN OTHERS   
+        THEN   
+            x_id_finiquito := 'E' || SQLERRM; 
+            write_log('Error general en "get_insert_finiquito" -> ' || SQLERRM);  
+    END get_insert_finiquito; 
+     
+    PROCEDURE get_insert_finiquito_2 (p_id_person      IN     NUMBER,   
+                                    --x_id_finiquito      OUT VARCHAR2,   
+                                    v_user_id        IN     NUMBER,   
+                                    v_user_name      IN     VARCHAR2)   
+    IS   
+        l_id_finiquito          VARCHAR2 (255);      
+        --l_finish_date           DATE;      
+        l_estafeta_emp          VARCHAR2 (100);      
+        l_secuencua             NUMBER;      
+        l_id_finiquito2         VARCHAR2 (100);      
+        l_nip                   VARCHAR2 (100);   
+        l_person_id             VARCHAR2 (100);   
+        l_fecha_baja            VARCHAR2 (100);      
+        v_val                   NUMBER; 
+        l_creation_date_max     VARCHAR2(250);   
+    -- x_id_finiquito         varchar2(200);      
+   
+  	   l_ntf_settlement_id      number;  
+  	   l_unidad_pago            VARCHAR2(300);  
+   
+    BEGIN   
+        write_log(' GET_INSERT_FINIQUITO_2 -> Paso 1...{p_id_person = '||p_id_person||'}');
+        BEGIN    
+			 
+			write_log('Empieza obtener maximo id_finiquito xxtoks_hr_settlement_all'); 
+				    select max(TO_CHAR(CREATION_DATE,'YYYY-MM-DD')) 
+					INTO l_creation_date_max 
+                     from xxtoks_hr_settlement_all; ---CAMBIOS BRG 
+				write_log('Empieza obtener maximo de fecha');	  
+                    select max(settlement_id) 
+                    INTO  l_id_finiquito2 
+                    from xxtoks_hr_settlement_all  
+					WHERE TO_CHAR(CREATION_DATE,'YYYY-MM-DD') = l_creation_date_max; 
+                write_log('Termina obtener maximo id_finiquito xxtoks_hr_settlement_all'); 
+                write_log('Empieza obtener maximo l_secuencua xxtoks_hr_settlement_all'); 
+                    select NVL(max(attribute2),0) 
+                    INTO  l_secuencua 
+                    from xxtoks_hr_settlement_all 
+                    where 1=1 
+                    and settlement_id = l_id_finiquito2; 
+                write_log('Termina obtener maximo l_secuencua xxtoks_hr_settlement_all'); 
+                    l_secuencua := l_secuencua +1; 
+   
+        EXCEPTION   
+            WHEN OTHERS THEN      
+                write_log ('asigna_horarios_locales: ' || SQLERRM );  
+        END;   
+        write_log('     -> l_creation_date_max: ' || l_creation_date_max);
+        write_log('     -> l_id_finiquito2: ' ||l_id_finiquito2 );
+        write_log('     -> l_secuencua: ' || l_secuencua);
+        --AHR 09/02/2021 se agrego consulta para cuando no se tenga una unidad de pago configurada 
+        BEGIN 
+            SELECT --emp_number,  
+                   xhpua.pay_unit_desc 
+                INTO l_unidad_pago 
+              FROM xxtoks_finiquito_empleados xfe,  
+                   xxtoks_hr_paying_units_all xhpua 
+             WHERE     1 = 1 
+                   AND xfe.organization_id = xhpua.unit_id 
+                   AND xhpua.pay_unit_desc is not NULL 
+                   --       and EMP_NUMBER = 157139 
+                   AND xfe.person_id = p_id_person; 
+        EXCEPTION   
+            WHEN OTHERS   
+            THEN   
+                l_unidad_pago := NULL;   
+                write_log ('Error valida unidad de pago configurada ' || SQLERRM ||'l_unidad_pago' || l_unidad_pago);  
+        END;  
+        --AHR 09/02/2021 
+        write_log('     -> l_unidad_pago: '||l_unidad_pago);
+        BEGIN   
+            SELECT XFE.PERSON_ID, XFE.EMP_NUMBER, XFE.EMP_FECHA_BAJA   
+              INTO l_person_id, l_estafeta_emp, l_fecha_baja   
+              FROM XXTOKS_FINIQUITO_EMPLEADOS XFE   
+             WHERE     1 = 1   
+                   AND XFE.PERSON_ID = p_id_person   
+                   AND XFE.EMP_FECHA_BAJA IS NOT NULL   
+                   AND XFE.PERSON_ID NOT IN   
+                           (SELECT PERSON_ID   
+                              FROM XXTOKS_HR_NTF_SETTLEMENT_ALL);   
+        EXCEPTION   
+            WHEN OTHERS   
+            THEN   
+                l_person_id := NULL;   
+                l_nip := NULL;   
+                write_log ('Error valida empleado baja' || SQLERRM || ' l_person_id ' || l_person_id );  
+        END;   
+        
+        write_log('     -> l_person_id: '||l_person_id);
+        write_log('     -> l_estafeta_emp: '||l_estafeta_emp);
+        write_log('     -> l_fecha_baja: '||l_fecha_baja);
+        BEGIN   
+            IF l_person_id IS NOT NULL and l_unidad_pago is not null 
+            THEN   
+                write_log(' GET_INSERT_FINIQUITO_2 -> Paso 2...');
+                l_nip :=   
+                       TO_CHAR (SYSDATE, 'YYYYMMDDHH24')   
+                    || XXTOKS_HR_NTF_SETTLEMENT_S.NEXTVAL;   
+                DBMS_OUTPUT.put_line ('sip');   
+                
+                Begin
+                    SELECT 1
+                      INTO v_val   
+                      FROM XXTOKS_HR_NTF_SETTLEMENT_ALL   
+                     WHERE EMPLOYEE_NUMBER = l_estafeta_emp   
+                      AND status not in ( '03' );
+				Exception
+                    when too_many_rows then
+                        v_val := 1;
+                    when no_data_found then
+                        v_val := 0;
+                    When others then
+                        v_val := 0;
+				end;   
+                
+                write_log('     -> v_val: '||v_val);
+                
+                IF v_val = 0 THEN   
+                    write_log ('entro al if: XXTOKS_HR_NTF_SETTLEMENT_ALL ');   
+                    --DBMS_OUTPUT.put_line (' '|| p_id_person || ' '|| l_estafeta_emp || ' '|| l_nip || ' '|| SYSDATE || ' '|| l_fecha_baja || ' '|| '01' || ' '|| FECHA || ' '|| v_user_id || ' '|| SYSDATE || ' '|| v_user_id || ' '|| SYSDATE);   
+                    INSERT INTO XXTOKS_HR_NTF_SETTLEMENT_ALL (   
+                                    NTF_SETTLEMENT_ID,   
+                                    PERSON_ID,   
+                                    EMPLOYEE_NUMBER,   
+                                    NIP,   
+                                    NTF_DATE,   
+                                    ACTUAL_TERMINATION_DATE,   
+                                    STATUS,   
+                                    ATTRIBUTE3,   
+                                    created_by,   
+                                    creation_date,   
+                                    LAST_UPDATED_BY,   
+                                    LAST_UPDATE_DATE)   
+                         VALUES (XXTOKS_HR_NTF_SETTLEMENT_S.NEXTVAL,   
+                                 p_id_person,   
+                                 l_estafeta_emp,   
+                                 l_nip,   
+                                 to_char( SYSDATE, 'DD-MON-YY', 'NLS_DATE_LANGUAGE = Spanish' ),   
+                                 l_fecha_baja,   
+                                 '01',   
+                                 NULL,   
+                                 v_user_id,   
+                                 SYSDATE,   
+                                 v_user_id,   
+                                 SYSDATE)   
+								 returning NTF_SETTLEMENT_ID into l_NTF_SETTLEMENT_ID;   
+                                 COMMIT; 
+                END IF;   
+            END IF; 
+               
+                          
+            write_log ('sale del if: XXTOKS_HR_NTF_SETTLEMENT_ALL ');   
+               
+            COMMIT;   
+        EXCEPTION   
+            WHEN OTHERS THEN 
+                write_log('error insert XXTOKS_HR_NTF_SETTLEMENT_ALL -->' || SQLERRM);        
+        END;   
+         
+		BEGIN 
+            write_log(' GET_INSERT_FINIQUITO_2 -> Paso 3...');
+            
+        l_id_finiquito := XXTOKS_HR_SETTLEMENT_S.NEXTVAL || '';
+        Begin
+            SELECT 1 --, max( decode( status, 'CA', 'CA' ) )   
+              INTO v_val --, l_estatus   
+              FROM xxtoks_hr_settlement_all   
+             WHERE person_id = p_id_person   
+			   AND status not in ( 'CA' );
+        Exception 
+            When too_many_rows then
+                v_val := 1;
+            When no_data_found then
+                v_val := 0;
+            When others then
+                v_val := 0;
+        End;
+                
+                write_log('     -> v_val: '||v_val);
+                
+                IF v_val = 0   
+                THEN   
+                    INSERT INTO xxtoks_hr_settlement_all (settlement_id,   
+                                                          settlement_number,   
+                                                          person_id,   
+                                                          status,   
+                                                          request_type,   
+                                                          user_id,   
+                                                          user_name,   
+                                                          period_id,   
+                                                          attribute2,   
+                                                          attribute3,   
+                                                          created_by,   
+                                                          creation_date)   
+                         VALUES (TO_NUMBER (l_id_finiquito),   
+                                 null,   
+                                 TO_NUMBER (p_id_person),   
+                                 'ER',   
+                                 null,   
+                                 v_user_id,   
+                                 v_user_name,   
+                                 null,                              --l_nip   
+                                 null,   
+                                 null,   
+                                 v_user_id,   
+                                 (SYSDATE - 5/24) 
+                                 );   
+                                 COMMIT;		                 
+					begin   
+                         update XXTOKS_HR_NTF_SETTLEMENT_ALL   
+                          set SETTLEMENT_ID = TO_NUMBER (l_id_finiquito)   
+                            where NTF_SETTLEMENT_ID = l_NTF_SETTLEMENT_ID;   
+                            COMMIT;	   
+					exception    
+						when others then   
+						 write_log('sqlerrm: ' ||SQLERRM);   
+					end; 
+            END IF;					 
+		END; 
+		write_log(' GET_INSERT_FINIQUITO_2... Fin!');
+    Exception
+        When others then
+            write_log('GET_INSERT_FINIQUITO_2 -> Error general: ' ||SQLERRM||' '||SQLCODE);
+    END get_insert_finiquito_2;    
+   
+    ------------     
+   
+    PROCEDURE get_information(p_id_person     IN VARCHAR2,   
+                              p_person_number IN VARCHAR2)   
+    IS   
+    categoria VARCHAR2(250);   
+    BEGIN   
+   
+  SELECT    
+    CASE    
+     WHEN xhp.attribute9 ='01' THEN 'LOCAL'    
+      ELSE 'FORANEO'   
+    END AS Categoria   
+    INTO categoria   
+FROM  XXTOKS_FINIQUITO_EMPLEADOS xfe,   
+      xxtoks_hr_paying_units_all xhp   
+WHERE 1=1   
+    AND xfe.EMP_NUMBER = p_person_number   
+    AND xhp.unit_id = xfe.organization_id;   
+       
+        dbms_output.put_line(categoria);   
+   
+    END get_information;   
+   
+----------------------------------------------------------------------++++++++++++++++++++++   
+   
+    FUNCTION asigna_horarios_locales (p_no_intevalo   IN     VARCHAR2,   
+                                      x_hora             OUT VARCHAR2,   
+                                      x_cont             OUT VARCHAR2)   
+        RETURN VARCHAR2   
+    IS   
+        v_conta            NUMBER := 1;   
+        l_hora_in          VARCHAR2 (100);   
+        l_hora_fin         VARCHAR2 (100);   
+        l_num_intervalos   NUMBER;   
+        l_intervalo        VARCHAR2 (100);   
+        l_horario          VARCHAR2 (100);   
+        l_cont             NUMBER;   
+    BEGIN   
+        write_log('asigna_horarios_locales... ');
+        write_log('     -> p_no_intevalo: ' ||p_no_intevalo);
+        
+        DBMS_OUTPUT.put_line ('Obtiene valores lookup');   
+        DBMS_OUTPUT.put_line ('w-'||p_no_intevalo);   
+   
+        SELECT flv.meaning   
+          INTO l_hora_in   
+          FROM XXTOKS_FND_LOOKUP_VALUES flv   
+         WHERE     1 = 1   
+               AND flv.LOOKUP_TYPE = 'XXTOKS_HR_FIN_HORARIOS_LOCAL'   
+               AND flv.ENABLED_FLAG = 'Y'   
+               AND flv.lookup_code = '1';   
+        
+        
+        write_log ('inico '|| l_hora_in);   
+        write_log ('Obtiene valores lookup 1');   
+   
+        SELECT flv.meaning   
+          INTO l_hora_fin   
+          FROM XXTOKS_FND_LOOKUP_VALUES flv   
+         WHERE     1 = 1   
+               AND flv.LOOKUP_TYPE = 'XXTOKS_HR_FIN_HORARIOS_LOCAL'   
+               AND flv.ENABLED_FLAG = 'Y'   
+               AND flv.lookup_code = '2';   
+        write_log ('fin '|| l_hora_fin);   
+        write_log ('Obtiene valores lookup 2');   
+   
+        SELECT flv.meaning   
+          INTO l_intervalo   
+          FROM XXTOKS_FND_LOOKUP_VALUES flv   
+         WHERE     1 = 1   
+               AND flv.LOOKUP_TYPE = 'XXTOKS_HR_FIN_HORARIOS_LOCAL'   
+               AND flv.ENABLED_FLAG = 'Y'   
+               AND flv.lookup_code = '3';   
+                  
+        write_log ('intervalo '|| l_intervalo);          
+        write_log ('Obtiene valores lookup p');   
+   
+   
+        SELECT   ABS (   
+                       24   
+                     * (  TO_DATE (l_hora_in, 'hh24:mi')   
+                        - TO_DATE (l_hora_fin, 'hh24:mi')))   
+               / l_intervalo   
+               * (60)   
+          INTO l_num_intervalos   
+          FROM DUAL;
+             
+        write_log(' -> l_num_intervalos: ' ||l_num_intervalos);
+   
+   
+        DBMS_OUTPUT.put_line ('Valida');   
+   
+        IF TO_NUMBER (p_no_intevalo) <= l_num_intervalos   
+        THEN   
+            l_cont := TO_NUMBER (p_no_intevalo);   
+        ELSE   
+            l_cont := 1;   
+        END IF;   
+   
+        write_log ('-->l_cont: ' || l_cont);      
+   
+        FOR a IN 1 .. l_num_intervalos   
+        LOOP   
+            write_log ('Loop...');   
+   
+            SELECT TO_CHAR (   
+                       (TO_DATE (l_hora_in, 'HH24:MI') + INTERVAL '15' MINUTE),   
+                       'HH24:MI')   
+              INTO l_hora_fin   
+              FROM DUAL;   
+   
+            IF a = l_cont   
+            THEN   
+                l_horario := l_hora_in || '  - ' || l_hora_fin;   
+                write_log ( '   -> '||   
+                    v_conta || ' . ' || l_hora_in || '  - ' || l_hora_fin);   
+                x_hora := (l_hora_in || '  - ' || l_hora_fin);   
+   
+                x_cont := l_cont;   
+            END IF;   
+   
+            l_hora_in := l_hora_fin;   
+            v_conta := v_conta + 1;   
+        END LOOP;   
+   
+        x_cont := l_cont;   
+           
+        FECHA := x_hora;   
+        write_log ('hora '||x_hora);   
+        RETURN x_hora;   
+    EXCEPTION   
+        WHEN OTHERS   
+        THEN   
+            write_log(' -> Error: ' || SQLERRM );
+            RETURN -1;   
+            --DBMS_OUTPUT.put_line(SQLERRM);   
+    END asigna_horarios_locales;   
+   
+    -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------   
+    PROCEDURE finiquito_solicitado (p_person   IN     VARCHAR2,   
+                                    x_salida      OUT VARCHAR2)   
+    IS   
+        l_person      VARCHAR2 (100);   
+        l_folio       VARCHAR2 (100);   
+        l_unidad      VARCHAR2 (100);   
+        l_fecha_s     VARCHAR2 (100);   
+        l_exist       NUMBER;   
+        l_person_id   NUMBER;   
+    BEGIN   
+        SELECT NVL (XHSA.PERSON_ID, 0)   
+          INTO l_person_id   
+          FROM XXTOKS_HR_SETTLEMENT_ALL XHSA,    
+               XXTOKS_FINIQUITO_EMPLEADOS xfe   
+         WHERE     1 = 1   
+               AND XHSA.STATUS != 'CA'   
+               AND XHSA.PERSON_ID = xfe.PERSON_ID   
+               AND xfe.emp_number = P_PERSON;   
+   
+        DBMS_OUTPUT.PUT_LINE ('Extrajo su ' || l_person_id);   
+        --+07/Jun/2023
+--        SELECT NVL (SUM (SETTLEMENT_ID), 0)   
+--          INTO l_exist   
+--          FROM XXTOKS_HR_SETTLEMENT_ALL   
+--         WHERE 1 = 1 AND STATUS != 'CA' AND PERSON_ID = l_person_id;
+        BEGIN 
+
+            SELECT  1  
+            INTO    l_exist   
+            FROM    XXTOKS_HR_SETTLEMENT_ALL   
+            WHERE   1 = 1 
+                AND STATUS != 'CA'
+                AND PERSON_ID = l_person_id;  
+            
+        EXCEPTION 
+            WHEN too_many_rows THEN
+                l_exist := 1;
+            WHEN NO_DATA_FOUND THEN
+                l_exist := 0;
+            WHEN others THEN 
+                l_exist := 0; 
+        END;   
+   
+        DBMS_OUTPUT.put_line (l_exist);   
+   
+        IF l_exist >= 1   
+        THEN   
+            SELECT XHSA.PERSON_ID,   
+                   XHSA.SETTLEMENT_NUMBER,   
+                   xfe.EMP_LOCAL,   
+                   XHSA.CREATION_DATE   
+              INTO l_person,   
+                   l_folio,   
+                   l_unidad,   
+                   l_fecha_s   
+              FROM XXTOKS_HR_SETTLEMENT_ALL    XHSA,   
+                   XXTOKS_FINIQUITO_EMPLEADOS  xfe   
+             WHERE     1 = 1   
+                   AND XHSA.STATUS != 'CA'   
+                   AND XHSA.PERSON_ID = xfe.PERSON_ID   
+                   AND xfe.emp_number = P_PERSON;   
+   
+            x_salida :=   
+                   'El finiquito ha sido solicitado en la unidad '   
+                || l_unidad   
+                || ' el dia '   
+                || l_fecha_s   
+                || ' con folio '   
+                || l_folio;   
+        ELSIF l_exist = 0   
+        THEN   
+            DBMS_OUTPUT.put_line ('ENTRO EN EL ELSE');   
+            x_salida := ' ';   
+        END IF;   
+    EXCEPTION   
+        WHEN OTHERS   
+        THEN   
+            x_salida := ' ';   
+    END finiquito_solicitado;   
+       
+       
+       
+       
+PROCEDURE get_hora(p_no_intevalo   IN     VARCHAR2,   
+                   x_hora             OUT VARCHAR2,   
+                   x_cont             OUT VARCHAR2)   
+as   
+l_horario_local         VARCHAR2 (200);   
+begin   
+l_horario_local := asigna_horarios_locales (p_no_intevalo,x_hora,x_cont);   
+DBMS_OUTPUT.put_line ('m'||l_horario_local);   
+EXCEPTION   
+        WHEN OTHERS   
+        THEN   
+DBMS_OUTPUT.put_line(SQLERRM);   
+   
+end get_hora;   
+ 
+ 
+PROCEDURE get_candado2 (  	p_person_number		IN 		VARCHAR2, 
+							x_base_element_name OUT		VARCHAR2, 
+							x_effective_date	OUT 	VARCHAR2, 
+							x_salida			OUT		VARCHAR2 
+						) 
+	AS 
+	 
+          TYPE curtype IS ref CURSOR; 
+          v_cursor              curtype; 
+          -- 
+          l_user_name           VARCHAR2 (100);  
+          l_password            VARCHAR2 (100); 
+          l_ws_url              VARCHAR2 (500);  
+          l_ws_action           VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest';  
+          l_ws_response_clob    CLOB; 
+          l_ws_envelope         CLOB; 
+          l_ws_resp_xml         XMLTYPE; 
+          l_ws_resp_xml2        XMLTYPE; 
+          v_cdata               CLOB; 
+          l_clob                CLOB; 
+         -- l_departamento_id varchar2(100) := p_departamento_id; 
+         -- l_position_id    varchar2(100) := p_position_id; 
+          p_fecha_inicio VARCHAR2 (250) := TO_CHAR(SYSDATE,'YYYY/MM/DD'); 
+		  p_fecha_final VARCHAR2 (250) := TO_CHAR(SYSDATE,'YYYY/MM/DD'); 
+		   
+        BEGIN 
+         
+        DBMS_OUTPUT.PUT_LINE('p_fecha_inicio'||p_fecha_inicio); 
+		  DBMS_OUTPUT.PUT_LINE('p_fecha_final'||p_fecha_final); 
+            --DBMS_OUTPUT.put_line ('entra p_position_id ' ||  || 'p_departamento_id' || p_departamento_id); 
+            l_ws_envelope := 
+                '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+                <soap:Body> 
+                    <pub:runReport> 
+                        <pub:reportRequest> 
+                            <pub:parameterNameValues> 
+                                <pub:item> 
+                                    <pub:name>p_person_number</pub:name> 
+                                    <pub:values> 
+                                      <pub:item>' || p_person_number || '</pub:item> 
+                                    </pub:values> 
+                                     </pub:item> 
+                                       <pub:item> 
+                                     <pub:name>p_fecha_inicio</pub:name> 
+                                    <pub:values> 
+                                      <pub:item>' || p_fecha_inicio || '</pub:item> 
+                                    </pub:values> 
+                                </pub:item> 
+								<pub:item> 
+                                     <pub:name>p_fecha_final</pub:name> 
+                                    <pub:values> 
+                                      <pub:item>' || p_fecha_final || '</pub:item> 
+                                    </pub:values> 
+                                </pub:item> 
+                            </pub:parameterNameValues> 
+                            <pub:reportAbsolutePath>/Reportes Custom/PAY/Finiquito/GRG Candado Solicitud Finiquito/Candado_Solicitud_Finiquito REP.xdo</pub:reportAbsolutePath> 
+                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+                        </pub:reportRequest> 
+                    </pub:runReport> 
+                </soap:Body> 
+                </soap:Envelope>';                   --Este es el XML que se manda al servicio 
+ 
+             
+            ---REQUEST TOKEN--- 
+            GRG_COMMON_CONNECTIONS.get_otbi_report( 
+                l_ws_envelope   => l_ws_envelope, 
+                l_user_token    => null,  --null,--p_token, 
+                x_ws_response   => l_clob 
+                 
+                ); --Se agrego atributo de instancia temporal MAY 29, 2021 
+ 
+            l_ws_resp_xml2 := XMLTYPE.createXML (l_clob); 
+            ---REQUEST TOKEN--- 
+ 
+             
+            for i in 
+				(SELECT  
+                          
+                        xml_data.BASE_ELEMENT_NAME, 
+						xml_data.EFFECTIVE_DATE 
+                                                                                                                            
+                   FROM XMLTABLE ( 
+                              '/DATA_DS/G_1' 
+                              PASSING xmltype.createxml (l_clob) 
+                              COLUMNS BASE_ELEMENT_NAME               VARCHAR2 (250) PATH  'BASE_ELEMENT_NAME', 
+									  EFFECTIVE_DATE               	  VARCHAR2 (250) PATH  'EFFECTIVE_DATE' 
+                        ) xml_data)  
+						loop 
+						x_base_element_name	:= i.BASE_ELEMENT_NAME; 
+						x_effective_date	:= i.EFFECTIVE_DATE; 
+						end loop; 
+			 
+			/*IF x_base_element_name = 'SETUP FINIQUITO' 
+				THEN  
+				x_salida := 'Su finiquito no puede ser solicitado debido ha que ya ha sido procesado y pagado.'; 
+			ELSE 
+				x_salida := 'Su finiquito cumple con los requesitos para ser solicitado.'; 
+			 
+			END IF;*/ 
+ 
+	END get_candado2; 
+ 
+END XXTOKS_INSERT_FINIQUITO_PKG;
+/
+
