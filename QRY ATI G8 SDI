@@ -1,0 +1,72 @@
+--QRY ATI G8 SDI
+--+311022 ADD FOR VDE BALANCE SDI
+--+161222 CHNG SDI BALANCE IN ALL PAYROLLS NOT LIKE FAH
+SELECT  /*+FIRST_ROWS*/
+        ppra.payroll_rel_action_id,
+        --+080822 : Intereses de Fondo de Ahorro no debe mostrar el Salario Diario Integrado
+	    CASE
+			WHEN :p_tipo_nomina = 'FONDO AHORRO' THEN 
+				0
+            ELSE
+                COALESCE(
+                    (
+                    SELECT MAX(TO_NUMBER(bal.balance_value))
+                    FROM    per_legislative_data_groups_vl  ldg,
+                            pay_pay_relationships_dn        pprd,
+                            --pay_payroll_rel_actions         pra,
+                            --pay_payroll_actions             ppa1,
+                            pay_action_classes              pac,
+                            pay_balance_types_vl            pbt,
+                            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                                        p_balance_type_id         => pbt.balance_type_id,
+                                        p_payroll_rel_action_id   => ppra.payroll_rel_action_id,
+                                        p_payroll_term_id         => NULL,
+                                        p_payroll_assignment_id   => NULL)) bal,
+                            pay_dimension_usages_vl         pdu
+                    WHERE   1 = 1
+                            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+                            AND ppra.payroll_relationship_id = pprd.payroll_relationship_id
+                            AND EXISTS
+                                    (SELECT 1
+                                        FROM pay_run_results prr
+                                        WHERE prr.payroll_rel_action_id = ppra.payroll_rel_action_id)
+                            --AND ppa1.payroll_action_id = ppra.payroll_action_id
+                            --AND ppa1.action_type IN ('R', 'Q')
+                            AND pac.action_type = ppa.action_type
+                            AND pac.classification_name = 'SEQUENCED'
+                            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                                ldg.legislation_code
+                            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                                ldg.legislative_data_group_id
+                            AND pbt.base_balance_name = 'MX_SDI_FOR_SSQ'
+                            AND pdu.database_item_suffix = '_REL_TU_PTD'
+                            AND pdu.balance_dimension_id = bal.balance_dimension_id
+                            AND NVL (pdu.legislation_code, ldg.legislation_code) = ldg.legislation_code
+                            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                                ldg.legislative_data_group_id
+                    -- SELECT    TO_NUMBER(prb.balance_value)
+                    -- FROM      pay_run_balances        prb
+                    --         , pay_defined_balances    pdb
+                    --         , pay_balance_types       pbt
+                    --         , pay_balance_dimensions  pbd
+                    -- WHERE     1 = 1
+                    -- AND       prb.defined_balance_id = pdb.defined_balance_id
+                    -- AND       pdb.balance_type_id = pbt.balance_type_id
+                    -- AND       pbt.base_balance_name = 'MX_SDI_FOR_SSQ'
+                    -- AND       pdb.balance_dimension_id = pbd.balance_dimension_id
+                    -- AND       pbd.base_db_item_suffix = '_CORE_REL_TU_PTD'
+                    -- AND       prb.payroll_relationship_id = ppra.payroll_relationship_id
+                    -- AND       prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+                ), 0)
+        END  sdi
+	   
+FROM pay_payroll_actions       ppa,
+	 pay_payroll_rel_actions   ppra,
+	 pay_run_types_f           prtf
+
+WHERE 1=1
+AND ppa.action_type IN ('R', 'Q')
+AND ppa.payroll_action_id = ppra.payroll_action_id
+AND ppra.action_status = 'C'
+AND ppra.retro_component_id IS NULL
+AND ppra.run_type_id = prtf.run_type_id
