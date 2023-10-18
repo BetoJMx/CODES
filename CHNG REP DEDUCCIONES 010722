@@ -1,0 +1,217 @@
+--CHNG REP DEDUCCIONES 010722
+WITH 
+xxtoks_empleados_v AS (
+    SELECT    hoi_unidad.org_information1 unidad
+            , haou_unidad.name descripcion
+            , pap.person_number estafeta
+            , ppn.full_name nombre
+            , ppra.payroll_rel_action_id
+			, xon_legal.name      legal_entity_id
+
+    FROM      pay_payroll_actions             ppa
+            , pay_payroll_rel_actions         ppra
+            --, PAY_PAYROLL_SECURED_LIST_V      pay
+            , pay_all_payrolls_f              pay 
+            , pay_consolidation_sets          pcs
+            , pay_rel_groups_dn               prg
+            --, PER_ASSIGNMENT_SECURED_LIST_V   paa
+            , per_all_assignments_f           paa 
+            --, PER_PERSON_SECURED_LIST_V       pap
+            , per_all_people_f                pap
+            , per_person_names_f              ppn
+            , per_periods_of_service          ppos
+            , per_national_identifiers        pni
+            , hr_organization_information_f   hoi_unidad
+            , hr_all_organization_units       haou_unidad
+			,(
+				SELECT  
+						hauft.name  as name,
+						hauft.organization_id as value
+				FROM    
+						HR_ORG_UNIT_CLASSIFICATIONS_F houcf, 
+						HR_ALL_ORGANIZATION_UNITS_F haouf, 
+						HR_ORGANIZATION_UNITS_F_TL hauft
+				WHERE   1 = 1
+				AND     haouf.ORGANIZATION_ID = houcf.ORGANIZATION_ID 
+				AND     haouf.ORGANIZATION_ID = hauft.ORGANIZATION_ID 
+				AND     haouf.effective_start_date between houcf.effective_start_date
+                                   AND     houcf.effective_end_date 
+				AND     hauft.LANGUAGE = 'US'
+				AND     hauft.effective_start_date = haouf.effective_start_date 
+				AND     hauft.EFFECTIVE_END_DATE = haouf.effective_end_date 
+				AND     houcf.CLASSIFICATION_CODE = 'HCM_LEMP' 
+				AND     sysdate between hauft.effective_start_date 
+                AND     hauft.effective_end_date
+			 ) xon_legal
+            --+
+    WHERE     1 = 1
+    
+    AND       ppa.payroll_action_id = ppra.payroll_action_id
+    AND       ppa.action_type IN ('R', 'Q', 'B')
+    AND       ppa.action_status IN ( 'C', 'E' )
+    AND       ppa.payroll_id = pay.payroll_id
+    AND       ppra.action_status = 'C'
+    AND       pay.payroll_id = NVL ( :p_payroll_id, pay.payroll_id)
+    AND       ppa.consolidation_set_id = pcs.consolidation_set_id
+    AND       pcs.consolidation_set_id = NVL ( :p_consolidation_set_id, pcs.consolidation_set_id)
+    AND       ppra.payroll_relationship_id = prg.payroll_relationship_id
+    AND       prg.assignment_id = paa.assignment_id
+    AND       paa.primary_flag = 'Y'
+    AND       paa.assignment_type = 'E'
+    --AND       paa.assignment_status_type = 'ACTIVE'
+    AND       paa.effective_latest_change = 'Y'
+    AND       paa.person_id = pap.person_id
+    AND       pap.person_id = ppn.person_id
+    AND       ppn.name_type = 'MX'
+    AND       pap.person_id = ppos.person_id
+    AND       ppos.legal_entity_id = paa.legal_entity_id
+    AND       ppos.person_id = paa.person_id
+    AND       paa.period_of_service_id = ppos.period_of_service_id
+    AND       pap.person_id = pni.person_id(+)
+    AND       TRIM (UPPER (pni.national_identifier_type(+))) = 'IMSS'
+    AND       paa.organization_id = hoi_unidad.organization_id(+)
+    AND       hoi_unidad.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+    AND       hoi_unidad.org_information7(+) = '1'
+    AND       paa.organization_id = haou_unidad.organization_id
+    --+
+    AND EXISTS(
+                SELECT 1
+                FROM pay_run_results prr2
+                    ,pay_run_result_values prrv2
+                    ,pay_element_types_f pet2
+                WHERE 1 = 1
+                    AND prr2.payroll_rel_action_id = ppra.payroll_rel_action_id
+                    AND prrv2.run_result_id = prr2.run_result_id
+                    AND prrv2.result_value is not null
+                    AND pet2.element_type_id = prr2.element_type_id
+                    AND pet2.base_element_name != 'SETUP NOMINA'
+               )
+    --+
+    AND       ppa.effective_date BETWEEN prg.start_date AND prg.end_date
+    AND       TRUNC (ppa.date_earned) BETWEEN TRUNC (:p_fecha_inicio) AND TRUNC ( :p_fecha_fin)
+    AND       TRUNC (:p_fecha_fin) BETWEEN pay.effective_start_date AND pay.effective_end_date
+    AND       TRUNC (:p_fecha_fin) BETWEEN paa.effective_start_date AND paa.effective_end_date
+    AND       TRUNC (:p_fecha_fin) BETWEEN pap.effective_start_date AND pap.effective_end_date
+    AND       TRUNC (:p_fecha_fin) BETWEEN ppn.effective_start_date AND ppn.effective_end_date
+    AND       TRUNC (:p_fecha_fin) BETWEEN hoi_unidad.effective_start_date AND hoi_unidad.effective_end_date
+    AND       paa.legal_entity_id = NVL(:p_emp_legal, paa.legal_entity_id)
+	AND       xon_legal.value = NVL (:p_emp_legal, xon_legal.value)
+	AND       paa.legal_entity_id = xon_legal.value
+    AND       ppra.retro_component_id IS NULL
+    AND       ppra.source_id          IS NULL
+),
+xxtoks_deducciones_v AS (
+    SELECT    ppra.payroll_rel_action_id
+            , UPPER(pettl.element_name) as element_name
+            , prrv.result_value
+    FROM      pay_payroll_actions             ppa
+            , pay_payroll_rel_actions         ppra
+            --, PAY_PAYROLL_SECURED_LIST_V      pay
+            , pay_all_payrolls_f              pay 
+            , pay_consolidation_sets          pcs
+            --+
+            , pay_run_results                 prr
+            , pay_run_result_values           prrv
+            , pay_element_types_f             pet
+            , pay_element_types_tl            pettl
+            , pay_input_values_f              piv
+            , pay_input_values_tl             pivtl
+    WHERE     1 = 1
+    --AND       pap.person_number = '129456'
+    AND       ppa.payroll_action_id = ppra.payroll_action_id
+    AND       ppa.action_type IN ('R', 'Q', 'B')
+    AND       ppa.action_status IN ( 'C', 'E' )
+    AND       ppa.payroll_id = pay.payroll_id
+    AND       ppra.action_status = 'C'
+    AND       pay.payroll_id = NVL ( :p_payroll_id, pay.payroll_id)
+    AND       ppa.consolidation_set_id = pcs.consolidation_set_id
+    AND       pcs.consolidation_set_id = NVL ( :p_consolidation_set_id, pcs.consolidation_set_id)
+    --+
+    AND EXISTS(
+                SELECT 1
+                FROM pay_run_results prr2
+                    ,pay_run_result_values prrv2
+                    ,pay_element_types_f pet2
+                WHERE 1 = 1
+                    AND prr2.payroll_rel_action_id = ppra.payroll_rel_action_id
+                    AND prrv2.run_result_id = prr2.run_result_id
+                    AND prrv2.result_value is not null
+                    AND pet2.element_type_id = prr2.element_type_id
+                    AND pet2.base_element_name != 'SETUP NOMINA'
+               )
+    --+
+    AND       prr.payroll_rel_action_id  = ppra.payroll_rel_action_id
+    AND       prr.run_result_id (+) = prrv.run_result_id
+    AND       prr.status IN ('P', 'PA')
+    AND       prr.element_type_id = pet.element_type_id
+    AND       pet.element_type_id = pettl.element_type_id
+    AND       pet.element_type_id = piv.element_type_id
+    AND       prrv.input_value_id = piv.input_value_id
+    AND       piv.input_value_id = pivtl.input_value_id
+    AND       piv.user_display_flag = 'Y'
+    AND       UPPER (pettl.element_name) IN ('FD522 RESULTS'
+                                            ,'FD523 RESULTS'
+                                            ,'FD532 RESULTS'
+                                            ,'ND539 RESULTS'
+                                            ,'FP026 EARNINGS RESULTS'     --Earnings Calculated
+                                            ,'ND541 RESULTS'
+                                            ,'ND543 RESULTS'
+                                            ,'ND544 RESULTS'
+                                            ,'ND545 RESULTS' --COSTEO
+                                            ,'ND558 RESULTS'
+                                            ,'ND587_2 RESULTS'
+                                            ,'NP042 EARNINGS RESULTS'
+                                            ,'ND586 RESULTS'
+                                            ,'ND534 RESULTS')
+    AND       UPPER (TRIM (pivtl.name)) IN ( 'PAY VALUE','EARNINGS CALCULATED')
+    AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date
+                               AND pet.effective_end_date
+    AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date
+                               AND piv.effective_end_date
+    AND       pettl.language = 'US'
+    AND       pivtl.language = 'US'        
+    --+
+    AND       TRUNC (ppa.date_earned) BETWEEN TRUNC (:p_fecha_inicio) AND TRUNC ( :p_fecha_fin)
+    AND       TRUNC (:p_fecha_fin) BETWEEN pay.effective_start_date AND pay.effective_end_date
+    AND       ppra.retro_component_id IS NULL
+    AND       ppra.source_id          IS NULL
+)
+select * 
+from (
+    SELECT    xev.legal_entity_id
+	        , xev.unidad
+            , xev.descripcion
+            , xev.estafeta
+            , xev.nombre
+            , xdv.element_name
+            , nvl( abs( sum( xdv.result_value) ), 0 ) as result_value
+	FROM
+			  xxtoks_empleados_v xev
+			, xxtoks_deducciones_v xdv
+	WHERE     1 = 1
+	AND       xev.payroll_rel_action_id = xdv.payroll_rel_action_id
+	GROUP BY
+	          xev.legal_entity_id
+            , xev.unidad
+            , xev.descripcion
+            , xev.estafeta
+            , xev.nombre
+            , xdv.element_name
+)
+PIVOT (   
+    MAX(NVL(result_value,0))
+    for element_name in ('FD522 RESULTS' AS "FD522"
+                        ,'FD523 RESULTS' AS "FD523"
+                        ,'FD532 RESULTS' AS "FD532"
+                        ,'ND539 RESULTS' AS "ND539"
+                        ,'FP026 EARNINGS RESULTS'  AS "FP026"
+                        ,'ND541 RESULTS' AS "ND541"
+                        ,'ND543 RESULTS' AS "ND543"
+                        ,'ND544 RESULTS' AS "ND544"
+                        ,'ND545 RESULTS' AS "ND545"
+                        ,'ND558 RESULTS' AS "ND558"
+                        ,'ND587_2 RESULTS' AS "ND587_2"
+                        ,'NP042 EARNINGS RESULTS' AS "NP042"
+                        ,'ND586 RESULTS' AS "ND586"
+                        ,'ND534 RESULTS' AS "ND534"))
+ORDER BY legal_entity_id,unidad, estafeta
