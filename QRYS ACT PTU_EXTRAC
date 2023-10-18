@@ -1,0 +1,76 @@
+--QRYS ACT PTU_EXTRAC
+--::CC ACTUAL
+SELECT  MAX(CONVERT (hoi_uni2.org_information1,'us7ascii', 'al32utf8'))
+FROM    per_all_assignments_f         paa2,
+        hr_organization_information_f hoi_uni2
+WHERE   1 = 1
+        --AND paa2.person_id = pap.person_id
+        AND paa2.assignment_type = 'E'
+        AND paa2.effective_latest_change = 'Y'
+        AND paa2. ASSIGNMENT_SEQUENCE = (
+                                            SELECT  MAX(ASSIGNMENT_SEQUENCE) 
+                                            FROM    PER_ALL_ASSIGNMENTS_M
+                                            WHERE   paa2.person_id = person_id
+                                                    AND assignment_type = 'E'
+                                                    AND effective_latest_change = 'Y'
+                                        )
+        AND paa2.organization_id = hoi_uni2.organization_id
+        AND hoi_uni2.org_information_context = 'PER_GL_COST_CENTER_INFO'
+        AND hoi_uni2.org_information7 = '1'
+        AND sysdate BETWEEN hoi_uni2.effective_start_date
+                        AND hoi_uni2.effective_end_date
+        AND sysdate BETWEEN paa2.effective_start_date
+                        AND paa2.effective_end_date
+
+--:: PUESTO ACTUAL
+SELECT  CONVERT (REPLACE ( UPPER (hapft2.name), 'Ñ', 'N'), 'us7ascii', 'al32utf8')
+FROM    per_all_assignments_f   paa2,
+        hr_all_positions_f      hapf2,
+        hr_all_positions_f_tl   hapft2
+WHERE   1 = 1
+        AND paa2.person_id = pap.person_id
+        AND paa2.assignment_type = 'E'
+        AND paa2.effective_latest_change = 'Y'
+        AND paa2. ASSIGNMENT_SEQUENCE = (
+                                            SELECT  MAX(ASSIGNMENT_SEQUENCE) 
+                                            FROM    PER_ALL_ASSIGNMENTS_M
+                                            WHERE   paa2.person_id = person_id
+                                                    AND assignment_type = 'E'
+                                                    AND effective_latest_change = 'Y'
+                                        )
+        AND paa2.position_id = hapf2.position_id
+        AND hapft2.position_id = hapf2.position_id
+        AND hapft2.language = SYS_CONTEXT ('USERENV', 'LANG')
+        AND sysdate BETWEEN paa2.effective_start_date
+                        AND paa2.effective_end_date
+        AND sysdate BETWEEN hapf2.effective_start_date
+                        AND hapf2.effective_end_date
+
+--:: NOMBRE LOCATION ACTUAL
+SELECT  max(CONVERT (hoi_uni2.org_information1,'us7ascii', 'al32utf8'))
+FROM    per_all_assignments_f         paa2,
+        hr_organization_information_f hoi_uni2
+WHERE   1 = 1
+        AND paa2.person_id = pap.person_id
+        AND paa2.assignment_type = 'E'
+        AND paa2.effective_latest_change = 'Y'
+        --+ORG
+        AND paa2.organization_id = hoi_uni2.organization_id(+)
+        AND hoi_uni2.org_information_context = 'PER_GL_COST_CENTER_INFO'
+        AND hoi_uni2.org_information7 = '1'
+        AND sysdate BETWEEN paa2.effective_start_date
+                        AND paa2.effective_end_date
+        AND sysdate BETWEEN hoi_uni2.effective_start_date
+                        AND hoi_uni2.effective_end_date
+
+--:: FECHA BAJA
+    SELECT  TO_CHAR(p.actual_termination_date, 'YYYY-MM-DD','NLS_DATE_LANGUAGE=SPANISH')
+    FROM    per_periods_of_service  p,
+            per_action_occurrences  pao, --Action Reasons
+            per_actions_vl          pa
+    WHERE   1 = 1
+            AND pao.action_occurrence_id    = p.action_occurrence_id
+            AND pa.action_id                = pao.action_id
+            AND pa.action_type_code         = 'EMPL_TERMINATE'
+            AND p.person_id                 = pap.person_id
+            AND p.period_type               = 'E'
