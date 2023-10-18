@@ -1,0 +1,103 @@
+--QRY VAC KARDEX NEW 230623
+WITH GRG_SDI_FACTOR AS (
+        SELECT  pvdt.name               value_definition_name,
+                pvdf2.base_name         tabla,
+                pvdf3.base_name         factor,
+                haou.name               tru,
+                prdf.base_name          tabla_sdi,
+                haou.organization_id    tru_id
+        FROM    pay_value_definitions_tl   pvdt,
+                pay_value_definitions_f    pvdf,
+                pay_value_definitions_f    pvdf2,
+                pay_value_definitions_f    pvdf3,
+                pay_range_items_f          prif,
+                hr_all_organization_units  haou,
+                pay_range_items_f          prif2,
+                pay_rate_definitions_f     prdf
+        WHERE   1 = 1 
+                AND pvdt.value_defn_id = pvdf.value_defn_id
+                AND prif.value_defn_id = pvdf2.value_defn_id
+                AND prif.low_value_text = haou.organization_id
+                AND prif2.value_defn_id = pvdf3.value_defn_id
+                --+
+                AND prdf.rate_definition_id = prif2.value1
+                AND pvdf.value_defn_id = pvdf2.parent_value_defn_id
+                AND pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+                AND pvdt.name = 'Fixed SDI Calculation'
+                AND pvdt.LANGUAGE = 'US'
+                AND TRUNC(SYSDATE) BETWEEN pvdf.effective_start_date AND pvdf.effective_END_date
+                AND TRUNC(SYSDATE) BETWEEN pvdf2.effective_start_date AND pvdf2.effective_END_date
+                AND TRUNC(SYSDATE) BETWEEN pvdf3.effective_start_date AND pvdf3.effective_END_date
+                AND TRUNC(SYSDATE) BETWEEN prif.effective_start_date AND prif.effective_END_date
+                AND TRUNC(SYSDATE) BETWEEN prif2.effective_start_date AND prif2.effective_END_date
+                AND TRUNC(SYSDATE) BETWEEN prdf.effective_start_date AND prdf.effective_END_date
+                AND TRUNC(SYSDATE) BETWEEN haou.effective_start_date AND haou.effective_END_date
+)
+--,GRG_BASE AS (
+    SELECT  pwaev.effective_start_date AS periodo,
+            (
+                SELECT  prif2.value1 sdi_factor
+                FROM    pay_value_definitions_tl  pvdt,
+                        pay_value_definitions_f   pvdf,
+                        pay_value_definitions_f   pvdf2,
+                        pay_range_items_f         prif,
+                        pay_value_definitions_f   pvdf3,
+                        pay_range_items_f         prif2
+                WHERE   1 = 1 
+                        AND pvdt.value_defn_id = pvdf.value_defn_id
+                        AND pvdt.name = gsf.tabla_sdi
+                        AND prif.value_defn_id = pvdf2.value_defn_id
+                        AND pvdt.language = 'US'
+                        AND pvdf.value_defn_id = pvdf2.parent_value_defn_id
+                        AND pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+                        AND prif2.value_defn_id = pvdf3.value_defn_id
+                        AND TRUNC((MONTHS_BETWEEN(pwaev.effective_start_date, psdf.seniority_date)) / 12) + 0.01 between TO_NUMBER(prif.low_value_text) and (
+                    SELECT  nvl( MIN(TO_NUMBER(prif_high.low_value_text)-.01), 100)
+                    FROM    pay_range_items_f prif_high
+                            ,pay_value_definitions_f pvdf_high
+                    WHERE   1 = 1 
+                            AND pvdf_high.parent_value_defn_id = pvdf.value_defn_id
+                            AND prif_high.value_defn_id = pvdf_high.value_defn_id
+                            AND TO_NUMBER(prif_high.low_value_text) > TO_NUMBER(prif.low_value_text)
+                            AND pwaev.effective_start_date BETWEEN pvdf_high.effective_start_date AND pvdf_high.effective_END_date
+                            AND pwaev.effective_start_date BETWEEN prif_high.effective_start_date AND prif_high.effective_END_date
+                    )
+                        AND pvdf3.value_identifier = 'C' --DIAS VACACIONES
+                        AND pwaev.effective_start_date BETWEEN pvdf.effective_start_date AND pvdf.effective_END_date
+                        AND pwaev.effective_start_date BETWEEN pvdf2.effective_start_date AND pvdf2.effective_END_date
+                        AND pwaev.effective_start_date BETWEEN prif.effective_start_date AND prif.effective_END_date
+                        AND pwaev.effective_start_date BETWEEN pvdf3.effective_start_date AND pvdf3.effective_END_date
+                        AND pwaev.effective_start_date BETWEEN prif2.effective_start_date AND prif2.effective_END_date
+            ) AS dias,
+            apae.duration AS tomados,
+            gsf.tabla_sdi,
+            gsf.tru_id,
+            pdrc.tax_unit_id,
+            TRUNC((MONTHS_BETWEEN(pwaev.effective_start_date, psdf.seniority_date)) / 12)  ant
+    FROM    PER_ALL_PEOPLE_F            papf,
+            PER_SENIORITY_DATES_F       psdf,
+            per_seniority_dates_setup   psds,
+            ANC_PER_ABS_ENTRIES         apae,
+            PAY_WORKER_ABSENCE_ENTRY_VL pwaev,
+            GRG_SDI_FACTOR gsf,
+            PAY_PAY_RELATIONSHIPS_DN pprd,
+            PAY_DIR_CARDS_F pdc,
+            PAY_DIR_REP_CARDS_F pdrc
+    WHERE   1 = 1
+            AND papf.person_number          = :estafeta
+            AND papf.person_id              = psdf.person_id
+            AND psdf.seniority_field        = 'ORA_ENT'
+            AND psds.seniority_date_code    = psdf.seniority_date_code
+            AND psds.active_flag            = 'Y'
+            AND papf.person_id              = apae.person_id
+            AND apae.per_absence_entry_id   = pwaev.absence_entry_id
+            AND pwaev.absence_plan_name     = 'NP079'
+            AND pprd.person_id              = papf.person_id
+            AND pdc.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pdrc.dir_card_id            = pdc.dir_card_id
+            AND gsf.tru_id                  = pdrc.tax_unit_id
+            --+
+            AND pwaev.effective_start_date  BETWEEN papf.effective_start_date AND papf.effective_end_date
+            AND pwaev.effective_start_date  BETWEEN pprd.start_date AND pprd.end_date
+            AND pwaev.effective_start_date  BETWEEN pdc.effective_start_date AND pdc.effective_end_date
+            AND pwaev.effective_start_date  BETWEEN pdrc.effective_start_date AND pdrc.effective_end_date
