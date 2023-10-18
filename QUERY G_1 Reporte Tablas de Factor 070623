@@ -1,0 +1,18 @@
+--QUERY G_1 Reporte Tablas de Factor 070623
+/*
+    CONSULTA PARA EXTRACCION DE INFORMACION BASE SOBRE TABLAS DE FACTOR.
+
+VERSION |RESPONSABLE            |CAMBIO                                                         |FECHA
+--------------------------------------------------------------------------------------------------------
+1.0.0   |ALBERTO JUAREZ         |Creacion 		        										|070623
+*/
+
+SELECT  DISTINCT pvdt.name           table_name,
+		pvdt.value_defn_id	table_id
+FROM    pay_value_definitions_tl  pvdt,
+		pay_value_definitions_f   pvdf
+WHERE   1 = 1 
+		AND pvdt.name 			= NVL(:p_table_name,pvdt.name)
+		AND pvdt.value_defn_id	= pvdf.value_defn_id
+		AND pvdt.name 			LIKE 'Tabla%'
+ORDER BY 1
