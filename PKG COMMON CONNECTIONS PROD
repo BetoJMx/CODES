@@ -1,0 +1,344 @@
+--PKG COMMON CONNECTIONS PROD
+CREATE OR REPLACE package body PAY.GRG_COMMON_CONNECTIONS as
+
+function get_parameter (
+    p_parameter_name in varchar2,
+    p_instance_name  in varchar2 default null )
+return varchar2 is
+    x_param_val   varchar2(2000);
+    x_param_name  varchar2(200);
+begin
+	if p_instance_name is not null then 
+		x_param_name := p_parameter_name || '_' || p_instance_name;
+	else
+		x_param_name := p_parameter_name;
+	end if;
+	
+    select parameter_value
+    into   x_param_val
+    from   GRG_COMMON_PARAMETERS_T
+    where  parameter_name = x_param_name;
+
+    dbms_output.put_line( 'param[' || x_param_name || ']: ' || x_param_val );
+    return x_param_val;
+exception 
+    WHEN NO_DATA_FOUND THEN
+        return null;
+    WHEN OTHERS THEN
+        return 'ERROR';
+end;
+
+function get_otbi_url
+return varchar2 is
+begin
+    return get_parameter( 'OTBI_URL' );
+end;
+    
+function get_token_url
+return varchar2 is
+begin
+    return get_parameter( 'FA_TOKEN_URL' );
+end;
+    
+function get_api_url
+return varchar2 is
+begin
+    return get_parameter( 'API_CLOUD_URL' );
+end;
+    
+
+procedure get_security_token(
+    x_security_token out varchar2,
+    p_instance_name  in  varchar2 default 'TEST' )
+is
+  v_url_jwt_rest   VARCHAR2(500);
+begin
+  if p_instance_name = 'DEV2' then 
+    v_url_jwt_rest := 'https://toksoictst-toksopc-ia.integration.ocp.oraclecloud.com/ic/api/integration/v1/flows/rest/GET_JWT_FOR_FA/1.0/getToken';
+  elsif p_instance_name = 'DEV1' then 
+    v_url_jwt_rest := 'https://toksoictst-toksopc-ia.integration.ocp.oraclecloud.com/ic/api/integration/v1/flows/rest/GET_JWT_FOR_FA_DEV1/1.0/getToken';
+  elsif p_instance_name = 'DEV3' then 
+    v_url_jwt_rest := 'https://toksoictst-toksopc-ia.integration.ocp.oraclecloud.com/ic/api/integration/v1/flows/rest/GET_JWT_FOR_FA_DEV3/1.0/getToken';
+  else
+    v_url_jwt_rest := 'https://toksoictst-toksopc-ia.integration.ocp.oraclecloud.com/ic/api/integration/v1/flows/rest/GET_JWT_FOR_FA/1.0/getToken';
+  end if;
+
+  dbms_output.put_line( 'v_url_jwt_rest: ' || v_url_jwt_rest );
+  security_token_for_instance( 
+      v_url_jwt_rest,
+      x_security_token
+   );
+  --dbms_output.put_line( 'x_security_token: ' || x_security_token );
+end get_security_token;
+
+procedure security_token_for_instance(
+    p_url_jwt_rest   in  varchar2,
+    x_security_token out varchar2 )
+is
+  v_user_basic     VARCHAR2(100) := 'OICINST-TEST_BASICAUTH';
+  v_password_basic VARCHAR2(100) := '9a0c3e41-3623-45a0-b839-38c65037bd8a';
+  v_bearer_token   VARCHAR2(3650);
+  v_resp_code      VARCHAR2(250);
+  v_resp_mess      VARCHAR2(250);
+begin
+    
+    XXGRG_GET_JWT_TOKEN(
+        p_url_jwt_rest,
+        v_user_basic,
+        v_password_basic,
+        v_bearer_token,
+        v_resp_code,
+        v_resp_mess );
+        
+    --dbms_output.put_line( v_bearer_token );
+    --dbms_output.put_line( v_resp_code );
+    --dbms_output.put_line( v_resp_mess );
+    
+    x_security_token := v_bearer_token;
+end;
+
+
+PROCEDURE get_otbi_report ( 
+    l_ws_envelope    in  varchar2,
+    l_user_token     in  varchar2,
+    x_ws_response    out CLOB,
+    p_instance_name  in varchar2 default null )
+AS 
+    l_ws_url                   VARCHAR2 (500);
+    l_ws_action                VARCHAR2 (500);
+    l_ws_token                 VARCHAR2 (4000);
+   
+    l_ws_response_clob         CLOB;
+    l_ws_resp_xml              XMLTYPE;
+    v_cdata                    CLOB;
+
+BEGIN
+    l_ws_url     := get_parameter( 'WS_OTBI_URL', p_instance_name );
+    l_ws_action  := get_parameter( 'WS_OTBI_ACTION', p_instance_name );
+
+	--dbms_output.put_line('01.' || l_ws_url);
+	--dbms_output.put_line('02.' || l_ws_action);
+    
+   -- insert into xxtoks_cat_otbi_log values( '01.' || l_ws_url, sysdate );
+    --insert into xxtoks_cat_otbi_log values( '02.' || l_ws_action, sysdate );
+    --commit;
+    
+    if l_user_token is not null then
+        apex_web_service.g_request_headers (1).name  := 'Authorization';
+        apex_web_service.g_request_headers (1).value := 'Bearer ' || l_user_token;
+        insert into xxtoks_cat_otbi_log values( '03.' || l_user_token, sysdate );
+        commit;
+    ELSE
+        get_security_token( l_ws_token, p_instance_name );
+        apex_web_service.g_request_headers (1).name  := 'Authorization';
+        apex_web_service.g_request_headers (1).value := l_ws_token;
+insert into xxtoks_cat_otbi_log values( '04.' || l_ws_token, sysdate );
+        --commit;
+    END IF;
+    
+    apex_web_service.g_request_headers (2).name  := 'SOAPAction';
+    apex_web_service.g_request_headers (2).VALUE := l_ws_action;
+    apex_web_service.g_request_headers (3).name  := 'Content-Type';
+    apex_web_service.g_request_headers (3).VALUE := 'application/soap+xml; charset=UTF8';
+            
+    --dbms_output.put_line('05.' || l_ws_envelope);
+    insert into xxtoks_cat_otbi_log values( '05.' || l_ws_envelope, sysdate );
+    commit;
+
+    --Llamada al servicio de reporte OTBI
+    l_ws_response_clob := apex_web_service.make_rest_request (
+        p_url              => l_ws_url,
+        p_http_method      => 'POST',
+        p_body             => l_ws_envelope
+        ,p_transfer_timeout => 1800
+    ); 
+    
+    --dbms_output.put_line('06.' || l_ws_response_clob);
+    insert into xxtoks_cat_otbi_log values( l_ws_response_clob, sysdate );
+    commit;
+    --
+    l_ws_resp_xml := XMLTYPE.createXML( l_ws_response_clob );
+
+    SELECT (cdata_section) --cdata_section no se declara
+    into   v_cdata
+    FROM   XMLTABLE(
+             xmlnamespaces (
+               'http://www.w3.org/2003/05/soap-envelope'   AS "env",
+               'http://xmlns.oracle.com/oxp/service/PublicReportService' AS "ns2"),
+             '/env:Envelope/env:Body/ns2:runReportResponse/ns2:runReportReturn'
+             PASSING l_ws_resp_xml
+             COLUMNS cdata_section  CLOB
+                     PATH 'ns2:reportBytes') dat;
+    
+    -- Decodificar la respuesta
+    --dbms_output.put_line('07.' || v_cdata);
+    insert into xxtoks_cat_otbi_log values( 'v_cdata: ' || v_cdata, sysdate );
+    commit;
+    x_ws_response := DecodeBASE64(v_cdata);
+
+ --  dbms_output.put_line('08.' || x_ws_response);
+    --insert into xxtoks_cat_otbi_log values( x_ws_response, sysdate );
+    --commit;
+EXCEPTION
+    WHEN OTHERS THEN
+     x_ws_response := 'ERROR ' || SQLERRM;
+    --insert into xxtoks_cat_otbi_log values( x_ws_response, sysdate );
+    --commit;
+	 dbms_output.put_line('08.' || SQLERRM);
+     x_ws_response := null;
+END get_otbi_report;
+
+
+
+PROCEDURE get_otbi_report_for_oacs ( 
+    l_ws_envelope    in  varchar2,
+    l_user_token     in  varchar2,
+    x_ws_response    out CLOB,
+    p_instance_name  in  varchar2 default null )
+AS 
+    l_ws_url                   VARCHAR2 (500);
+    l_ws_action                VARCHAR2 (500);
+    l_ws_token                 VARCHAR2 (4000);
+   
+    l_ws_response_clob         CLOB;
+    l_ws_resp_xml              XMLTYPE;
+    v_cdata                    CLOB;
+
+BEGIN
+    l_ws_url     := get_parameter( 'WS_OTBI_URL', p_instance_name );
+    l_ws_action  := get_parameter( 'WS_OTBI_ACTION', p_instance_name );
+    
+    if l_user_token is not null then
+        apex_web_service.g_request_headers (1).name  := 'Authorization';
+        apex_web_service.g_request_headers (1).value := 'Bearer ' || l_user_token;
+    ELSE
+        get_security_token( l_ws_token, p_instance_name );
+        apex_web_service.g_request_headers (1).name  := 'Authorization';
+        apex_web_service.g_request_headers (1).value := l_ws_token;
+    END IF;
+    
+    apex_web_service.g_request_headers (2).name  := 'SOAPAction';
+    apex_web_service.g_request_headers (2).VALUE := l_ws_action;
+    apex_web_service.g_request_headers (3).name  := 'Content-Type';
+    apex_web_service.g_request_headers (3).VALUE := 'application/soap+xml; charset=UTF8';
+
+	--insert into xxtoks_cat_otbi_log values( '05.' || l_ws_envelope, sysdate );
+            
+    --Llamada al servicio de reporte OTBI
+    l_ws_response_clob := apex_web_service.make_rest_request (
+        p_url              => l_ws_url,
+        p_http_method      => 'POST',
+        p_body             => l_ws_envelope,
+        p_transfer_timeout => 1200
+    ); 
+    
+    --
+    l_ws_resp_xml := XMLTYPE.createXML( l_ws_response_clob );
+
+    SELECT (cdata_section) --cdata_section no se declara
+    into   v_cdata
+    FROM   XMLTABLE(
+             xmlnamespaces (
+               'http://www.w3.org/2003/05/soap-envelope'   AS "env",
+               'http://xmlns.oracle.com/oxp/service/PublicReportService' AS "ns2"),
+             '/env:Envelope/env:Body/ns2:runReportResponse/ns2:runReportReturn'
+             PASSING l_ws_resp_xml
+             COLUMNS cdata_section  CLOB
+                     PATH 'ns2:reportBytes') dat;
+    
+    x_ws_response := DecodeBASE64(v_cdata);
+	EXCEPTION
+    WHEN OTHERS THEN
+     x_ws_response := 'ERROR ' || SQLERRM;
+    --insert into xxtoks_cat_otbi_log values( x_ws_response, sysdate );
+    --commit;
+     x_ws_response := null;
+END get_otbi_report_for_oacs;
+
+
+function from_base64 (
+    p_clob in clob ) 
+return clob is
+
+    l_length integer := dbms_lob.getLength(p_clob);
+    l_offset integer := 1;
+    l_amt binary_integer := 800;--800
+    l_buffer varchar2(9200);--9200
+
+    l_result clob := empty_clob();
+begin  
+
+    while l_offset <= l_length loop
+        l_buffer := replace(replace(dbms_lob.substr(p_clob, l_amt, l_offset), chr(10), null), chr(13), null);
+        l_offset := l_offset + l_amt;
+        while l_offset <= l_length and mod(dbms_lob.getLength(l_buffer), 4) > 0 loop
+            l_buffer := l_buffer || replace(replace(dbms_lob.substr(p_clob, 1, l_offset), chr(10), null), chr(13), null);
+            l_offset := l_offset + 1;
+        end loop;
+        l_result := l_result || utl_raw.cast_to_varchar2(utl_encode.base64_decode(utl_raw.cast_to_raw(l_buffer)));
+    end loop;
+
+    return l_result;
+end;
+
+
+
+FUNCTION DecodeBASE64(InBase64Char IN OUT NOCOPY CLOB) 
+RETURN CLOB IS
+
+    blob_loc BLOB;
+    clob_trim CLOB;
+    res CLOB;
+
+    lang_context INTEGER := DBMS_LOB.DEFAULT_LANG_CTX;
+    dest_offset INTEGER := 1;
+    src_offset INTEGER := 1;
+    read_offset INTEGER := 1;
+    warning INTEGER;
+    ClobLen INTEGER := DBMS_LOB.GETLENGTH(InBase64Char);
+
+    amount INTEGER := 1440;
+    buffer RAW(1440);
+    stringBuffer VARCHAR2(1440);
+
+BEGIN
+
+    IF InBase64Char IS NULL OR NVL(ClobLen, 0) = 0 THEN 
+        RETURN NULL;
+    ELSIF ClobLen<= 32000 THEN
+        RETURN UTL_RAW.CAST_TO_VARCHAR2(UTL_ENCODE.BASE64_DECODE(UTL_RAW.CAST_TO_RAW(InBase64Char)));
+    END IF;        
+
+    ClobLen := DBMS_LOB.GETLENGTH(InBase64Char);
+    DBMS_LOB.CREATETEMPORARY(clob_trim, TRUE);
+    LOOP
+        EXIT WHEN read_offset > ClobLen;
+        stringBuffer := REPLACE(REPLACE(DBMS_LOB.SUBSTR(InBase64Char, amount, read_offset), CHR(13), NULL), CHR(10), NULL);
+        DBMS_LOB.WRITEAPPEND(clob_trim, LENGTH(stringBuffer), stringBuffer);
+        read_offset := read_offset + amount;
+    END LOOP;
+
+    read_offset := 1;
+    ClobLen := DBMS_LOB.GETLENGTH(clob_trim);
+    DBMS_LOB.CREATETEMPORARY(blob_loc, TRUE);
+    LOOP
+        EXIT WHEN read_offset > ClobLen;
+        buffer := UTL_ENCODE.BASE64_DECODE(UTL_RAW.CAST_TO_RAW(DBMS_LOB.SUBSTR(clob_trim, amount, read_offset)));
+        DBMS_LOB.WRITEAPPEND(blob_loc, DBMS_LOB.GETLENGTH(buffer), buffer);
+        read_offset := read_offset + amount;
+    END LOOP;
+
+    DBMS_LOB.CREATETEMPORARY(res, TRUE);
+    DBMS_LOB.CONVERTTOCLOB(res, blob_loc, DBMS_LOB.LOBMAXSIZE, dest_offset, src_offset,  DBMS_LOB.DEFAULT_CSID, lang_context, warning);
+
+    DBMS_LOB.FREETEMPORARY(blob_loc);
+    DBMS_LOB.FREETEMPORARY(clob_trim);
+    RETURN res;    
+
+END DecodeBASE64;
+
+
+
+end;
+/
+
