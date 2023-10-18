@@ -1,0 +1,448 @@
+--QRY BKP ALTAS IMSS 220822
+--QRY ALTAS IMSS 020822
+WITH contrataciones_view AS (
+    SELECT ppos.person_id,
+           ppos.period_of_service_id     AS period_of_service_id,
+           ppos.date_start               AS fecha_movimiento,
+           case 
+           when paam.last_update_date < ppos.date_start
+           then trunc(paam.last_update_date)
+           else trunc(ppos.date_start)
+           end                           AS fecha_captura
+           --+
+    FROM   per_periods_of_service         ppos,
+           per_assignment_secured_list_v  paam
+           --+
+    WHERE  1 = 1
+    AND    paam.period_of_service_id = ppos.period_of_service_id
+    AND    paam.person_id = ppos.person_id
+    AND    paam.assignment_type = 'E'
+    AND    paam.primary_flag = 'Y'
+    AND    paam.assignment_status_type = 'ACTIVE'
+    AND    ppos.date_start BETWEEN paam.effective_start_date AND paam.effective_end_date
+    --+
+    AND    :P_MOVIMIENTO = 'ALTA CONTRATACION'
+    --+
+    AND    ppos.date_start = (
+              select min(pos2.date_start)
+              from   per_periods_of_service pos2
+              where  pos2.period_type = 'E'
+              and    pos2.person_id = ppos.person_id
+           )
+)
+, transferencia_global_view AS (
+    SELECT ppos.person_id,
+           ppos.period_of_service_id     AS period_of_service_id,
+           ppos.date_start               AS fecha_movimiento,
+           case 
+           when paam.last_update_date < ppos.date_start
+           then trunc(paam.last_update_date)
+           else trunc(ppos.date_start)
+           end                           AS fecha_captura
+           --+
+    FROM   per_periods_of_service         ppos,
+           per_assignment_secured_list_v  paam
+           --+
+    WHERE  1 = 1
+    AND    paam.period_of_service_id = ppos.period_of_service_id
+    AND    paam.person_id = ppos.person_id
+    AND    paam.assignment_type = 'E'
+    AND    paam.primary_flag = 'Y'
+    AND    paam.assignment_status_type = 'ACTIVE'
+    AND    ppos.date_start BETWEEN paam.effective_start_date AND paam.effective_end_date
+    --+
+    AND    :P_MOVIMIENTO = 'TRANSFERENCIA ALTA'
+    --+
+    AND    ppos.date_start > (
+              select min(pos2.date_start)
+              from   per_periods_of_service pos2
+              where  pos2.period_type = 'E'
+              and    pos2.person_id = ppos.person_id
+           )
+)
+, transferencia_view AS (
+    SELECT paam2.person_id,
+           paam2.period_of_service_id    AS period_of_service_id,
+           paam2.effective_start_date    AS fecha_movimiento,
+		   case 
+		   when paam2.last_update_date < paam2.effective_start_date
+           then trunc(paam2.last_update_date)
+		   else trunc(paam2.effective_start_date)
+           end                           AS fecha_captura
+           --+
+    FROM   per_assignment_secured_list_v    paam,
+           per_assignment_secured_list_v    paam2,
+           --+
+           pay_rel_groups_dn          prg,
+           pay_dir_cards_f            pdc,
+           pay_dir_card_definitions   pdcd,
+           pay_dir_rep_cards_f        pdrc,
+           --+
+           pay_rel_groups_dn          prg2,
+           pay_dir_cards_f            pdc2,
+           pay_dir_card_definitions   pdcd2,
+           pay_dir_rep_cards_f        pdrc2
+           --+
+    WHERE  1 = 1
+    AND    paam.assignment_type = 'E'
+    AND    paam.primary_flag = 'Y'
+    AND    paam.assignment_status_type = 'ACTIVE'
+    --+
+    AND    paam2.person_id = paam.person_id
+    AND    paam2.legal_entity_id = paam2.legal_entity_id
+    AND    paam2.period_of_service_id = paam.period_of_service_id
+    AND    paam2.effective_start_date = paam.effective_end_date + 1
+    AND    paam2.location_id <> paam2.location_id
+    --+
+    AND    paam2.assignment_type = 'E'
+    AND    paam2.primary_flag = 'Y'
+    AND    paam2.assignment_status_type = 'ACTIVE'
+    --+
+    AND    prg.assignment_id  = paam.assignment_id
+    AND    prg.group_type = 'A'
+    AND    pdc.payroll_relationship_id = prg.payroll_relationship_id
+    AND    pdcd.dir_card_definition_id = pdc.dir_card_definition_id
+    AND    pdcd.base_display_name = 'MX_EE_DEDUCTION_CARD'
+    AND    pdrc.dir_card_id = pdc.dir_card_id 
+    --+
+    AND    prg2.assignment_id = paam2.assignment_id 
+    AND    prg2.group_type = 'A'
+    AND    pdc2.payroll_relationship_id = prg2.payroll_relationship_id
+    AND    pdcd2.dir_card_definition_id = pdc2.dir_card_definition_id
+    AND    pdcd2.base_display_name = 'MX_EE_DEDUCTION_CARD'
+    AND    pdrc2.dir_card_id = pdc2.dir_card_id
+    --+
+    AND    pdrc2.tax_unit_id <> pdrc.tax_unit_id  --+ que sea diferente TRU
+    --+
+    AND    paam.effective_start_date BETWEEN prg.start_date AND prg.end_date
+    AND    paam.effective_start_date BETWEEN pdc.effective_start_date AND pdc.effective_end_date
+    AND    paam.effective_start_date BETWEEN pdrc.effective_start_date AND pdrc.effective_end_date
+    AND    paam2.effective_start_date BETWEEN prg2.start_date AND prg2.end_date
+    AND    paam2.effective_start_date BETWEEN pdc2.effective_start_date AND pdc2.effective_end_date
+    AND    paam2.effective_start_date BETWEEN pdrc2.effective_start_date AND pdrc2.effective_end_date
+    --+
+    AND    :P_MOVIMIENTO = 'TRANSFERENCIA ALTA'
+)
+, per_persons_view AS (
+
+    SELECT person_id,
+           period_of_service_id,
+           fecha_movimiento,
+           fecha_captura
+    FROM   contrataciones_view
+    WHERE  1 = 1
+	AND    fecha_movimiento BETWEEN TO_DATE(:P_FEC_MOV1,'yyyy-mm-dd') AND TO_DATE(:P_FEC_MOV_2,'yyyy-mm-dd')
+	OR     fecha_captura    BETWEEN TO_DATE(:P_FEC_CAP1,'yyyy-mm-dd') AND TO_DATE(:P_FEC_CAP_2,'yyyy-mm-dd')
+    --+
+    UNION ALL
+    --+
+    SELECT person_id,
+           period_of_service_id,
+           fecha_movimiento,
+           fecha_captura
+    FROM   transferencia_global_view
+    WHERE  1 = 1
+	AND    fecha_movimiento BETWEEN TO_DATE(:P_FEC_MOV1,'yyyy-mm-dd') AND TO_DATE(:P_FEC_MOV_2,'yyyy-mm-dd')
+	OR     fecha_captura    BETWEEN TO_DATE(:P_FEC_CAP1,'yyyy-mm-dd') AND TO_DATE(:P_FEC_CAP_2,'yyyy-mm-dd')
+    --+
+    UNION ALL 
+    --+
+    SELECT person_id,
+           period_of_service_id,
+           fecha_movimiento,
+           fecha_captura
+    FROM   transferencia_view
+    WHERE  1 = 1
+	AND    fecha_movimiento BETWEEN TO_DATE(:P_FEC_MOV1,'yyyy-mm-dd') AND TO_DATE(:P_FEC_MOV_2,'yyyy-mm-dd')
+	OR     fecha_captura    BETWEEN TO_DATE(:P_FEC_CAP1,'yyyy-mm-dd') AND TO_DATE(:P_FEC_CAP_2,'yyyy-mm-dd')
+    
+)
+, xxtoks_tabla_sdi_v AS (
+
+        SELECT /*+materialize*/ 
+               pvdt.name               value_definition_name,
+               pvdf2.base_name         tabla,
+               pvdf3.base_name         factor,
+               haou.name               nombre_tru,
+               prdf.base_name          tabla_sdi,
+               haou.organization_id    tru_id
+               
+        FROM pay_value_definitions_tl   pvdt,
+             pay_value_definitions_f    pvdf,
+             pay_value_definitions_f    pvdf2,
+             pay_value_definitions_f    pvdf3,
+             pay_range_items_f          prif,
+             hr_all_organization_units  haou,
+             pay_range_items_f          prif2,
+             pay_rate_definitions_f     prdf
+        WHERE 1 = 1 
+            AND pvdt.value_defn_id = pvdf.value_defn_id
+            AND prif.value_defn_id = pvdf2.value_defn_id
+            AND prif.low_value_text = haou.organization_id
+            AND prif2.value_defn_id = pvdf3.value_defn_id
+            --+
+            AND prdf.rate_definition_id = prif2.value1
+            AND pvdf.value_defn_id = pvdf2.parent_value_defn_id
+            AND pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+            AND pvdt.name = 'Fixed SDI Calculation'
+            AND pvdt.LANGUAGE = 'US'
+            AND TRUNC(SYSDATE) BETWEEN pvdf.effective_start_date AND pvdf.effective_end_date
+            AND TRUNC(SYSDATE) BETWEEN pvdf2.effective_start_date AND pvdf2.effective_end_date
+            AND TRUNC(SYSDATE) BETWEEN pvdf3.effective_start_date AND pvdf3.effective_end_date
+            AND TRUNC(SYSDATE) BETWEEN prif.effective_start_date AND prif.effective_end_date
+            AND TRUNC(SYSDATE) BETWEEN prif2.effective_start_date AND prif2.effective_end_date
+            AND TRUNC(SYSDATE) BETWEEN prdf.effective_start_date AND prdf.effective_end_date
+            AND TRUNC(SYSDATE) BETWEEN haou.effective_start_date AND haou.effective_end_date
+        
+)
+
+, xxtoks_sdi_factor_table_v As (
+
+        SELECT /*+materialize*/ 
+               pvdt.name                        tabla_sdi,
+               pvdf2.sequence,                  
+               pvdf2.base_name                  base_name_rango,
+               to_number(prif.low_value_text)   low_value,
+               (
+                SELECT nvl( min(to_number(prif_high.low_value_text)-.01), 100)
+                FROM pay_range_items_f prif_high
+                    ,pay_value_definitions_f pvdf_high
+                WHERE 1 = 1 
+                AND pvdf_high.parent_value_defn_id = pvdf.value_defn_id
+                AND prif_high.value_defn_id = pvdf_high.value_defn_id
+                AND to_number(prif_high.low_value_text) > to_number(prif.low_value_text)
+                AND trunc(sysdate) between pvdf_high.effective_start_date And pvdf_high.effective_end_date
+                AND trunc(sysdate) between prif_high.effective_start_date And prif_high.effective_end_date
+                ) high_value,
+               pvdf3.base_name,
+               pvdf3.value_identifier           columna,
+               prif2.value1 sdi_factor
+               
+        FROM pay_value_definitions_tl  pvdt,
+             pay_value_definitions_f   pvdf,
+             --+
+             pay_value_definitions_f   pvdf2,
+             pay_range_items_f         prif,
+             --+
+             pay_value_definitions_f   pvdf3,
+             pay_range_items_f         prif2
+             
+        WHERE 1 = 1 
+        AND pvdt.value_defn_id = pvdf.value_defn_id
+        AND pvdt.name like 'Tabla%'
+        AND prif.value_defn_id = pvdf2.value_defn_id
+        AND pvdt.language = 'US'--userenv('LANG')
+        AND pvdf.value_defn_id = pvdf2.parent_value_defn_id
+        AND pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+        AND prif2.value_defn_id = pvdf3.value_defn_id
+        --+
+        And pvdf3.value_identifier = 'K'
+        And trunc(sysdate) between pvdf.effective_start_date And pvdf.effective_end_date
+        And trunc(sysdate) between pvdf2.effective_start_date And pvdf2.effective_end_date
+        And trunc(sysdate) between prif.effective_start_date And prif.effective_end_date
+        And trunc(sysdate) between pvdf3.effective_start_date And pvdf3.effective_end_date
+        And trunc(sysdate) between prif2.effective_start_date And prif2.effective_end_date
+        
+)
+, empleados_base AS (
+
+        SELECT 
+               papf.person_number                                                                       AS clave_trabajador,
+               CONVERT(UPPER(ppnf.last_name),'us7ascii', 'al32utf8')                                    AS apellido_paterno,
+               CONVERT(UPPER(ppnf.previous_last_name),'us7ascii', 'al32utf8')                           AS apellido_materno,
+               CONVERT(TRIM(UPPER(ppnf.first_name||' '||ppnf.middle_names)),'us7ascii', 'al32utf8')     AS nombres,
+               imss.national_identifier_number                                                          AS no_imss,
+               curp.national_identifier_number                                                          AS curp,
+               CONVERT(tru.estab_name,'us7ascii', 'al32utf8')                                           AS gre_imss,
+               pdrc.tax_unit_id                                                                         AS gre_imss_id,
+               TO_CHAR(paaf.effective_start_date, 'DD-MM-YYYY')                                         AS fecha_efectiva_mov,
+               TO_CHAR(paaf.last_update_date, 'DD-MM-YYYY')                                             AS last_update_date,
+               '08'                                                                                      AS clave_aviso,
+               UPPER(DECODE(:P_MOVIMIENTO,'ALTA CONTRATACION','Alta contratacion','Transferencia alta')) AS movimiento,
+               REPLACE(TO_CHAR(cs.salary_amount),'.','')                                                AS proposed_salary_n,
+               (NVL(cs.salary_amount,0) * NVL(xsft.sdi_factor,0))                                       AS salario_base,
+                   
+               paaf.assignment_id                                         AS assignment_id,
+                                                                          
+               '-'                                                        AS guia,
+               reg.registration_number                                    AS reg_patronal_gre2,
+               CONVERT(ple.name,'us7ascii','al32utf8')                    AS entidad_legal,
+               paaf.legal_entity_id                                       AS entidad_legal_id,
+               '1'                                                        AS tipo_trabajador,
+               '2'                                                          AS tipo_salario,
+               hoi.org_information1                                       AS cve_unidad,
+               DECODE(:P_MOVIMIENTO, 'ALTA CONTRATACION', 'A')            AS tipo_aviso,
+               CONVERT(pldftl.location_name,'us7ascii','al32utf8')        AS unidad,
+               ' '                                                           AS huya,
+               '0'                                                           AS semana_jornada
+
+
+        FROM per_assignment_secured_list_v    paaf,   --per_all_assignments_f
+             per_person_secured_list_v        papf,   --per_all_people_f
+             per_persons_view                 per,
+             per_person_names_f               ppnf,
+             per_national_identifiers         imss,
+             per_national_identifiers         curp,
+             cmp_salary                       cs,
+             pay_rel_groups_dn                prg,
+             per_legal_employers              ple,
+             hr_organization_information      hoi,
+             per_locations                    pl,
+             per_location_details_f           pldf,
+             per_location_details_f_tl        pldftl,
+             pay_dir_cards_f                  pdc,
+             pay_dir_card_definitions         pdcd,
+             pay_dir_rep_cards_f              pdrc,
+             per_tax_reporting_units          tru,
+             xle_registrations                reg,
+             per_seniority_dates_f            psdf,
+             per_seniority_dates_setup        psds,
+             --                               
+             xxtoks_tabla_sdi_v               xtsv,
+             xxtoks_sdi_factor_table_v        xsft
+             
+        WHERE 1=1
+        AND paaf.person_id = papf.person_id
+        AND paaf.assignment_type = 'E'
+        AND paaf.primary_flag = 'Y'
+        AND paaf.assignment_status_type = 'ACTIVE'
+        AND paaf.action_code NOT IN  ('ORA_POS_SYNC','MANAGER_CHANGE')  --VALIDAR
+        --+
+        AND paaf.person_id  = per.person_id
+        AND paaf.period_of_service_id = per.period_of_service_id
+        --+
+        AND papf.person_id = ppnf.person_id
+        AND ppnf.name_type = 'MX'
+        --+
+        AND papf.person_id = imss.person_id(+)
+        AND imss.national_identifier_type(+) = 'IMSS'
+        AND papf.person_id = curp.person_id(+)
+        AND curp.national_identifier_type(+) = 'CURP'
+        --+
+        AND paaf.assignment_id = cs.assignment_id
+        AND cs.salary_approved = 'Y'
+        --+
+        AND paaf.assignment_id = prg.assignment_id 
+        AND prg.group_type = 'A'
+        --+
+        AND paaf.legal_entity_id = ple.organization_id
+        --+
+        AND paaf.organization_id = hoi.organization_id(+)
+        AND hoi.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+        --
+        AND paaf.location_id = pl.location_id
+        AND pl.location_id = pldf.location_id 
+        AND pldf.location_details_id = pldftl.location_details_id
+        AND pldftl.language = 'E'
+        --
+        AND prg.payroll_relationship_id = pdc.payroll_relationship_id
+        AND pdc.dir_card_definition_id = pdcd.dir_card_definition_id
+        AND pdcd.base_display_name = 'MX_EE_DEDUCTION_CARD'
+        AND pdc.dir_card_id = pdrc.dir_card_id 
+        AND pdrc.tax_unit_id = tru.organization_id
+        AND tru.establishment_id = reg.source_id
+        AND reg.identifying_flag = 'Y'
+        --+
+        AND psdf.person_id = papf.person_id
+        AND psdf.seniority_field = 'ORA_ENT'
+        AND psds.seniority_date_code = psdf.seniority_date_code
+        AND psds.active_flag = 'Y'
+        --+SDI
+        AND xtsv.tru_id(+) = pdrc.tax_unit_id
+        AND xsft.tabla_sdi(+) = xtsv.tabla_sdi
+    
+                
+        AND (  ( (
+                  ROUND(MONTHS_BETWEEN( paaf.effective_start_date, psdf.seniority_date ) / 12, 2) < 1.01 
+                  )
+                 
+                AND (ROUND(MONTHS_BETWEEN( paaf.effective_start_date, psdf.seniority_date ) / 12, 2) + 1.01 )  BETWEEN xsft.low_value(+) AND xsft.high_value(+)
+                )
+                
+                
+                
+             OR
+             
+             
+                (
+                
+                (
+                  ROUND(MONTHS_BETWEEN( paaf.effective_start_date, psdf.seniority_date ) / 12, 2) >= 1.01
+                )
+                AND (ROUND(MONTHS_BETWEEN( paaf.effective_start_date, psdf.seniority_date ) / 12, 2) + 1.01 )  BETWEEN xsft.low_value(+) AND xsft.high_value(+)
+                )
+            )        --+PARAMETROS+--
+        AND paaf.legal_entity_id = NVL(:P_LEGAL_ENTITY, paaf.legal_entity_id)
+        AND pdrc.tax_unit_id = NVL(:P_GRE_IMSS, pdrc.tax_unit_id)
+        ---------------
+        AND per.fecha_movimiento BETWEEN paaf.effective_start_date AND paaf.effective_end_date
+        AND per.fecha_movimiento BETWEEN papf.effective_start_date AND papf.effective_end_date
+        AND per.fecha_movimiento BETWEEN ppnf.effective_start_date AND ppnf.effective_end_date
+        AND per.fecha_movimiento BETWEEN cs.date_from AND cs.date_to
+        AND per.fecha_movimiento BETWEEN prg.start_date AND prg.end_date
+        AND per.fecha_movimiento BETWEEN ple.effective_start_date AND ple.effective_end_date
+        AND per.fecha_movimiento BETWEEN pldf.effective_start_date AND pldf.effective_end_date
+        AND per.fecha_movimiento BETWEEN pldftl.effective_start_date AND pldftl.effective_end_date
+        AND per.fecha_movimiento BETWEEN pdc.effective_start_date AND pdc.effective_end_date
+        AND per.fecha_movimiento BETWEEN pdrc.effective_start_date AND pdrc.effective_end_date
+        AND per.fecha_movimiento BETWEEN psdf.effective_start_date AND psdf.effective_end_date
+
+        ORDER BY  paaf.effective_start_date,papf.person_number
+
+)
+
+SELECT clave_trabajador,
+       apellido_paterno,
+       apellido_materno,
+       nombres,
+       no_imss,
+       curp,
+       gre_imss,
+       gre_imss_id,
+       fecha_efectiva_mov,
+       MAX(last_update_date) AS last_update_date,  --Empleados que tienen mas de una asignacion a la misma fecha pero difiere la fecha de actualizacion
+       clave_aviso,
+       movimiento,
+       proposed_salary_n,
+       salario_base,
+       assignment_id,
+       guia,
+       reg_patronal_gre2,
+       entidad_legal,
+       entidad_legal_id,
+       tipo_trabajador,
+       tipo_salario,
+       cve_unidad,
+       tipo_aviso,
+       unidad,
+       huya,
+       semana_jornada
+FROM empleados_base
+WHERE 1=1
+GROUP BY clave_trabajador,
+         apellido_paterno,
+         apellido_materno,
+         nombres,
+         no_imss,
+         curp,
+         gre_imss,
+         gre_imss_id,
+         fecha_efectiva_mov,
+         clave_aviso,
+         movimiento,
+         proposed_salary_n,
+         salario_base,
+         assignment_id,
+         guia,
+         reg_patronal_gre2,
+         entidad_legal,
+         entidad_legal_id,
+         tipo_trabajador,
+         tipo_salario,
+         cve_unidad,
+         tipo_aviso,
+         unidad,
+         huya,
+         semana_jornada
+ORDER BY fecha_efectiva_mov,
+         clave_trabajador
