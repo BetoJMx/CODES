@@ -1,0 +1,36 @@
+--PKGS XXODM_PAY_REP_COMP_NOM_PKG BKP 140923
+create or replace PACKAGE     XXODM_PAY_REP_COMP_NOM_PKG AS      
+    --
+    PROCEDURE ac_data (
+        contenido   CLOB, 
+        id_exec     IN NUMBER
+    );   
+    --
+    PROCEDURE ac_clob ( 
+        p_id_exec               IN NUMBER,
+        p_fechainicio           IN VARCHAR2,
+        p_fechafin              IN VARCHAR2,
+        p_juegoconsolidacion_n  IN VARCHAR2 DEFAULT NULL,
+        p_nomina_n              IN VARCHAR2 DEFAULT NULL,
+        p_emp_legal_n           IN VARCHAR2 DEFAULT NULL,
+        p_a_totales             IN VARCHAR2
+    );
+    --   
+    PROCEDURE main(  
+        p_fechainicio           IN VARCHAR2,
+        p_fechafin              IN VARCHAR2,
+        p_juegoconsolidacion    IN VARCHAR2,
+        p_juegoconsolidacion_n  IN VARCHAR2,
+        p_nomina                IN VARCHAR2,
+        p_nomina_n              IN VARCHAR2,
+        p_emp_legal             IN VARCHAR2,
+        p_emp_legal_n           IN VARCHAR2,
+        p_a_totales             IN VARCHAR2,
+        p_user_token            IN VARCHAR2,
+		p_process_id            IN NUMBER,
+		p_user_name             IN VARCHAR2,
+		p_status                OUT NUMBER
+    );   
+    --   
+END XXODM_PAY_REP_COMP_NOM_PKG;
+/
