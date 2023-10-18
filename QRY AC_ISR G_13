@@ -1,0 +1,185 @@
+--QRY AC_ISR G_13
+WITH acumulados_1 AS (
+    SELECT  bal.balance_value, pra.payroll_rel_action_id , '1' tipo
+    FROM    per_legislative_data_groups_vl  ldg,
+            pay_pay_relationships_dn        pprd,
+            pay_payroll_rel_actions         pra,
+            pay_payroll_actions             ppa,
+            pay_action_classes              pac,
+            pay_balance_types_vl            pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                        p_balance_type_id         => pbt.balance_type_id,
+                        p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                        p_payroll_term_id         => NULL,
+                        p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl         pdu
+    WHERE   1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                        FROM pay_run_results prr
+                        WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name = 'MX_ISR_WITHHELD'   --ND514 ISR Retenido Mensual
+            AND pdu.database_item_suffix = '_REL_RUN'		--Relationship Run
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND NVL (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+UNION ALL
+SELECT  bal.balance_value, pra.payroll_rel_action_id , '2' tipo
+FROM    per_legislative_data_groups_vl  ldg,
+        pay_pay_relationships_dn        pprd,
+        pay_payroll_rel_actions         pra,
+        pay_payroll_actions             ppa,
+        pay_action_classes              pac,
+        pay_balance_types_vl            pbt,
+        TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+        pay_dimension_usages_vl         pdu
+WHERE   1 = 1
+        AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+        AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+        AND pra.retro_component_id IS NULL
+        AND EXISTS
+                (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+        AND ppa.payroll_action_id = pra.payroll_action_id
+        AND pac.action_type = ppa.action_type
+        AND pac.classification_name = 'SEQUENCED'
+        AND NVL (pbt.legislation_code, ldg.legislation_code) =
+            ldg.legislation_code
+        AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+            ldg.legislative_data_group_id
+        AND pbt.base_balance_name = 'MX_ISR_SUBSIDY_FOR_EMPLOYMENT_PAID'	--NP052 Subsidio Mensual
+        AND pdu.database_item_suffix = '_REL_RUN'							--Relationship Run
+        AND pdu.balance_dimension_id = bal.balance_dimension_id
+        AND NVL (pdu.legislation_code, ldg.legislation_code) =
+            ldg.legislation_code
+        AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+            ldg.legislative_data_group_id
+UNION ALL
+SELECT  ABS(bal.balance_value), pra.payroll_rel_action_id , '3' tipo
+FROM    per_legislative_data_groups_vl  ldg,
+        pay_pay_relationships_dn        pprd,
+        pay_payroll_rel_actions         pra,
+        pay_payroll_actions             ppa,
+        pay_action_classes              pac,
+        pay_balance_types_vl            pbt,
+        TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+        pay_dimension_usages_vl         pdu
+WHERE   1 = 1
+        AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+        AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+        AND pra.retro_component_id IS NULL
+        AND EXISTS
+                (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+        AND ppa.payroll_action_id = pra.payroll_action_id
+        AND pac.action_type = ppa.action_type
+        AND pac.classification_name = 'SEQUENCED'
+        AND NVL (pbt.legislation_code, ldg.legislation_code) =
+            ldg.legislation_code
+        AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+            ldg.legislative_data_group_id
+        AND pbt.base_balance_name = 'MX_ISR_SUBSIDY_FOR_EMPLOYMENT'		--Subsidio Causado Mensual
+        AND pdu.database_item_suffix = '_REL_RUN'						--Relationship Run
+        AND pdu.balance_dimension_id = bal.balance_dimension_id
+        AND NVL (pdu.legislation_code, ldg.legislation_code) =
+            ldg.legislation_code
+        AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+            ldg.legislative_data_group_id
+UNION ALL
+SELECT  ABS(bal.balance_value), pra.payroll_rel_action_id , '4' tipo
+FROM    per_legislative_data_groups_vl  ldg,
+        pay_pay_relationships_dn        pprd,
+        pay_payroll_rel_actions         pra,
+        pay_payroll_actions             ppa,
+        pay_action_classes              pac,
+        pay_balance_types_vl            pbt,
+        TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+        pay_dimension_usages_vl         pdu
+WHERE   1 = 1
+        AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+        AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+        AND pra.retro_component_id IS NULL
+        AND EXISTS
+                (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+        AND ppa.payroll_action_id = pra.payroll_action_id
+        AND pac.action_type = ppa.action_type
+        AND pac.classification_name = 'SEQUENCED'
+        AND NVL (pbt.legislation_code, ldg.legislation_code) =
+            ldg.legislation_code
+        AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+            ldg.legislative_data_group_id
+        AND pbt.base_balance_name = 'MX_ISR_SUBJECT'					--Gravable Mensual
+        AND pdu.database_item_suffix = '_REL_RUN'						--Relationship Run
+        AND pdu.balance_dimension_id = bal.balance_dimension_id
+        AND NVL (pdu.legislation_code, ldg.legislation_code) =
+            ldg.legislation_code
+        AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+            ldg.legislative_data_group_id
+), acumulados_base AS (
+    SELECT  /*+FIRST_ROWS*/
+            CASE
+                WHEN tipo = '1' THEN
+                    balance_value
+                ELSE
+                    0
+            END isrretenidomensual
+            , CASE
+                WHEN tipo = '2' THEN
+                    balance_value
+                ELSE
+                    0
+            END subsidiomensual
+            , CASE
+                WHEN tipo = '3' THEN
+                    balance_value
+                ELSE
+                    0
+            END subsidiocausadomensual
+            , CASE
+                WHEN tipo = '4' THEN
+                    balance_value
+                ELSE
+                    0
+            END gravablemensual
+            , payroll_rel_action_id
+    FROM    acumulados_1
+    WHERE     1 = 1
+)
+
+SELECT    SUM(isrretenidomensual)		isrretenidomensual
+        , SUM(subsidiomensual)			subsidiomensual
+        , SUM(subsidiocausadomensual)	subsidiocausadomensual
+		, SUM(gravablemensual)			gravablemensual
+        , payroll_rel_action_id
+		
+FROM    acumulados_base
+WHERE   1 = 1
+GROUP BY  payroll_rel_action_id
