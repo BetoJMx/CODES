@@ -1,0 +1,44 @@
+--QRY ELEM ENTRY JORGE
+SELECT  NVL(peev.screen_entry_value,0) screen_entry_value,
+        pet.element_name,
+        peef.multiple_entry_count,
+        b.assignment_number
+
+FROM    per_all_people_f a,
+        per_all_assignments_f b,
+        pay_rel_groups_dn asg,
+        pay_assigned_payrolls_dn papd,
+        pay_all_payrolls_f ppp,
+        pay_entry_usages peu,
+        pay_element_entries_f peef,
+        pay_element_types_vl pet,
+        pay_element_entry_values_f peev
+WHERE   1 = 1
+        AND b.person_id                 = a.person_id
+        AND b.business_group_id         = a.business_group_id
+        AND b.assignment_id             = asg.assignment_id
+        AND b.assignment_id             = asg.assignment_id
+        AND asg.parent_rel_group_id     = papd.payroll_term_id(+)
+        AND papd.payroll_id             = ppp.payroll_id(+)
+        AND asg.payroll_relationship_id = peu.payroll_relationship_id(+)
+        AND peu.element_entry_id        = peef.element_entry_id(+)
+        AND peef.element_type_id        = pet.element_type_id(+)
+        AND peev.SCREEN_ENTRY_VALUE     IS NOT NULL
+        AND peev.element_entry_id       = peef.element_entry_id
+        AND TRUNC (SYSDATE)             BETWEEN b.effective_start_date AND b.effective_end_date
+        AND TRUNC (SYSDATE)             BETWEEN a.effective_start_date AND a.effective_end_date
+        AND TRUNC (SYSDATE)             BETWEEN papd.start_date(+) AND papd.END_DATE(+)
+        AND pet.element_name            IN ('ND502','ND502_HV2','ND501','ND501_HV2','ND504','ND504_HV2','ND506','ND506_HV2','ND503','ND503_HV2','ND505','ND505_HV2','ND507','ND507_HV2')
+        --AND peev.INPUT_VALUE_ID         = 300000016698192
+        AND peev.input_value_id         = pivf.input_value_id
+        --AND b.assignment_id             = :{PARAMETER.assignment_id}
+        AND to_date(:{PARAMETER.FECHA},'DD/MM/RRRR') BETWEEN peef.effective_start_date AND peef.effective_end_date
+        --* Prueba unitaria *--
+        /*AND b.assignment_number = 'E115095-2'
+        AND to_date('10/02/2022','DD/MM/RRRR') BETWEEN peef.effective_start_date AND peef.effective_end_date*/
+        --* Prueba unitaria *--
+        AND (
+                SELECT  UNIQUE(peevl.PROCESSED_FLAG)
+                FROM    pay_element_entries_vl peevl
+                WHERE   1 = 1
+                        AND peevl.element_entry_id = peef.element_entry_id  ) = 'N'
