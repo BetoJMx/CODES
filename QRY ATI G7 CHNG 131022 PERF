@@ -1,0 +1,124 @@
+--QRY ATI G7 CHNG 131022 PERF
+WITH cat_elements AS (
+    SELECT  /*+MATERIALIZE*/  
+            meaning AS element_name
+            , CASE
+                WHEN lookup_type = 'XXGRG_DIAS_FINIQUITOS_PER_ATI' THEN
+                    'P'
+                WHEN lookup_type = 'XXGRG_DIAS_FINIQUITOS_DED_ATI' THEN
+                    'D'
+                ELSE
+                    NULL
+                END per_ded
+    FROM      fnd_lookup_values
+    WHERE     1 = 1
+    AND       TRIM(lookup_type) IN (  'XXGRG_DIAS_FINIQUITOS_PER_ATI'
+                                    , 'XXGRG_DIAS_FINIQUITOS_DED_ATI'
+                                    )
+    AND       language = SYS_CONTEXT('USERENV','LANG')
+    AND       enabled_flag = 'Y'
+), dias_trabajados_1 AS (
+    SELECT  /*+MATERIALIZE*/
+            CASE
+                WHEN elem.per_ded = 'P' THEN
+                    TO_NUMBER(prrv.result_value)
+                ELSE
+                    0
+            END diastrabajados_per
+            , CASE
+                WHEN elem.per_ded = 'D' THEN
+                    TO_NUMBER(prrv.result_value)
+                ELSE
+                    0
+            END diastrabajados_ded
+            , ppra.payroll_rel_action_id
+            , ppra.payroll_relationship_id
+    FROM      pay_payroll_rel_actions         ppra
+            , pay_run_types_f                 prtf
+            , pay_run_results                 prr
+            , pay_run_result_values           prrv
+            , pay_element_types_f             pet
+            , pay_element_types_tl            pettl
+            , pay_ele_classifications  pec
+            , pay_input_values_f       piv
+            , pay_input_values_tl             pivtl
+            , cat_elements                    elem
+    WHERE     1 = 1
+    AND       ppra.run_type_id = prtf.run_type_id
+    AND       ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+    AND       ppra.action_status = 'C'
+    AND       prr.run_result_id = prrv.run_result_id
+    AND       prr.status IN ('P', 'PA')
+    AND       prr.element_type_id = pet.element_type_id
+    AND       pet.element_type_id = pettl.element_type_id
+    AND       pet.classification_id = pec.classification_id
+    AND       pet.element_type_id = piv.element_type_id
+    AND       prrv.input_value_id = piv.input_value_id
+    AND       piv.input_value_id = pivtl.input_value_id
+    AND       piv.user_display_flag = 'Y'
+    AND       UPPER(pettl.element_name) = UPPER(elem.element_name)
+    AND       UPPER (TRIM (pivtl.name)) = 'DAYS WORKED'
+    AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+    AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+    AND       TRUNC (SYSDATE) BETWEEN prtf.effective_start_date AND prtf.effective_end_date
+    AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+    AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+    AND       :p_tipo_nomina IN(  'FINIQUITO'
+                                , 'LIQUIDACION'
+                                , 'FINIQUITO FONDO'
+                                , 'PTU BAJAS'
+                                )
+), dias_trabajados_base AS (
+    SELECT    SUM(diastrabajados_per) diastrabajados
+            , payroll_rel_action_id
+            , payroll_relationship_id
+    FROM    dias_trabajados_1
+    WHERE     1 = 1
+    GROUP BY  payroll_rel_action_id
+            , payroll_relationship_id
+    UNION ALL
+    SELECT    SUM(ABS(prrv.result_value)) AS diastrabajados 
+            , ppra.payroll_rel_action_id
+            , ppra.payroll_relationship_id
+    FROM      pay_payroll_rel_actions         ppra
+            , pay_run_types_f                 prtf
+            , pay_run_result_values           prrv
+            , pay_run_results                 prr
+            , pay_element_types_f             pet
+            , pay_element_types_tl            pettl
+            , fusion.pay_ele_classifications  pec
+            , fusion.pay_input_values_f       piv
+            , pay_input_values_tl             pivtl
+    WHERE     1 = 1
+    AND       ppra.run_type_id = prtf.run_type_id
+    AND       ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+    AND       ppra.action_status = 'C'
+    AND       prrv.run_result_id = prr.run_result_id
+    AND       prr.status IN ('P', 'PA')
+    AND       prr.element_type_id = pet.element_type_id
+    AND       pet.element_type_id = pettl.element_type_id
+    AND       pet.classification_id = pec.classification_id
+    AND       pet.element_type_id = piv.element_type_id
+    AND       prrv.input_value_id = piv.input_value_id
+    AND       piv.input_value_id = pivtl.input_value_id
+    AND       pettl.element_name IN ('NP001', 'NP001_H')
+    AND       UPPER (pec.base_classification_name) = 'STANDARD EARNINGS'
+    AND       UPPER (TRIM (pivtl.name)) = 'DAYS WORKED'
+    AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+    AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+    AND       TRUNC (SYSDATE) BETWEEN prtf.effective_start_date AND prtf.effective_end_date
+    AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+    AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+    AND       :p_tipo_nomina NOT IN ('FINIQUITO',
+                                    'LIQUIDACION',
+                                    'FINIQUITO FONDO',
+                                    'PTU BAJAS')
+    GROUP BY  ppra.payroll_rel_action_id
+            , ppra.payroll_relationship_id
+)
+SELECT  /*+FIRST_ROWS*/
+        diastrabajados
+        , payroll_rel_action_id
+        , payroll_relationship_id
+FROM    dias_trabajados_base
+WHERE     1 = 1
