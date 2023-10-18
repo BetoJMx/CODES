@@ -1,0 +1,354 @@
+--QRY CARTA RENUNCIA CHNG 310323
+SELECT   papf.person_id AS person_id
+        ,ppos.actual_termination_date
+        ,papf.person_number AS no_de_empleado
+        ,(CASE
+            WHEN  NVL(pa.action_type_code , 'X' ) = 'EMPL_TERMINATE' AND NVL(pa.action_code ,'X' ) != 'GLB_TRANSFER' THEN 
+                'N'
+            ELSE 
+                'Y'
+            END 
+        ) AS baja
+        ,CONVERT(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(TRIM(UPPER(ppnf.full_name)), '?', 'N'),
+                            'Ñ',
+                            'N'),
+                        ',',
+                        ''),
+                    'ñ',
+                    'n'),
+                'us7ascii',
+                'UTF8') AS nombre
+        ,(
+            CASE 
+                WHEN :p_puesto_con_marca = 'N' THEN
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                        CONVERT(REPLACE(REPLACE( TRIM(UPPER(pj.name)), 'Ñ', 'N'), 'ñ', 'n'), 'us7ascii', 'al32utf8'),
+                            ' TOKS'),' BEER'),' FF'),' FAROLITO'), ' SS'), ' CEDIS'),' COMISARIATO'),' BEER SGG'),' PANDA EXPRESS'),' PANDA')
+            ELSE
+                CONVERT(REPLACE(REPLACE( TRIM(UPPER(pj.name)), 'Ñ', 'N'), 'ñ', 'n'), 'us7ascii', 'al32utf8')
+            END
+        ) AS puesto
+        ,TO_CHAR(
+                ppos.PDS_INFORMATION_DATE1,
+                (
+                    SELECT  psdf.seniority_date
+                    FROM    per_seniority_dates_f  psdf,
+                            per_seniority_dates_setup   psds
+                    WHERE   psdf.person_id = paaf.person_id
+                            AND psdf.seniority_field = 'ORA_ENT'
+                            AND psds.seniority_date_code = psdf.seniority_date_code
+                            AND psds.active_flag = 'Y'
+                            AND TRUNC(:p_fecha_baja) 
+                                BETWEEN psdf.effective_start_date 
+                                    AND psdf.effective_END_date
+                )
+            , 'DD/MM/YYYY'
+        ) fecha_de_ingreso
+        ,TO_CHAR(:p_fecha_baja,'DD/MM/YYYY','NLS_DATE_LANGUAGE = AMERICAN') AS fecha_de_baja
+        ,TO_CHAR(:p_fecha_baja,'fm dd "de" month "de" yyyy','nls_date_language=spanish') AS fecha
+        ,CONVERT(pldft.location_name,'us7ascii','al32utf8') AS nom_unidad
+        ,TO_CHAR(ppos.notified_termination_date, 'DD/MM/YYYY') AS emp_fecha_notificacion
+        ,CONVERT(UPPER(paypf.payroll_name), 'us7ascii', 'UTF8') AS payroll_name
+        ,CONVERT(UPPER(hr_general.decode_lookup('ORA_HRX_MX_SS_LEAVE_REASON', ppos.pds_information1 ) ), 'us7ascii', 'UTF8') AS sub_motivo_baja
+        ,CONVERT(UPPER(xler.registered_name), 'us7ascii', 'UTF8') empresa
+        ,NVL(DECODE(pl.region_2,'México','Estado de México',pl.region_2 ),pl.TOWN_OR_CITY) AS ciudad
+        ,pl.address_line_1
+            ||(
+                CASE 
+                    WHEN pl.address_line_2 IS NOT NULL THEN 
+                        ' No. ' || pl.address_line_2
+                ELSE 
+                    'SN' 
+                END 
+            )||(
+                CASE 
+                    WHEN pl.address_line_3 IS NOT NULL THEN 
+                        ', ' || pl.address_line_3
+                    ELSE 
+                        '' 
+                    END
+            )|| ', ' || pl.loc_information14 
+            || ', ' || pl.town_or_city 
+            || ' CP. ' || pl.postal_code
+            || ', ' || NVL(pl.region_3 , pl.region_2 ) 
+        AS domicilio
+        ,cs.salary_amount AS salario_dia
+        ,cs.salary_amount * 30 AS salario_mensual
+        ,DECODE(.00000000001 *(MOD(ABS((cs.salary_amount * 30 ) ),1000000000000)-MOD(ABS((cs.salary_amount * 30 ) ) ,100000000000 ) ),
+            1,DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-12,3),'100','CIEN ','CIENTO '),
+            2,'DOSCIENTOS ',3,'TRESCIENTOS ',
+            4,'CUATROCIENTOS ',5,'QUINIENTOS ',6,'SEISCIENTOS ',
+            7,'SETECIENTOS ',8,'OCHOCIENTOS ',9,'NOVECIENTOS ',
+            0,NULL,'ERROR') ||
+            DECODE(.0000000001*(MOD(ABS((cs.salary_amount * 30)),100000000000)-MOD(ABS((cs.salary_amount * 30)),10000000000)),
+            1,(DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)
+            -MOD(ABS((cs.salary_amount * 30)),1000000000)),
+            0,'DIEZ ',1,'ONCE ',2,'DOCE ',3,'TRECE ',
+            4,'CATORCE ',5,'QUINCE ',6,'DIECISEIS ',
+            7,'DIECISIETE ',8,'DIECIOCHO ',9,'DIECINUEVE ','ERROR')),
+            2,(DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)
+            -MOD(ABS((cs.salary_amount * 30)),1000000000)),
+            0,'VEINTE ',1,'VEINTIUN ',2,'VEINTIDOS ',3,'VEINTITRES ',
+            4,'VEINTICUATRO ',5,'VEINTICINCO ',6,'VEINTISEIS ',
+            7,'VEINTISIETE ',8,'VEINTIOCHO ',9,'VEINTINUEVE ','ERROR')),
+            3,'TREINTA ',4,'CUARENTA ',
+            5,'CINCUENTA ',6,'SESENTA ',7,'SETENTA ',
+            8,'OCHENTA ',9,'NOVENTA ',NULL) ||
+            DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)-MOD(ABS((cs.salary_amount * 30)),1000000000))
+            ,0,NULL,
+           (DECODE(.0000000001*(MOD(ABS((cs.salary_amount * 30)),100000000000)-MOD(ABS((cs.salary_amount * 30)),10000000000)),
+            0,NULL,1,NULL,2,NULL,'Y ')))||
+            DECODE(.0000000001*(MOD(ABS((cs.salary_amount * 30)),100000000000)-MOD(ABS((cs.salary_amount * 30)),10000000000)),
+            1,NULL,2,NULL,(DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)
+            -MOD(ABS((cs.salary_amount * 30)),1000000000)),
+            1,'UN ',2,'DOS ',3,'TRES ',4,'CUATRO ',5,'CINCO ',
+            6,'SEIS ',7,'SIETE ',8,'OCHO ',9,'NUEVE ',
+            0,NULL,'ERROR')))||
+            DECODE(SIGN(ABS((cs.salary_amount * 30))-999.99),1,
+            DECODE(.00000000001*(MOD(ABS((cs.salary_amount * 30)),1000000000000)
+            -MOD(ABS((cs.salary_amount * 30)),100000000000)),0,
+            DECODE(.0000000001*(MOD(ABS((cs.salary_amount * 30)),100000000000)
+            -MOD(ABS((cs.salary_amount * 30)),10000000000)),0,
+            DECODE(.000000001*(MOD(ABS((cs.salary_amount * 30)),10000000000)
+            -MOD(ABS((cs.salary_amount * 30)),1000000000)),0, NULL, DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-10,1),'1','BILLON ','BILLONES ')),
+            'BILLONES '),
+            'BILLONES '),  NULL) ||
+            DECODE(.00000001*(MOD(ABS((cs.salary_amount * 30)),1000000000)-MOD(ABS((cs.salary_amount * 30)),100000000)),
+            1,DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-9,3),'100','CIEN ','CIENTO '),
+            2,'DOSCIENTOS ',3,'TRESCIENTOS ',
+            4,'CUATROCIENTOS ',5,'QUINIENTOS ',6,'SEISCIENTOS ',
+            7,'SETECIENTOS ',8,'OCHOCIENTOS ',9,'NOVECIENTOS ',
+            0,NULL,'ERROR') ||
+            DECODE(.0000001*(MOD(ABS((cs.salary_amount * 30)),100000000)-MOD(ABS((cs.salary_amount * 30)),10000000)),
+            1,(DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)
+            -MOD(ABS((cs.salary_amount * 30)),1000000)),
+            0,'DIEZ ',1,'ONCE ',2,'DOCE ',3,'TRECE ',
+            4,'CATORCE ',5,'QUINCE ',6,'DIECISEIS ',
+            7,'DIECISIETE ',8,'DIECIOCHO ',9,'DIECINUEVE ','ERROR')),
+            2,(DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)
+            -MOD(ABS((cs.salary_amount * 30)),1000000)),
+            0,'VEINTE ',1,'VEINTIUN ',2,'VENTIDOS ',3,'VEINTITRES ',
+            4,'VEINTICUATRO ',5,'VEINTICINCO ',6,'VEINTISEIS ',
+            7,'VEINTISIETE ',8,'VEINTIOCHO ',9,'VEINTINUEVE ','ERROR')),
+            3,'TREINTA ',4,'CUARENTA ',
+            5,'CINCUENTA ',6,'SESENTA ',7,'SETENTA ',
+            8,'OCHENTA ',9,'NOVENTA ',NULL) ||
+            DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)-MOD(ABS((cs.salary_amount * 30)),1000000))
+            ,0,NULL,
+           (DECODE(.0000001*(MOD(ABS((cs.salary_amount * 30)),100000000)-MOD(ABS((cs.salary_amount * 30)),10000000)),
+            0,NULL,1,NULL,2,NULL,'Y ')))||
+            DECODE(.0000001*(MOD(ABS((cs.salary_amount * 30)),100000000)-MOD(ABS((cs.salary_amount * 30)),10000000)),
+            1,NULL,2,NULL,(DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)
+            -MOD(ABS((cs.salary_amount * 30)),1000000)),
+            1,'UN ',2,'DOS ',3,'TRES ',4,'CUATRO ',5,'CINCO ',
+            6,'SEIS ',7,'SIETE ',8,'OCHO ',9,'NUEVE ',
+            0,NULL,'ERROR')))||
+            DECODE(SIGN(ABS((cs.salary_amount * 30))-999.99),1,
+            DECODE(.00000001*(MOD(ABS((cs.salary_amount * 30)),1000000000)
+            -MOD(ABS((cs.salary_amount * 30)),100000000)),0,
+            DECODE(.0000001*(MOD(ABS((cs.salary_amount * 30)),100000000)
+            -MOD(ABS((cs.salary_amount * 30)),10000000)),0,
+            DECODE(.000001*(MOD(ABS((cs.salary_amount * 30)),10000000)
+            -MOD(ABS((cs.salary_amount * 30)),1000000)),0, NULL, DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-7,1),
+                                                    '1','MILLON ','MILLONES ')),
+            'MILLONES '),
+            'MILLONES '),  NULL) ||
+            DECODE(.00001*(MOD(ABS((cs.salary_amount * 30)),1000000)-MOD(ABS((cs.salary_amount * 30)),100000)),
+            1,DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-6,3),'100','CIEN ','CIENTO '),
+            2,'DOSCIENTOS ',3,'TRESCIENTOS ',
+            4,'CUATROCIENTOS ',5,'QUINIENTOS ',6,'SEISCIENTOS ',
+            7,'SETECIENTOS ',8,'OCHOCIENTOS ',9,'NOVECIENTOS ',
+            0,NULL,'ERROR') ||
+            DECODE(.0001*(MOD(ABS((cs.salary_amount * 30)),100000)-MOD(ABS((cs.salary_amount * 30)),10000)),
+            1,(DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)-MOD(ABS((cs.salary_amount * 30)),1000)),
+            0,'DIEZ ',1,'ONCE ',2,'DOCE ',3,'TRECE ',
+            4,'CATORCE ',5,'QUINCE ',6,'DIECISEIS ',
+            7,'DIECISIETE ',8,'DIECIOCHO ',9,'DIECINUEVE ','ERROR')),
+            2,(DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)
+            -MOD(ABS((cs.salary_amount * 30)),1000)),
+            0,'VEINTE ',1,'VEINTIUN ',2,'VEINTIDOS ',3,'VEINTITRES ',
+            4,'VEINTICUATRO ',5,'VEINTICINCO ',6,'VEINTISEIS ',
+            7,'VEINTISIETE ',8,'VEINTIOCHO ',9,'VEINTINUEVE ','ERROR')),
+            3,'TREINTA ',4,'CUARENTA ',
+            5,'CINCUENTA ',6,'SESENTA ',7,'SETENTA ',
+            8,'OCHENTA ',9,'NOVENTA ',NULL) ||
+            DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)-MOD(ABS((cs.salary_amount * 30)),1000))
+            ,0,NULL,
+           (DECODE(.0001*(MOD(ABS((cs.salary_amount * 30)),100000)-MOD(ABS((cs.salary_amount * 30)),10000)),
+            0,NULL,1,NULL,2,NULL,'Y ')))||
+            DECODE(.0001*(MOD(ABS((cs.salary_amount * 30)),100000)-MOD(ABS((cs.salary_amount * 30)),10000)),
+            1,NULL,2,NULL,(DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)-MOD(ABS((cs.salary_amount * 30)),1000)),
+            1,'UN ',2,'DOS ',3,'TRES ',4,'CUATRO ',5,'CINCO ',
+            6,'SEIS ',7,'SIETE ',8,'OCHO ',9,'NUEVE ',
+            0,NULL,'ERROR')))||
+            DECODE(SIGN(ABS((cs.salary_amount * 30))-999.99),1,
+            DECODE(.00001*(MOD(ABS((cs.salary_amount * 30)),1000000)-MOD(ABS((cs.salary_amount * 30)),100000)),0,
+            DECODE(.0001*(MOD(ABS((cs.salary_amount * 30)),100000)-MOD(ABS((cs.salary_amount * 30)),10000)),0,
+            DECODE(.001*(MOD(ABS((cs.salary_amount * 30)),10000)-MOD(ABS((cs.salary_amount * 30)),1000)),0,
+            NULL, 'MIL '),
+            'MIL '),
+            'MIL '),  NULL) ||
+            DECODE(.01*(MOD(ABS((cs.salary_amount * 30)),1000)-MOD(ABS((cs.salary_amount * 30)),100)),
+            1,DECODE(SUBSTR(TO_CHAR(TRUNC((cs.salary_amount * 30),0)),-3,3),'100','CIEN ','CIENTO '),
+            2,'DOSCIENTOS ',3,'TRESCIENTOS ',
+            4,'CUATROCIENTOS ',5,'QUINIENTOS ',6,'SEISCIENTOS ',
+            7,'SETECIENTOS ',8,'OCHOCIENTOS ',9,'NOVECIENTOS ',
+            NULL) ||
+            DECODE(.1*(MOD(ABS((cs.salary_amount * 30)),100)-MOD(ABS((cs.salary_amount * 30)),10)),
+            1,(DECODE(TRUNC(MOD(ABS((cs.salary_amount * 30)),10)),
+            0,'DIEZ ',1,'ONCE ',2,'DOCE ',3,'TRECE ',
+            4,'CATORCE ',5,'QUINCE ',6,'DIECISEIS ',
+            7,'DIECISIETE ',8,'DIECIOCHO ',9,'DIECINUEVE ','ERROR')),
+            2,(DECODE(TRUNC(MOD(ABS((cs.salary_amount * 30)),10)),
+            0,'VEINTE ',1,'VEINTIUN ',2,'VEINTIDOS ',3,'VEINTITRES ',
+            4,'VEINTICUATRO ',5,'VEINTICINCO ',6,'VEINTISEIS ',
+            7,'VEINTISIETE ',8,'VEINTIOCHO ',9,'VEINTINUEVE ','ERROR')),
+            2,'VEINTE ',3,'TREINTA ',4,'CUARENTA ',
+            5,'CINCUENTA ',6,'SESENTA ',7,'SETENTA ',
+            8,'OCHENTA ',9,'NOVENTA ',NULL) ||
+            DECODE(TRUNC(MOD(ABS((cs.salary_amount * 30)),10))
+            ,0,NULL,
+           (DECODE(.1*(MOD(ABS((cs.salary_amount * 30)),100)-MOD(ABS((cs.salary_amount * 30)),10)),
+            0,NULL,1,NULL,2,NULL,'Y ')))||
+            DECODE(.1*(MOD(ABS((cs.salary_amount * 30)),100)-MOD(ABS((cs.salary_amount * 30)),10)),
+            1,NULL,2,NULL,(DECODE(TRUNC(MOD(ABS((cs.salary_amount * 30)),10)),
+            1,'UN ',2,'DOS ',3,'TRES ',
+            4,'CUATRO ',5,'CINCO ',6,'SEIS ',
+            7,'SIETE ',8,'OCHO ',9,'NUEVE ',
+            0,NULL,'ERROR'))) ||
+            DECODE(MOD(TRUNC((cs.salary_amount * 30),0),1000000),0,'DE ',NULL)
+            || 'PESOS '||
+            DECODE(100*(ABS((cs.salary_amount * 30))-TRUNC(ABS((cs.salary_amount * 30)))),
+            0,'00',100*(ABS((cs.salary_amount * 30))-TRUNC(ABS((cs.salary_amount * 30)))))
+            ||'/100'
+            ||' M.N.' AS salario_mensual_letra
+        ,CASE 
+            WHEN SUBSTR(xler.registration_number,1,3) = SUBSTR(pldft.location_name,1,3) THEN 
+                UPPER(CONVERT(SUBSTR(pldft.location_name,5),'us7ascii','al32utf8'))         
+            ELSE 
+                UPPER(CONVERT(pldft.location_name,'us7ascii','al32utf8'))
+        END AS unidad
+FROM     per_assignment_secured_list_v  paaf --per_all_assignments_f
+        ,per_periods_of_service         ppos
+        ,per_jobs_f_tl                  pj
+        ,per_person_secured_list_v      papf --per_all_people_f papf
+        ,per_person_names_f             ppnf
+        ,per_people_legislative_f       pplf
+        ,per_national_identifiers       pnii
+        ,per_national_identifiers       pnic
+        ,per_national_identifiers       pnir
+        --+
+        ,pay_pay_relationships_dn       pprd
+        ,pay_all_payrolls_f             paypf --pay_payroll_secured_list_v  paypf,
+        ,pay_payroll_terms              ppt
+        ,pay_assigned_payrolls_dn       paypd
+        ,pay_rel_groups_dn              prgdn
+        --+
+        ,hr_organization_information    hoi
+        --+
+        ,hr_locations_all               pl    -- per_location_secured_list_v    pl 
+        ,per_location_details_f         pldf
+        ,per_location_details_f_tl      pldft
+         --+
+        ,per_action_occurrences         pao
+        ,per_actions_vl                 pa
+        ,per_action_reasons_vl          par
+        ,per_legal_employers            ple
+        ,xle_entity_profiles            xlep
+        ,xle_registrations              xler
+        ,cmp_salary                     cs
+WHERE   1 = 1
+        AND papf.person_id          = paaf.person_id
+        AND ppnf.person_id          = papf.person_id
+        AND ppnf.name_type          = 'MX'
+        AND paaf.assignment_type    = 'E'
+        AND paaf.primary_flag       = 'Y'
+        --+
+        --AND papf.person_number = '166970'
+        AND paaf.assignment_id  = cs.assignment_id(+)
+        AND papf.person_id      = NVL(:p_person_id , papf.person_id )
+        --+
+        AND pplf.person_id          = papf.person_id
+        AND pplf.legislation_code   = 'MX'
+        --+
+        AND pnir.person_id(+)                   = papf.person_id
+        AND pnir.national_identifier_type(+)    = 'RFC'
+        AND pnii.person_id(+)                   = papf.person_id
+        AND pnii.national_identifier_type(+)    = 'IMSS'
+        AND pnic.person_id(+)                   = papf.person_id
+        AND pnic.national_identifier_type(+)    = 'CURP'
+        --+
+        AND pj.job_id   = paaf.job_id
+        AND pj.language = SYS_CONTEXT('USERENV', 'LANG')
+        --+
+        AND ppos.person_id              = paaf.person_id
+        AND ppos.period_of_service_id   = paaf.period_of_service_id
+        AND ppos.legal_entity_id        = paaf.legal_entity_id
+        --+
+        AND pprd.person_id(+)               = paaf.person_id
+        AND prgdn.assignment_id             = paaf.assignment_id
+        AND ppt.payroll_relationship_id(+)  = pprd.payroll_relationship_id
+        AND ppt.hr_term_id                  = prgdn.term_id
+        AND paypd.payroll_term_id(+)        = ppt.payroll_term_id
+        AND paypf.payroll_id(+)             = paypd.payroll_id
+        AND paypf.payroll_id                IS NOT NULL
+        --+
+        AND hoi.organization_id(+)          = paaf.organization_id
+        AND hoi.org_information_context(+)  = 'PER_GL_COST_CENTER_INFO'
+        --+
+        AND pl.location_id              = paaf.location_id
+        AND pldf.location_id            = pl.location_id
+        AND pldft.location_details_id   = pldf.location_details_id
+        AND pldft.language              = SYS_CONTEXT('USERENV', 'LANG')
+        --+
+        AND pao.action_occurrence_id    = ppos.action_occurrence_id
+        AND pa.action_id                = pao.action_id
+        AND par.action_reason_id(+)     = pao.action_reason_id
+        AND paaf.assignment_type        = 'E'
+        AND paaf.primary_flag           = 'Y'
+        AND paaf.assignment_status_type = 'ACTIVE'
+        --+
+        AND paaf.legal_entity_id    = ple.organization_id
+        AND ple.legal_entity_id     = xlep.legal_entity_id
+        AND xlep.legal_entity_id    = xler.source_id
+        AND xler.source_table       = 'XLE_ENTITY_PROFILES'
+        --+
+        AND NOT EXISTS(
+                SELECT  1
+                FROM    fnd_lookup_values_vl flv
+                WHERE   1 = 1
+                        AND flv.lookup_type     = 'GRG_PAY_CARTA_REN_USER_RSTRGDS'
+                        AND flv.lookup_code     = :xdo_user_name
+                        AND flv.enabled_flag    = 'Y'
+                        AND flv.tag             LIKE '%' || paypf.payroll_name || '%'
+            )
+        --+
+        AND TRUNC(:p_fecha_baja) 
+            BETWEEN paaf.effective_start_date
+                AND paaf.effective_END_date
+        AND TRUNC(:p_fecha_baja) 
+            BETWEEN pj.effective_start_date
+                AND pj.effective_END_date
+        AND TRUNC(:p_fecha_baja) 
+            BETWEEN papf.effective_start_date
+                AND papf.effective_END_date
+        AND TRUNC(:p_fecha_baja) 
+            BETWEEN ppnf.effective_start_date
+                AND ppnf.effective_END_date
+        AND trunc(:p_fecha_baja) 
+            BETWEEN pplf.effective_start_date
+                AND pplf.effective_END_date
+        AND TRUNC(:p_fecha_baja) 
+            BETWEEN pldf.effective_start_date
+                AND pldf.effective_END_date
+        AND TRUNC(:p_fecha_baja) 
+            BETWEEN pldft.effective_start_date
+                AND pldft.effective_END_date
+        AND trunc(:p_fecha_baja)
+            BETWEEN trunc(cs.date_from(+)) 
+                AND trunc(cs.date_to(+))
+ORDER BY ppos.actual_termination_date ASC
