@@ -1,0 +1,201 @@
+--PKGB WS_AE_ELEMENT_ENTRY BKP 091023
+CREATE OR REPLACE package body PAY.GRG_ELEMENT_ENTRY_OTB_PKG is
+
+  FUNCTION from_base64(p_clob in clob) return clob is
+
+			l_length 	integer 		:= dbms_lob.getLength(p_clob);
+			l_offset 	integer 		:= 1;
+			l_amt 		binary_integer 	:= 800;--800
+			l_buffer 	varchar2(9200);--9200
+
+			l_result clob 				:= empty_clob();
+    BEGIN  
+
+     while l_offset <= l_length loop
+        l_buffer := replace(replace(dbms_lob.substr(p_clob, l_amt, l_offset), chr(10), null), chr(13), null);
+        l_offset := l_offset + l_amt;
+        while l_offset <= l_length and mod(dbms_lob.getLength(l_buffer), 4) > 0 loop
+		    l_buffer := l_buffer || replace(replace(dbms_lob.substr(p_clob, 1, l_offset), chr(10), null), chr(13), null);
+		    l_offset := l_offset + 1;
+        end loop;
+	    
+        l_result := l_result || utl_raw.cast_to_varchar2(utl_encode.base64_decode(utl_raw.cast_to_raw(l_buffer)));
+     end loop;
+    
+    return l_result;
+  end from_base64;
+  
+  
+    FUNCTION get_result (
+                        p_element_entry in varchar2,
+                        p_payroll_name  in varchar2,
+                        p_tipo          in varchar2,
+                        p_estafeta      in varchar2 
+                       ) RETURN sys_refcursor
+   
+   
+   AS
+      --  bloque que llena la tabla 
+      type curtype is ref cursor;
+      v_cursor            curtype;
+      
+      l_user_name VARCHAR2 (100);
+      l_password  VARCHAR2 (100);
+      l_ws_url    VARCHAR2 (500);
+      l_ws_action VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar
+      l_ws_response_clob   CLOB;
+      l_ws_envelope        CLOB;
+      l_ws_resp_xml        XMLTYPE;
+      l_ws_resp_xml2       XMLTYPE;
+      v_cdata              CLOB;
+      l_clob               CLOB;
+      
+    BEGIN
+        DBMS_OUTPUT.put_line ('entra');
+       l_ws_envelope :=
+        '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+        <soap:Body>
+          <pub:runReport>
+            <pub:reportRequest>
+              <pub:parameterNameValues>
+                
+				<pub:item>
+                  <pub:name>p_element_entry</pub:name>
+                  <pub:values>
+                    <pub:item>'
+                      || p_element_entry || 
+				   '</pub:item>
+                  </pub:values>
+                </pub:item>
+                     
+                <pub:item>
+                  <pub:name>p_payroll_name</pub:name>
+                  <pub:values>
+                    <pub:item>'
+				      || p_payroll_name ||
+                   '</pub:item>
+                  </pub:values>
+                </pub:item>
+                     
+                <pub:item>
+                  <pub:name>p_tipo</pub:name>
+                  <pub:values>
+                    <pub:item>'
+				      || nvl( p_tipo, 'ALTA' ) ||
+                   '</pub:item>
+                  </pub:values>
+                </pub:item> 
+                
+                <pub:item>
+                  <pub:name>p_estafeta</pub:name>
+                  <pub:values>
+                    <pub:item>'
+                      || p_estafeta || 
+				   '</pub:item>
+                  </pub:values>
+                </pub:item>
+                
+              </pub:parameterNameValues>
+              <pub:reportAbsolutePath>/Reportes Custom/PAY/Element Entry/ReporteElementEntry.xdo</pub:reportAbsolutePath>
+              <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+            </pub:reportRequest>
+          </pub:runReport>
+        </soap:Body>
+        </soap:Envelope>';
+      --ADLH, aquí
+	/*  
+        --Este es el XML que se manda al servicio
+
+        --dbms_output.put_line( l_ws_envelope );
+        insert into xxtoks_cat_otbi_log values( l_ws_envelope, sysdate );
+        commit;
+
+        --funciones para encabezados
+        apex_web_service.g_request_headers (1).name 	:= 'SOAPAction';
+        apex_web_service.g_request_headers (1).VALUE 	:= l_ws_action;
+        apex_web_service.g_request_headers (2).name 	:= 'Content-Type';
+        apex_web_service.g_request_headers (2).VALUE 	:= 'application/soap+xml; charset=UTF-8';
+
+        PAY.XXTOKS_PAY_URL_WSDL_PKG.get_data(l_ws_url,l_user_name,l_password); 
+        
+        --se invoca al servicio web, devuelve la respuesta en un clob
+        l_ws_response_clob :=
+            apex_web_service.make_rest_request (
+                p_url           => l_ws_url,
+                p_http_method   => 'POST',
+                p_body          => l_ws_envelope,
+                p_username      => l_user_name,
+                p_password      => l_password); --Aquí le pasas los datos al método, que son las variables creadas previamente (credenciales)
+        
+        --dbms_output.put_line( l_ws_url || ' / ' || l_user_name || ' / ' || l_password );
+        --dbms_output.put_line( l_ws_response_clob );
+        --insert into xxtoks_cat_otbi_log values( l_ws_response_clob, sysdate );
+        --commit;
+
+        l_ws_resp_xml := xmltype.createxml (l_ws_response_clob);
+
+        SELECT (cdata_section)
+          INTO v_cdata
+          FROM XMLTABLE (
+                   XMLNAMESPACES (
+                       'http://www.w3.org/2003/05/soap-envelope' AS "env",
+                       'http://xmlns.oracle.com/oxp/service/PublicReportService'
+                           AS "ns2"),
+                   '/env:Envelope/env:Body/ns2:runReportResponse/ns2:runReportReturn'
+                   PASSING l_ws_resp_xml
+                   COLUMNS cdata_section CLOB PATH 'ns2:reportBytes') dat;
+
+        --insert into xxtoks_cat_otbi_log values( v_cdata, sysdate );
+        --commit;
+        
+        l_clob := from_base64 (v_cdata);
+
+        --dbms_output.put_line( substr( l_clob, 1, 2000 ) );
+        insert into xxtoks_cat_otbi_log values( l_clob, sysdate );
+        commit;
+        
+        l_ws_resp_xml2 := xmltype.createxml (l_clob); -- aquí se recupera la información del paso anterior y se deja lista para pasarse a tabla.
+        
+		 --ADLH, aquí
+  */
+------------------------------------------------------------------------------------------
+	GRG_COMMON_CONNECTIONS.get_otbi_report(
+											l_ws_envelope => l_ws_envelope,
+											l_user_token  => null,
+											x_ws_response => l_clob );
+
+   l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+ --------------------------------------------------------------------------------------------
+ 
+        open v_cursor 
+        for SELECT 
+                    xml_data.PERSON_NUMBER,
+                    xml_data.ASSIGNMENT_NUMBER,
+                    xml_data.ENTRY_COUNT
+               FROM XMLTABLE (
+                          '/DATA_DS/G_1'
+                          PASSING xmltype.createxml (l_clob)
+                          COLUMNS PERSON_NUMBER     VARCHAR2 (50) PATH 'PERSON_NUMBER',
+                                  ASSIGNMENT_NUMBER VARCHAR2 (50) PATH 'ASSIGNMENT_NUMBER',
+                                  ENTRY_COUNT       VARCHAR2 (10) PATH 'ENTRY_COUNT'
+                    ) xml_data ;
+        return v_cursor;
+        close v_cursor;
+        
+     exception when others then
+        l_ws_response_clob := SQLERRM;
+        insert into xxtoks_cat_otbi_log values( l_ws_response_clob, sysdate );
+       
+       commit;
+       
+        open v_cursor 
+        for SELECT 'Ocurrio un error inesperado.' as error_message from dual;
+       
+       return v_cursor;
+        
+     END get_result; 
+  
+END GRG_ELEMENT_ENTRY_OTB_PKG; 
+
+/
+
