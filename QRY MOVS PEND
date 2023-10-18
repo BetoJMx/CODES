@@ -1,0 +1,181 @@
+--QRY MOVS PEND
+WITH xxgrg_arbol
+AS (SELECT CONVERT (haou2.name, 'us7ascii', 'UTF8') name_son,
+CONVERT (haou.name, 'us7ascii', 'UTF8') name_parent,
+ftv.tree_structure_code,
+ftv.tree_code,
+CASE
+WHEN ftt.tree_name LIKE '%CNF%' THEN 'CNF'
+WHEN ftt.tree_name LIKE '%SND%' THEN 'SND'
+END
+tree_name,
+CONVERT (ftt.tree_name, 'us7ascii', 'UTF8') name_tre
+FROM per_org_tree_node potn,
+per_org_tree_node potn2,
+hr_all_organization_units haou,
+hr_all_organization_units haou2,
+fnd_tree_version ftv,
+fnd_tree_version_tl ftvt,
+fnd_tree_tl ftt
+WHERE 1 = 1
+AND ftv.tree_code IN ('ORG_TREE_CNF','ORG_TREE_SND')--,'TOKS_HCM_LE_TRU_DEP', 'TOKS_HCM_LE_TRU_DE')
+AND ftvt.language = 'US'
+AND ftt.language = 'US'
+AND ftv.tree_version_id = ftvt.tree_version_id
+AND ftv.tree_code = ftt.tree_code
+AND potn.tree_version_id = ftv.tree_version_id
+AND haou.organization_id = potn.pk1_start_value
+AND potn.tree_node_id = potn2.parent_tree_node_id
+AND haou2.organization_id = potn2.pk1_start_value)
+--+ CAMPOS A MOSTRAR +--
+select 
+txndata.transaction_id
+,jobtl.NAME as "Job_N"
+,department.NAME as "Department_N"
+--
+,wcLOV.MEANING as "EmployeeCategory_N"
+,hroi.ORG_INFORMATION1  "NUMEROUNIDAD_N"
+,xxtru.NAME_PARENT "TRU_N"
+,xle.REGISTRATION_NUMBER "NUMERO_TRU_N"
+,org.NAME as "LegalEmployer_N"
+,ASG.PERSON_ID
+,xxtru.tree_name
+,ASG.organization_id
+,department.NAME
+,xxtru.name_son
+FROM   hrc_txn_data txndata,
+XMLTABLE('$A/(EmployeeAssignmentDEORow)' PASSING extract(xmltype('<root>'||txndata.data_cache||'</root>'), '//EmployeeAssignmentDEORow') AS A
+columns 
+ASSIGNMENT_ID NUMBER(18,0) path 'AssignmentId/DATA',
+EFFECTIVE_START_DATE DATE path 'EffectiveStartDate/DATA',
+EFFECTIVE_END_DATE DATE path 'EffectiveEndDate/DATA',
+BUSINESS_GROUP_ID NUMBER(18,0) path 'BusinessGroupId/DATA',
+PERSON_ID NUMBER(18,0) path 'PersonId/DATA',
+PERIOD_OF_SERVICE_ID NUMBER(18,0) path 'PeriodOfServiceId/DATA',
+ASSIGNMENT_NUMBER VARCHAR2(50 CHAR) path 'AssignmentNumber/DATA',
+ASSIGNMENT_STATUS_TYPE_ID NUMBER(18,0) path 'AssignmentStatusTypeId/DATA',
+ORGANIZATION_ID NUMBER(18,0) path 'OrganizationId/DATA',
+JOB_ID NUMBER(18,0) path 'JobId/DATA',
+LOCATION_ID NUMBER(18,0) path 'LocationId/DATA',
+POSITION_ID NUMBER(18,0) path 'PositionId/DATA',
+GRADE_ID NUMBER(18,0) path 'GradeId/DATA',
+GRADE_STEP_ID NUMBER(18,0) path 'GradeStepId/DATA',
+GRADE_LADDER_PGM_ID NUMBER(18,0) path 'GradeLadderPgmId/DATA',
+PEOPLE_GROUP_ID NUMBER(18,0) path 'PeopleGroupId/DATA',
+COLLECTIVE_AGREEMENT_ID NUMBER(18,0) path 'CollectiveAgreementId/DATA',
+BARGAINING_UNIT_CODE VARCHAR2(30 CHAR) path 'BargainingUnitCode/DATA',
+LABOUR_UNION_MEMBER_FLAG VARCHAR2(30 CHAR) path 'LabourUnionMemberFlag/DATA',
+CONTRACT_ID NUMBER(18,0) path 'ContractId/DATA',
+MANAGER_FLAG VARCHAR2(30 CHAR) path 'ManagerFlag/DATA',
+DATE_PROBATION_END DATE path 'DateProbationEnd/DATA',
+PROBATION_PERIOD NUMBER(22,2) path 'ProbationPeriod/DATA',
+PROBATION_UNIT VARCHAR2(30 CHAR) path 'ProbationUnit/DATA',
+NORMAL_HOURS NUMBER(22,3) path 'NormalHours/DATA',
+FREQUENCY VARCHAR2(30 CHAR) path 'Frequency/DATA',
+WORK_AT_HOME VARCHAR2(30 CHAR) path 'WorkAtHome/DATA',
+TIME_NORMAL_FINISH VARCHAR2(5 CHAR) path 'TimeNormalFinish/DATA',
+TIME_NORMAL_START VARCHAR2(5 CHAR) path 'TimeNormalStart/DATA',
+NOTICE_PERIOD NUMBER(10,0) path 'NoticePeriod/DATA',
+NOTICE_PERIOD_UOM VARCHAR2(30 CHAR) path 'NoticePeriodUom/DATA',
+DEFAULT_CODE_COMB_ID NUMBER(18,0) path 'DefaultCodeCombId/DATA',
+EMPLOYEE_CATEGORY VARCHAR2(30 CHAR) path 'EmployeeCategory/DATA',
+EMPLOYMENT_CATEGORY VARCHAR2(30 CHAR) path 'EmploymentCategory/DATA',
+ESTABLISHMENT_ID NUMBER(18,0) path 'EstablishmentId/DATA',
+HOURLY_SALARIED_CODE VARCHAR2(30 CHAR) path 'HourlySalariedCode/DATA',
+PROJECTED_ASSIGNMENT_END DATE path 'ProjectedAssignmentEnd/DATA',
+SET_OF_BOOKS_ID NUMBER(18,0) path 'SetOfBooksId/DATA',
+SPECIAL_CEILING_STEP_ID NUMBER(18,0) path 'SpecialCeilingStepId/DATA',
+ASS_ATTRIBUTE_CATEGORY VARCHAR2(30 CHAR) path 'AssAttributeCategory/DATA',
+WORK_TERMS_ASSIGNMENT_ID NUMBER(18,0) path 'WorkTermsAssignmentId/DATA',
+ASSIGNMENT_NAME VARCHAR2(80 CHAR) path 'AssignmentName/DATA',
+EFFECTIVE_SEQUENCE NUMBER(4,0) path 'EffectiveSequence/DATA',
+INTERNAL_BUILDING VARCHAR2(45 CHAR) path 'InternalBuilding/DATA',
+INTERNAL_FLOOR VARCHAR2(45 CHAR) path 'InternalFloor/DATA',
+INTERNAL_LOCATION VARCHAR2(80 CHAR) path 'InternalLocation/DATA',
+INTERNAL_MAILSTOP VARCHAR2(45 CHAR) path 'InternalMailstop/DATA',
+INTERNAL_OFFICE_NUMBER VARCHAR2(45 CHAR) path 'InternalOfficeNumber/DATA',
+LEGAL_ENTITY_ID NUMBER(18,0) path 'LegalEntityId/DATA',
+PERSON_TYPE_ID NUMBER(18,0) path 'PersonTypeId/DATA',
+PRIMARY_ASSIGNMENT_FLAG VARCHAR2(30 CHAR) path 'PrimaryAssignmentFlag/DATA',
+PROJECTED_START_DATE DATE path 'ProjectedStartDate/DATA',
+BUSINESS_UNIT_ID NUMBER(18,0) path 'BusinessUnitId/DATA',
+PROPOSED_WORKER_TYPE VARCHAR2(30 CHAR) path 'ProposedWorkerType/DATA',
+POSITION_OVERRIDE_FLAG VARCHAR2(30 CHAR) path 'PositionOverrideFlag/DATA',
+EFFECTIVE_LATEST_CHANGE VARCHAR2(30 CHAR) path 'EffectiveLatestChange/DATA',
+ASG_INFORMATION_CATEGORY VARCHAR2(30 CHAR) path 'AsgInformationCategory/DATA',
+ID_FLEX_NUM NUMBER(18,0) path 'IdFlexNum/DATA',
+CATEGORY_CODE VARCHAR2(80 CHAR) path 'CategoryCode/DATA',
+FULL_PART_TIME VARCHAR2(30 CHAR) path 'FullPartTime/DATA',
+PERMANENT_TEMPORARY_FLAG VARCHAR2(30 CHAR) path 'PermanentTemporaryFlag/DATA',
+GSP_ELIGIBILITY_FLAG VARCHAR2(30 CHAR) path 'GspEligibilityFlag/DATA',
+UNION_ID NUMBER(18,0) path 'UnionId/DATA',
+SENIORITY_BASIS VARCHAR2(30 CHAR) path 'SeniorityBasis/DATA',
+RETIREMENT_AGE NUMBER(4,0) path '/Assignment/RetirementAge',
+RETIREMENT_DATE DATE path '/Assignment/RetirementDate',
+EXPENSE_CHECK_ADDRESS VARCHAR2(30 CHAR) path 'ExpenseCheckSendToAddress/DATA',
+TAX_ADDRESS_ID NUMBER(18,0) path 'TaxAddressId/DATA',
+FTEVALUE NUMBER(30,10) path 'FteValue/DATA',
+HEADVALUE NUMBER(30,10) path 'HeadValue/DATA',
+CALCULATE_WORKMEASURE_FLAG VARCHAR2(30 CHAR) path 'CalculateWorkMeasureFlag/DATA',
+OVERTIME_PERIOD NUMBER(18,0) path 'OvertimePeriod/DATA') ASG,
+XMLTABLE('/root/TRANSACTION/TransCtx' PASSING xmltype('<root>'||txndata.data_cache||'</root>') 
+columns
+EFFECTIVE_DATE DATE path 'hcmEffectiveDate',
+ASSIGNMENT_ID NUMBER(18,0) path 'EMP_AssignmentId',
+PERSON_ID NUMBER(18,0) path 'EMP_PersonId') ASG1,
+XMLTABLE('$A/ContractDEORow' PASSING extract(xmltype('<root>'||txndata.data_cache||'</root>'), '//ContractDEORow') AS A
+columns
+CONTRACT_ID NUMBER(18,0) path 'ContractId/DATA',
+EFFECTIVE_START_DATE DATE path 'EffectiveStartDate/DATA',
+EFFECTIVE_END_DATE DATE path 'EffectiveEndDate/DATA',
+DESCRIPTION VARCHAR2(2000 CHAR) path 'Description/DATA',
+DURATION NUMBER(22,2) path 'Duration/DATA',
+DURATION_UNITS VARCHAR2(30 CHAR) path 'DurationUnits/DATA',
+TYPE VARCHAR2(30 CHAR) path 'Type/DATA') contracts,
+XMLTABLE('$A/(EmployeeTermsDEORow)' PASSING extract(xmltype('<root>'||txndata.data_cache||'</root>'), '//EmployeeTermsDEORow') AS A
+columns
+ASSIGNMENT_ID NUMBER(18,0) path 'AssignmentId/DATA',
+EFFECTIVE_START_DATE DATE path 'EffectiveStartDate/DATA',
+EFFECTIVE_END_DATE DATE path 'EffectiveEndDate/DATA',
+EFFECTIVE_SEQUENCE NUMBER(4,0) path 'EffectiveSequence/DATA',
+PERIOD_OF_SERVICE_ID NUMBER(18,0) path 'PeriodOfServiceId/DATA',
+PROJECTED_ASSIGNMENT_END DATE path 'ProjectedAssignmentEnd/DATA') terms,
+PER_JOBS_F_TL jobtl,
+PER_JOBS_F jobs,
+HR_ORGANIZATION_UNITS_F_TL department,
+HR_ORGANIZATION_UNITS_F_TL establishment,
+HCM_LOOKUPS wcLOV
+,xxgrg_arbol xxtru
+,XLE_REGISTRATIONS xle
+,HR_ALL_ORGANIZATION_UNITS_F_VL org
+,HR_ORGANIZATION_INFORMATION_F hroi
+where 1 = 1--txndata.transaction_id = :transId
+AND ASG.JOB_ID = jobtl.JOB_ID(+) 
+AND jobtl.LANGUAGE(+) = SYS_CONTEXT('USERENV', 'LANG')
+AND ASG1.EFFECTIVE_DATE BETWEEN jobtl.EFFECTIVE_START_DATE(+) AND jobtl.EFFECTIVE_END_DATE(+)
+AND ASG.JOB_ID = jobs.JOB_ID(+) 
+AND ASG1.EFFECTIVE_DATE BETWEEN jobs.EFFECTIVE_START_DATE(+) AND jobs.EFFECTIVE_END_DATE(+)
+AND ASG.ORGANIZATION_ID = department.ORGANIZATION_ID(+) 
+AND department.LANGUAGE(+) = SYS_CONTEXT('USERENV', 'LANG')
+AND ASG1.EFFECTIVE_DATE BETWEEN department.EFFECTIVE_START_DATE(+) AND department.EFFECTIVE_END_DATE(+)
+AND ASG.ESTABLISHMENT_ID = establishment.ORGANIZATION_ID(+) 
+AND establishment.LANGUAGE(+) = SYS_CONTEXT('USERENV', 'LANG')
+AND ASG1.EFFECTIVE_DATE BETWEEN establishment.EFFECTIVE_START_DATE(+) AND establishment.EFFECTIVE_END_DATE(+)
+AND ASG.EMPLOYEE_CATEGORY = wcLOV.LOOKUP_CODE(+) 
+AND wcLOV.LOOKUP_TYPE(+) = 'EMPLOYEE_CATG'
+AND ASG.CONTRACT_ID = contracts.CONTRACT_ID(+)
+AND ASG1.EFFECTIVE_DATE BETWEEN contracts.EFFECTIVE_START_DATE(+) AND contracts.EFFECTIVE_END_DATE(+)
+AND ASG1.ASSIGNMENT_ID = terms.ASSIGNMENT_ID(+)
+AND ASG1.ASSIGNMENT_ID = ASG.ASSIGNMENT_ID
+--+TRU
+AND TRIM(xxtru.name_son(+)) = TRIM(department.NAME)
+AND CASE WHEN ASG.employee_category = 'TC' THEN 'CNF' WHEN ASG.employee_category = 'BC' THEN 'SND' END = xxtru.tree_name(+)
+--+
+And TRIM(xle.REGISTERED_NAME(+)) = TRIM(xxtru.NAME_PARENT)
+AND xle.IDENTIFYING_FLAG(+) = 'Y'
+AND org.ORGANIZATION_ID = ASG.LEGAL_ENTITY_ID
+AND TRUNC(SYSDATE) BETWEEN org.effective_start_date AND org.effective_end_date
+And hroi.ORGANIZATION_ID = ASG.ORGANIZATION_ID
+AND hroi.ORG_INFORMATION_CONTEXT = 'PER_GL_COST_CENTER_INFO'
+--AND ASG.person_id = 300000407837044
+AND txndata.transaction_id = 300000716487714
