@@ -1,0 +1,93 @@
+--QRY CHNG REP_BAJAS_PENS_ALIM 180822
+SELECT   pap.person_number                      AS ESTAFETA
+        ,ppn.full_name                          AS NOMBRE_COMP
+        ,pd.name                                AS NOMBRE_ORG
+        ,TO_CHAR(
+            act_end.actual_termination_date,
+            'DD-MM-YYYY'
+            )                                   AS FECHA_FIN
+        ,pjf.name                               AS PUESTO
+        ,hz.party_name                          AS NOMBRE_PENSIONADO
+        ,pap.person_id
+
+FROM     per_all_people_f           pap --per_person_secured_list_v pap
+        ,per_person_names_f         ppn
+        ,per_all_assignments_m      paam
+        ,per_departments            pd
+        ,per_jobs                   pjf
+        ,per_periods_of_service     act_end
+        ,pay_element_entries_f      peef
+        ,pay_element_entry_values_f peev
+        ,pay_element_types_tl       pettl
+        ,pay_input_values_tl        pivtl
+        ,pay_input_values_f         pivf
+        ,hz_parties                 hz
+
+WHERE   1 = 1
+        AND pap.person_id = ppn.person_id
+        AND pap.person_id = paam.person_id
+        AND paam.primary_flag = 'Y'
+        AND paam.job_id = pjf.job_id 
+        AND pd.organization_id = paam.organization_id 
+        AND pd.status = 'A'
+        AND act_end.legal_entity_id = paam.legal_entity_id
+        AND act_end.person_id = paam.person_id
+        AND act_end.period_of_service_id = paam.period_of_service_id
+        AND pap.person_id = act_end.person_id
+        AND act_end.actual_termination_date IS NOT NULL
+        AND pap.person_number IS NOT NULL
+        AND ppn.name_type = 'MX'
+        --+ PENSION -> ELEMENT_ENTRY / INPUT
+        AND pap.person_id = peef.person_id
+        AND peef.element_type_id = pettl.element_type_id
+        AND pettl.element_name = 'ND516'
+        AND pettl.language = SYS_CONTEXT('USERENV', 'LANG')
+        AND peev.input_value_id = pivtl.input_value_id
+        AND pivtl.input_value_id = pivf.input_value_id
+        AND pivf.value_set_code = 'TOKS_PY_THIRD_PARTY_PAYMENT_NAME'
+        AND pivtl.name = 'Beneficiario'
+        AND pivtl.language = SYS_CONTEXT('USERENV', 'LANG')
+        --+ PENSION -> BENEFICIARIO
+        AND peef.element_entry_id = peev.element_entry_id
+        AND TRIM(peev.screen_entry_value) IS NOT NULL
+        AND TRIM(peev.screen_entry_value) = hz.party_id
+        
+        --+
+        AND pap.effective_start_date = (SELECT MAX(effective_start_date)
+                                                FROM per_all_people_f
+                                                WHERE pap.person_id = person_id)
+        AND paam.effective_start_date = (SELECT MAX(effective_start_date)
+                                            FROM per_all_assignments_m
+                                            WHERE paam.person_id = person_id)
+        AND pap.person_id IN (SELECT person_id
+                                        FROM per_person_type_usages_m
+                                        WHERE upper(trim(system_person_type)) = 'EX_EMP')
+        AND act_end.actual_termination_date BETWEEN (SYSDATE - NVL(:days - 4, 4)) AND SYSDATE --(NVL2(:days, SYSDATE - (:days), SYSDATE))
+                /*BETWEEN NVL(
+                            TO_DATE(
+                                :p_fecha_ini, 
+                                'YYYY-MM-DD'
+                                ),
+                                act_end.actual_termination_date
+                            )
+                    AND NVL(
+                            TO_DATE(
+                                :p_fecha_fin,
+                                'YYYY-MM-DD'
+                                ),
+                                act_end.actual_termination_date
+                            )*/
+        AND TRUNC(sysdate)
+            BETWEEN pd.effective_start_date
+                AND pd.effective_end_date
+GROUP BY pap.person_number
+        ,ppn.full_name
+        ,pd.name
+        ,TO_CHAR(
+            act_end.actual_termination_date,
+            'DD-MM-YYYY'
+            )
+        ,pjf.name
+        ,hz.party_name
+        ,pap.person_id
+ORDER BY pap.person_number ASC
