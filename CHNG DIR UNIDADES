@@ -1,0 +1,170 @@
+--CHNG DIR UNIDADES
+WITH DIRECTORIO_HR AS (
+    SELECT /*+ STAR_TRANSFORMATION */
+        HR_LEMP.NAME                        AS EMPLEADOR_LEGAL,
+        HOIF.ORG_INFORMATION1               AS NUMERO_UNIDAD,
+        NVL(UXT.NAME_PARENT,'-')            AS TRU,
+        NVL(
+            (   
+                SELECT  MAX('ZLFN')
+                FROM    fnd_lookup_values
+                WHERE   lookup_type = 'TOKS_ORG_ZONA_FRONTERIZA'
+                AND     language = 'E'
+                AND     enabled_flag = 'Y'
+                AND     UPPER(description) = UPPER(pd.name)
+            ),'G'
+            )                               AS ZONA_ECONOMICA,
+        UPPER(PD.NAME)                      AS NOMBRE_UBICACION,
+        LOC_DET.LOCATION_ID                 AS LOC_ID,
+        UPPER(LOC_DET.LOCATION_NAME)        AS LOC_NAME,
+        UPPER(LOC_DET.ADDRESS_LINE_1)       AS ADDRESS_LINE_1,
+        UPPER(LOC_DET.ADDRESS_LINE_2)       AS ADDRESS_LINE_2,
+        UPPER(LOC_DET.ADDRESS_LINE_3)       AS ADDRESS_LINE_3,
+        UPPER(LOC_DET.LOC_INFORMATION14)    AS LOC_INFORMATION14,
+        UPPER(LOC_DET.TOWN_OR_CITY)         AS TOWN_OR_CITY,
+        LOC_DET.POSTAL_CODE,
+        UPPER(LOC_DET.REGION_1)             AS ESTADO,
+        UPPER(LOC_DET.REGION_3)             AS REGION_3,
+        LOC_DET.COUNTRY                     AS UBICACION
+
+    FROM 
+        PER_ORG_TREE_NODE               lemp,
+        PER_ORG_TREE_NODE               hcm,
+        PER_ORG_TREE_NODE               region,
+        PER_ORG_TREE_NODE               dist,
+        PER_ORG_TREE_NODE               dept,
+        HR_ORGANIZATION_V               hr_lemp,
+        HR_ORGANIZATION_V               hr_hcm,
+        HR_ORGANIZATION_V               hr_region,
+        HR_ORGANIZATION_V               hr_dist,
+        HR_ORGANIZATION_V               hr_dept,
+        HR_LOCATIONS_ALL                loc_det,
+        HR_ORGANIZATION_INFORMATION_F   hoif,
+        --UNITS_X_TRU                     uxt,
+        PER_DEPARTMENTS                 pd,
+        (
+            SELECT  /*+materialize*/
+                    haou2.organization_id       AS organization_id,
+                    haou2.name                  AS name_son,
+                    haou.name                   AS name_parent                
+            FROM    per_org_tree_node           potn,
+                    per_org_tree_node           potn2,
+                    hr_all_organization_units   haou,
+                    hr_all_organization_units   haou2,
+                    fnd_tree_version            ftv,
+                    fnd_tree_version_tl         ftvt,
+                    fnd_tree_tl                 ftt
+            WHERE   1 = 1
+                    AND ftv.tree_code           IN ('ORG_TREE_CNF', 'ORG_TREE_SND')--('TOKS_HCM_LE_TRU_DEP', 'TOKS_HCM_LE_TRU_DE')
+                    AND ftvt.language           = 'US'
+                    AND ftt.language            = 'US'
+                    AND ftv.tree_version_id     = ftvt.tree_version_id
+                    AND ftv.tree_code           = ftt.tree_code
+                    AND potn.tree_version_id    = ftv.tree_version_id
+                    AND haou.organization_id    = potn.pk1_start_value
+                    AND potn.tree_node_id       = potn2.parent_tree_node_id
+                    AND haou2.organization_id   = potn2.pk1_start_value
+        ) uxt
+    WHERE 1=1
+        --> ORG_TREE
+        AND LEMP.PK1_START_VALUE = :LEG_EMP
+        AND LEMP.PARENT_PK1_VALUE = 1
+        AND LEMP.PK1_START_VALUE = HCM.PARENT_PK1_VALUE
+        AND HCM.PK1_START_VALUE = REGION.PARENT_PK1_VALUE
+        AND REGION.PK1_START_VALUE = DIST.PARENT_PK1_VALUE(+)
+        AND DIST.PK1_START_VALUE = DEPT.PARENT_PK1_VALUE (+)
+        --> TREE_CODE
+        AND LEMP.TREE_CODE IN ('ORG_TREE_CNF', 'ORG_TREE_SND') --= 'ORG_TREE'
+        AND HCM.TREE_CODE IN ('ORG_TREE_CNF', 'ORG_TREE_SND') --= 'ORG_TREE'
+        AND REGION.TREE_CODE IN ('ORG_TREE_CNF', 'ORG_TREE_SND') --= 'ORG_TREE'
+        AND DIST.TREE_CODE(+) IN ('ORG_TREE_CNF', 'ORG_TREE_SND') --= 'ORG_TREE'
+        AND DEPT.TREE_CODE (+) IN ('ORG_TREE_CNF', 'ORG_TREE_SND') --= 'ORG_TREE'
+        --> TREE_CODE
+        /*AND (LEMP.TREE_CODE = 'HCM_ORGTREE'
+		     OR LEMP.TREE_CODE = 'ORG_TREE')
+        AND (HCM.TREE_CODE = 'HCM_ORGTREE'
+		     OR HCM.TREE_CODE = 'ORG_TREE')
+        AND (REGION.TREE_CODE = 'HCM_ORGTREE'
+		     OR REGION.TREE_CODE = 'ORG_TREE')
+        AND (DIST.TREE_CODE(+) = 'HCM_ORGTREE'
+		     OR DIST.TREE_CODE(+) = 'ORG_TREE')
+        AND (DEPT.TREE_CODE (+) = 'HCM_ORGTREE'
+		     OR DEPT.TREE_CODE (+) = 'ORG_TREE')*/
+        --> HR_DATA
+        AND LEMP.PK1_START_VALUE = HR_LEMP.ORGANIZATION_ID
+        AND HR_LEMP.CLASSIFICATION_CODE = 'HCM_LEMP'
+        AND HCM.PK1_START_VALUE = HR_HCM.ORGANIZATION_ID
+        AND REGION.PK1_START_VALUE = HR_REGION.ORGANIZATION_ID
+        AND DIST.PK1_START_VALUE = HR_DIST.ORGANIZATION_ID(+)
+        AND (
+            NVL(DEPT.PK1_START_VALUE,DIST.PK1_START_VALUE) = HR_DEPT.ORGANIZATION_ID
+            OR NVL(DIST.PK1_START_VALUE, REGION.PK1_START_VALUE) = HR_DEPT.ORGANIZATION_ID
+            )
+        --> LOC_DETAILS
+        AND HR_DEPT.ORGANIZATION_ID = PD.ORGANIZATION_ID
+        AND HR_DEPT.LOCATION_ID = LOC_DET.LOCATION_ID 
+        AND LOC_DET.ACTIVE_STATUS = 'A'
+        AND HOIF.ORGANIZATION_ID = HR_DEPT.ORGANIZATION_ID --NVL(DEPT.PK1_START_VALUE,DIST.PK1_START_VALUE)
+        AND HOIF.ORG_INFORMATION_CONTEXT = 'PER_GL_COST_CENTER_INFO'
+        --> TRU
+        AND UXT.ORGANIZATION_ID (+) = HOIF.ORGANIZATION_ID
+        AND UPPER(TRIM(UXT.NAME_SON)) = UPPER(TRIM(PD.NAME))
+        --> DATES
+        AND TRUNC(SYSDATE) BETWEEN HR_LEMP.EFFECTIVE_START_DATE AND HR_LEMP.EFFECTIVE_END_DATE
+        AND TRUNC(SYSDATE) BETWEEN HR_HCM.EFFECTIVE_START_DATE AND HR_HCM.EFFECTIVE_END_DATE
+        AND TRUNC(SYSDATE) BETWEEN HR_REGION.EFFECTIVE_START_DATE AND HR_REGION.EFFECTIVE_END_DATE
+        AND TRUNC(SYSDATE) BETWEEN HR_DIST.EFFECTIVE_START_DATE(+) AND HR_DIST.EFFECTIVE_END_DATE(+)
+        AND TRUNC(SYSDATE) BETWEEN HR_DEPT.EFFECTIVE_START_DATE(+) AND HR_DEPT.EFFECTIVE_END_DATE(+)
+
+    GROUP BY 
+        HR_LEMP.NAME,
+        HOIF.ORG_INFORMATION1,
+        UXT.NAME_PARENT,
+        4,
+        UPPER(PD.NAME),
+        LOC_DET.LOCATION_ID,
+        LOC_DET.LOCATION_NAME,
+        LOC_DET.ADDRESS_LINE_1,
+        LOC_DET.ADDRESS_LINE_2,
+        LOC_DET.ADDRESS_LINE_3,
+        LOC_DET.LOC_INFORMATION14,
+        LOC_DET.TOWN_OR_CITY,
+        LOC_DET.POSTAL_CODE,
+        LOC_DET.REGION_1,
+        LOC_DET.REGION_3,
+        LOC_DET.COUNTRY)
+
+SELECT 'Reporte del Directorio de Unidades al ' || TO_CHAR(SYSDATE, 'DD/MM/YYYY HH24:MI:SS') AS BODY
+FROM DUAL
+
+UNION ALL
+
+SELECT '' AS BODY FROM DUAL
+
+UNION ALL
+
+--SELECT 'Empleador Legal|Numero Unidad|Nombre Organizacion|Nombre GRE|Zona Economica|Ubicacion|Nombre Ubicacion|address_line_1|address_line_2|address_line_3|town_or_city|postal_code|Estado'
+SELECT 'Empleador Legal|Numero Unidad|Nombre Organizacion|Nombre TRU|Zona Economica|Ubicacion|Nombre Ubicacion|address_line_1|address_line_2|address_line_3|town_or_city|postal_code|Estado' AS BODY
+FROM DUAL
+
+UNION ALL
+
+SELECT 
+    (EMPLEADOR_LEGAL || '|' || 
+    NUMERO_UNIDAD || '|' ||
+    NOMBRE_UBICACION || '|' ||
+    TRU || '|' ||
+    ZONA_ECONOMICA || '|' ||
+    UBICACION || ' LOCATION' || '|' ||
+    LOC_NAME || '|' ||
+    ADDRESS_LINE_1 || ' ' || ADDRESS_LINE_2 ||
+    (CASE WHEN ADDRESS_LINE_3 IS NOT NULL 
+    THEN ', ' || ADDRESS_LINE_3
+    ELSE '' END) || '|' ||
+    LOC_INFORMATION14 || '|' ||
+    REGION_3 || '|' ||
+    'MÉXICO' || '|' ||
+    POSTAL_CODE || '|' ||
+    ESTADO) AS BODY
+FROM 
+    DIRECTORIO_HR
