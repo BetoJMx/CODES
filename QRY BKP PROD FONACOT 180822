@@ -1,0 +1,410 @@
+--QRY BKP PROD FONACOT 180822
+SELECT proceso,
+       unidad,
+	   organizacion,
+	   estafeta,
+	   nombre,
+	   puesto,
+	   fecha_antiguedad,
+	   fecha_ingreso,
+	   fecha_separacion,
+       curp,
+	   rfc,
+	   imss,
+	   numero_credito,
+	   FD521,
+	   ND527_2,
+	   (ND527_2 + ND528 + FD521)                       importe,
+       (ND527_2 + ND528 + FD521)                       total_pagado,
+	   adeudo,
+	   (adeudo - ( ND527_2 + ND528 + FD521))           saldo_pendiente,
+       ND528,
+	   NP031,
+	   FP019,
+	   ((ND527_2 + ND528 + FD521) - (NP031 + FP019))   totalempleado
+	   
+FROM (	   
+		SELECT proceso,
+			   unidad,
+			   organizacion,
+			   estafeta,
+			   nombre,
+			   puesto,
+			   fechaingreso     AS fecha_antiguedad,
+			   fechaingreso     AS fecha_ingreso,
+			   fechaseparacion  AS fecha_separacion,
+			   curp,
+			   rfc,
+			   imss,
+			   numero_credito,
+			   SUM(ND527_2) ND527_2,
+			   SUM(NP031)   NP031,
+			   SUM(ND528)   ND528,
+			   SUM(FD521)   FD521,
+			   0            FP019,
+			   (
+						SELECT  MAX(peev.screen_entry_value)
+						FROM
+								per_all_people_f           papf,
+								pay_element_entries_f      peef,
+								pay_element_entry_values_f peev,
+								pay_input_values_tl        pivtl,
+								pay_element_types_tl       petftl
+						WHERE   1 = 1
+								AND papf.person_id = peef.person_id
+								AND papf.person_number = estafeta
+								AND peef.element_entry_id = peev.element_entry_id
+								AND petftl.element_name = 'ND527_2'
+								AND pivtl.input_value_id = peev.input_value_id
+								AND pivtl.language = SYS_CONTEXT('USERENV', 'LANG')
+								AND petftl.element_type_id = peef.element_type_id
+								AND petftl.language = SYS_CONTEXT('USERENV', 'LANG')
+								AND pivtl.name = 'Total Owed'
+								AND TRUNC(:p_end_date) BETWEEN papf.effective_start_date AND papf.effective_end_date
+								AND peef.element_entry_id IN (
+															  SELECT peef.element_entry_id
+															  FROM pay_element_entries_f      peef,
+																   pay_element_entry_values_f peev
+															  WHERE 1=1
+															  AND peef.element_entry_id = peev.element_entry_id
+															  AND peev.screen_entry_value = numero_credito
+															 )
+			   ) adeudo
+			   
+		FROM (
+
+				SELECT 
+					   papf.person_number                                                    estafeta,
+					   paaf.assignment_number,
+					   ppnf.full_name                                                        nombre,
+					   pni1.national_identifier_number                                       curp,
+					   --+
+                       substr(pni2.national_identifier_number, 1, 4)
+                       || '-' ||
+                       substr(pni2.national_identifier_number, 5, 6)
+                       || '-' ||
+                       substr(pni2.national_identifier_number, 11, 3)                        rfc,
+					   --pni2.national_identifier_number                                       rfc,
+					   --+
+                       substr(pni3.national_identifier_number, 1, 2)
+                       || '-' ||
+                       substr(pni3.national_identifier_number, 3, 2)
+                       || '-' ||
+                       substr(pni3.national_identifier_number, 5, 2)
+                       || '-' ||
+                       substr(pni3.national_identifier_number, 7, 4)
+                       || '-' ||
+                       substr(pni3.national_identifier_number, 11, 1)                         imss,
+					   --pni3.national_identifier_number                                       imss,
+					   TO_CHAR(ppos.actual_termination_date,'DD-MM-YYYY')                    fechaseparacion,
+					   TO_CHAR(psdf.seniority_date, 'DD-MM-YYYY')                            fechaingreso,
+					   haou.name                                                             organizacion,
+					   pj.name                                                               puesto,
+					   hoif.org_information1                                                 unidad,
+					   ppa.payroll_id                                                        proceso,
+					   ppra.payroll_rel_action_id,
+					   ppa.effective_date,
+					   --+
+
+					   NVL((
+								SELECT sum(abs(prrv2.result_value))
+								  FROM --+
+									   pay_run_results                 prr2,
+									   pay_run_result_values           prrv2,
+									   pay_element_types_f             pet2,
+									   pay_element_types_tl            pettl2,
+									   pay_ele_classifications         pec2,
+									   pay_input_values_f              piv2,
+									   pay_input_values_tl             pivtl2
+								 WHERE 1 = 1
+								   And prr2.payroll_rel_action_id = ppra.payroll_rel_action_id
+								   And prr2.status IN ('P', 'PA')
+								   And prrv2.run_result_id = prr2.run_result_id
+								   And piv2.input_value_id = prrv2.input_value_id
+								   And prrv2.result_value IS NOT NULL
+								   And pet2.element_type_id = prr2.element_type_id
+								   And pettl2.element_type_id = pet2.element_type_id
+								   And pettl2.language =  'US'--SYS_CONTEXT ('USERENV', 'LANG')
+								   And pettl2.element_name = 'ND527_2 Results'
+								   And pivtl2.input_value_id(+) = piv2.input_value_id
+								   And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+								   And pec2.classification_id = pet2.classification_id
+								   And pivtl2.name = 'Pay Value'
+								   --+
+								   AND ppa.effective_date BETWEEN piv2.effective_start_date
+															  AND piv2.effective_end_date
+								   AND ppa.effective_date BETWEEN pet2.effective_start_date
+															  AND pet2.effective_end_date
+						),0) ND527_2,
+						
+						(
+								SELECT MAX(prrv2.result_value)
+								  FROM --+
+									   pay_run_results                 prr2,
+									   pay_run_result_values           prrv2,
+									   pay_element_types_f             pet2,
+									   pay_element_types_tl            pettl2,
+									   pay_ele_classifications         pec2,
+									   pay_input_values_f              piv2,
+									   pay_input_values_tl             pivtl2
+								 WHERE 1 = 1
+								   And prr2.payroll_rel_action_id = ppra.payroll_rel_action_id
+								   And prr2.status IN ('P', 'PA')
+								   And prrv2.run_result_id = prr2.run_result_id
+								   And piv2.input_value_id = prrv2.input_value_id
+								   And prrv2.result_value IS NOT NULL
+								   And pet2.element_type_id = prr2.element_type_id
+								   And pettl2.element_type_id = pet2.element_type_id
+								   And pettl2.language =  'US'--SYS_CONTEXT ('USERENV', 'LANG')
+								   And pettl2.element_name = 'ND527_2'
+								   And pivtl2.input_value_id(+) = piv2.input_value_id
+								   And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+								   And pec2.classification_id = pet2.classification_id
+								   And pivtl2.name = 'Numero Credito'
+								   And UPPER(pec2.base_classification_name) = 'VOLUNTARY DEDUCTIONS'
+								   --+
+								   AND ppa.effective_date BETWEEN piv2.effective_start_date
+															  AND piv2.effective_end_date
+								   AND ppa.effective_date BETWEEN pet2.effective_start_date
+															  AND pet2.effective_end_date
+						) numero_credito,
+						
+						NVL((
+								SELECT sum(abs(prrv2.result_value))
+								  FROM --+
+									   pay_run_results                 prr2,
+									   pay_run_result_values           prrv2,
+									   pay_element_types_f             pet2,
+									   pay_element_types_tl            pettl2,
+									   pay_ele_classifications         pec2,
+									   pay_input_values_f              piv2,
+									   pay_input_values_tl             pivtl2
+								 WHERE 1 = 1
+								   And prr2.payroll_rel_action_id = ppra.payroll_rel_action_id
+								   And prr2.status IN ('P', 'PA')
+								   And prrv2.run_result_id = prr2.run_result_id
+								   And piv2.input_value_id = prrv2.input_value_id
+								   And prrv2.result_value IS NOT NULL
+								   And pet2.element_type_id = prr2.element_type_id
+								   And pettl2.element_type_id = pet2.element_type_id
+								   And pettl2.language =  'US'--SYS_CONTEXT ('USERENV', 'LANG')
+								   And pettl2.element_name = 'NP031 Earnings Results'
+								   And pivtl2.input_value_id(+) = piv2.input_value_id
+								   And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+								   And pec2.classification_id = pet2.classification_id
+								   And pivtl2.name = 'Earnings Calculated'
+								   --+
+								   AND ppa.effective_date BETWEEN piv2.effective_start_date
+															  AND piv2.effective_end_date
+								   AND ppa.effective_date BETWEEN pet2.effective_start_date
+															  AND pet2.effective_end_date
+						
+						),0) NP031,
+						
+						NVL((
+								SELECT sum(abs(prrv2.result_value))
+								  FROM --+
+									   pay_run_results                 prr2,
+									   pay_run_result_values           prrv2,
+									   pay_element_types_f             pet2,
+									   pay_element_types_tl            pettl2,
+									   pay_ele_classifications         pec2,
+									   pay_input_values_f              piv2,
+									   pay_input_values_tl             pivtl2
+								 WHERE 1 = 1
+								   And prr2.payroll_rel_action_id = ppra.payroll_rel_action_id
+								   And prr2.status IN ('P', 'PA')
+								   And prrv2.run_result_id = prr2.run_result_id
+								   And piv2.input_value_id = prrv2.input_value_id
+								   And prrv2.result_value IS NOT NULL
+								   And pet2.element_type_id = prr2.element_type_id
+								   And pettl2.element_type_id = pet2.element_type_id
+								   And pettl2.language =  'US'--SYS_CONTEXT ('USERENV', 'LANG')
+								   And pettl2.element_name = 'ND528 Results'
+								   And pivtl2.input_value_id(+) = piv2.input_value_id
+								   And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+								   And pec2.classification_id = pet2.classification_id
+								   And pivtl2.name = 'Pay Value'
+								   --+
+								   AND ppa.effective_date BETWEEN piv2.effective_start_date
+															  AND piv2.effective_end_date
+								   AND ppa.effective_date BETWEEN pet2.effective_start_date
+															  AND pet2.effective_end_date
+						
+						),0) ND528,
+
+						NVL((
+								SELECT sum(abs(prrv2.result_value))
+								  FROM --+
+									   pay_run_results                 prr2,
+									   pay_run_result_values           prrv2,
+									   pay_element_types_f             pet2,
+									   pay_element_types_tl            pettl2,
+									   pay_ele_classifications         pec2,
+									   pay_input_values_f              piv2,
+									   pay_input_values_tl             pivtl2
+								 WHERE 1 = 1
+								   And prr2.payroll_rel_action_id = ppra.payroll_rel_action_id
+								   And prr2.status IN ('P', 'PA')
+								   And prrv2.run_result_id = prr2.run_result_id
+								   And piv2.input_value_id = prrv2.input_value_id
+								   And prrv2.result_value IS NOT NULL
+								   And pet2.element_type_id = prr2.element_type_id
+								   And pettl2.element_type_id = pet2.element_type_id
+								   And pettl2.language =  'US'--SYS_CONTEXT ('USERENV', 'LANG')
+								   And pettl2.element_name = 'FD521 Results'
+								   And pivtl2.input_value_id(+) = piv2.input_value_id
+								   And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+								   And pec2.classification_id = pet2.classification_id
+								   And pivtl2.name = 'Pay Value'
+								   --+
+								   AND ppa.effective_date BETWEEN piv2.effective_start_date
+															  AND piv2.effective_end_date
+								   AND ppa.effective_date BETWEEN pet2.effective_start_date
+															  AND pet2.effective_end_date
+						
+						),0) FD521
+						
+						
+				FROM per_all_people_f				 papf,
+					 per_all_assignments_f			 paaf,
+					 per_person_names_f              ppnf,
+					 per_national_identifiers        pni1,
+					 per_national_identifiers        pni2,
+					 per_national_identifiers        pni3,
+					 per_periods_of_service          ppos,
+					 per_seniority_dates_f           psdf,
+					 per_seniority_dates_setup       psds,
+					 hr_all_organization_units       haou,
+					 per_jobs_f_tl                   pj,
+					 hr_organization_information_f   hoif,
+					 pay_pay_relationships_dn        pprdn,
+					 pay_rel_groups_dn               prg,
+					 pay_payroll_rel_actions         ppra,
+					 pay_run_types_f                 prtf,
+					 pay_payroll_actions             ppa
+					 
+
+				WHERE 1=1
+				AND papf.person_id                = paaf.person_id
+				AND paaf.assignment_type          = 'E'
+				AND paaf.effective_latest_change  = 'Y'
+				AND paaf.primary_flag 			  = 'Y'
+				AND paaf.primary_assignment_flag  = 'Y'
+				--AND paaf.assignment_status_type   = 'ACTIVE' --1:30
+				AND paaf.assignment_status_type   IN ('ACTIVE','INACTIVE') --1:30
+				AND papf.person_id 				  = ppnf.person_id
+				AND ppnf.name_type 				  = 'MX'
+				AND ppnf.person_id 				  = pni1.person_id(+)
+				AND pni1.national_identifier_type(+) = 'CURP'
+				AND ppnf.person_id				  = pni2.person_id(+)
+				AND pni2.national_identifier_type(+) = 'RFC'
+				AND ppnf.person_id			      = pni3.person_id(+)
+				AND pni3.national_identifier_type(+) = 'IMSS'
+				AND paaf.legal_entity_id          = ppos.legal_entity_id
+				AND paaf.person_id                = ppos.person_id
+				AND paaf.period_of_service_id     = ppos.period_of_service_id
+				AND psdf.person_id = paaf.person_id
+				AND psdf.seniority_field = 'ORA_ENT'
+				AND psds.seniority_date_code = psdf.seniority_date_code
+				AND psds.active_flag = 'Y'
+				AND paaf.organization_id = haou.organization_id
+				AND paaf.job_id = pj.job_id
+				AND pj.language = SYS_CONTEXT ('USERENV', 'LANG')
+				AND paaf.organization_id = hoif.organization_id 
+				AND hoif.org_information_context = 'PER_GL_COST_CENTER_INFO'
+				AND papf.person_id = pprdn.person_id
+				AND pprdn.payroll_relationship_id = prg.payroll_relationship_id
+				AND prg.assignment_id = paaf.assignment_id
+				AND prg.group_type = 'A'
+				AND ppra.payroll_relationship_id = prg.payroll_relationship_id
+				AND ppra.action_status = 'C'
+				AND ppra.chunk_number is not null
+				AND ppra.retro_component_id is null
+				AND prtf.run_type_id = ppra.run_type_id
+				AND ppra.payroll_action_id = ppa.payroll_action_id
+				AND ppa.action_type IN ('R', 'B', 'Q')
+
+				--AND papf.person_number in ('07380','07917','08947','09244')
+				--AND papf.person_number = '165968'
+				--+PARAMETROS+--
+		        AND ppa.payroll_id = NVL(:p_tipo_nomina, ppa.payroll_id)
+		        AND paaf.organization_id = NVL(:p_unidad_proceso, paaf.organization_id)
+		        ----------------
+				AND NOT EXISTS(
+					SELECT 1
+					FROM pay_object_groups  pog
+						,pay_object_group_types pogt
+					WHERE 1 = 1
+						AND pog.BASE_OBJECT_GROUP_NAME = 'NOMINA ALTAS'
+						AND pogt.object_group_type_id = pog.object_group_type_id
+						AND name_code = 'ELEGRP'
+						AND pog.object_group_id = ppa.element_set_id
+				)
+
+				AND EXISTS (
+
+								SELECT 1
+								  FROM --+
+									   pay_run_results                 prr2,
+									   pay_run_result_values           prrv2,
+									   pay_element_types_f             pet2,
+									   pay_element_types_tl            pettl2,
+									   pay_ele_classifications         pec2,
+									   pay_input_values_f              piv2,
+									   pay_input_values_tl             pivtl2
+								 WHERE 1 = 1
+								   And prr2.payroll_rel_action_id = ppra.payroll_rel_action_id
+								   And prr2.status IN ('P', 'PA')
+								   And prrv2.run_result_id = prr2.run_result_id
+								   And piv2.input_value_id = prrv2.input_value_id
+								   And prrv2.result_value IS NOT NULL
+								   And pet2.element_type_id = prr2.element_type_id
+								   And pettl2.element_type_id = pet2.element_type_id
+								   And pettl2.language =  'US'--SYS_CONTEXT ('USERENV', 'LANG')
+								   And pettl2.element_name IN ('FD521 Results','ND528 Results','NP031 Earnings Results','ND527_2','ND527_2 Results')
+								   And pivtl2.input_value_id(+) = piv2.input_value_id
+								   And pivtl2.language = 'US' --SYS_CONTEXT ('USERENV', 'LANG')
+								   And pec2.classification_id = pet2.classification_id
+								   And pivtl2.name IN ('Pay Value','Numero Credito','Earnings Calculated')
+								   --+
+								   AND ppa.effective_date BETWEEN piv2.effective_start_date
+															  AND piv2.effective_end_date
+								   AND ppa.effective_date BETWEEN pet2.effective_start_date
+															  AND pet2.effective_end_date
+					
+				)
+
+				AND TRUNC(:p_end_date) BETWEEN papf.effective_start_date AND papf.effective_end_date
+				AND TRUNC(:p_end_date) BETWEEN paaf.effective_start_date AND paaf.effective_end_date
+				AND TRUNC(:p_end_date) BETWEEN ppnf.effective_start_date AND ppnf.effective_end_date
+				AND TRUNC(:p_end_date) BETWEEN psdf.effective_start_date AND psdf.effective_end_date
+				AND TRUNC(ppa.effective_date)    BETWEEN hoif.effective_start_date AND hoif.effective_end_date
+				AND TRUNC(ppa.effective_date)    BETWEEN pprdn.start_date AND nvl(pprdn.end_date,ppa.effective_date)
+				AND TRUNC(ppa.effective_date)    BETWEEN prg.start_date AND prg.end_date
+				AND TRUNC(ppa.effective_date)    BETWEEN prtf.effective_start_date AND prtf.effective_end_date
+				AND TRUNC(ppa.effective_date)    BETWEEN :p_start_date AND :p_end_date
+
+				ORDER BY  papf.person_number
+
+		)
+
+		WHERE 1=1 
+		GROUP BY proceso,
+				 unidad,
+				 organizacion,
+				 estafeta,
+				 nombre,
+				 puesto,
+				 fechaingreso,
+				 fechaingreso,
+				 fechaseparacion,
+				 curp,
+				 rfc,
+				 imss,
+				 numero_credito
+		ORDER BY estafeta
+
+)
+WHERE 1=1
+ORDER BY estafeta
