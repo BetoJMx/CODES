@@ -1,0 +1,325 @@
+--CHNG BASE EMPL
+SELECT ppf.person_id,
+    ppf.person_number                                   emp_number,
+    --haou.name                                           desc_uni,
+	pldft.location_name									desc_uni,
+    pj.name                                             emp_puesto,
+    hr_general.decode_lookup('EMPLOYEE_CATG',paam.employee_category) emp_catego,
+    to_char(hoif.org_information1)                      emp_unidad,
+    REPLACE(UPPER ((ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)),'  ',' ') emp_nombre,
+    pplf.legislation_code                               emp_est,
+	
+    NVL (SUBSTR (rfc.national_identifier_number, 1, 4),
+                            '000') || '-'
+                    || NVL (SUBSTR (rfc.national_identifier_number, 5, 6),
+                            '000') || '-'
+                    || NVL (SUBSTR (rfc.national_identifier_number, 11, 3),
+                            '000')                      emp_rfc,
+							
+    curp.national_identifier_number                     emp_curp,
+    NVL (SUBSTR (imss.national_identifier_number, 1, 2),
+                            '000') || '-'
+                    || NVL (SUBSTR (imss.national_identifier_number, 3, 2),
+                            '000') || '-'
+                    || NVL (SUBSTR (imss.national_identifier_number, 5, 2),
+                            '000') || '-'
+                    || NVL (SUBSTR (imss.national_identifier_number, 7, 4),
+                            '000') || '-'
+                    || NVL (SUBSTR (imss.national_identifier_number, 11, 1),
+                            '000')                      emp_imms,
+    pplf.sex                                            emp_sexo,
+    round((cs.salary_amount / 8),2) emp_salhor,
+    round(cs.salary_amount,2) emp_saldia,
+    round((cs.salary_amount * 30),2) emp_salmes,
+    (  select   /*+ materialize */
+		to_char(sum(prv.value),'FM0999.00') sdi_imss
+                from    pay_rate_values prv,
+                        pay_rate_definitions_f prdf,
+                        pay_pay_relationships_dn pprd
+                where   prv.rate_definition_id 	     = prdf.rate_definition_id
+                and     pprd.payroll_relationship_id = prv.payroll_relationship_id
+                and     prdf.base_name 		 	     = 'ORA_HRX_MX_SDI_TOTAL_VALUE'
+                and     ppr.payroll_relationship_id  = pprd.payroll_relationship_id
+                and     ppr.payroll_relationship_id  = prv.payroll_relationship_id
+                and     trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN TRUNC(prv.start_date) and TRUNC(prv.end_date)
+                and     trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN TRUNC(pprd.start_date) and TRUNC(pprd.end_date)
+                and     trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN prdf.effective_start_date and prdf.effective_end_date			
+        ) 													emp_salint,
+        --TO_CHAR(NVL(pps.adjusted_svc_date, ppf.start_date),'DD-MM-YYYY')   fec_ingreso,
+        TO_CHAR(NVL((SELECT MIN(ppei.pei_information_date1)
+			FROM per_people_extra_info_f ppei 
+			WHERE ppei.person_id = paam.person_id
+			AND ppei.information_type = 'Cambio de Empleador Legal'
+			AND TRUNC(SYSDATE) BETWEEN ppei.effective_start_date AND ppei.effective_end_date),
+			psdf.seniority_date), 'DD-MM-YYYY')as fec_ingreso,
+        --pba.BANK_ACCOUNT_NUM                                emp_cuenta,
+        (Select pba.BANK_ACCOUNT_NUM  
+         From pay_personal_payment_methods_f  pppm,
+              pay_bank_accounts               pba
+         where 1 = 1
+            And pppm.payroll_relationship_id = ppr.payroll_relationship_id
+            And pppm.name = 'NOMINA'
+            And NVL(pppm.priority,10) 		= 10
+            And pba.bank_account_id 		    = pppm.bank_account_id
+            And pba.bank_branch_name 		= pppm.name
+            And trunc(sysdate) BETWEEN pppm.effective_start_date AND pppm.effective_end_date
+            And trunc(sysdate) BETWEEN pba.start_date AND pba.end_date
+        ) emp_cuenta,
+        /*(CASE  
+        WHEN pgftl.NAME LIKE '%ZONA_ECO%' 
+        THEN SUBSTR(pgftl.NAME,(LENGTH(pgftl.NAME)), 1)
+        END)                                                zona_economica,*/
+		NVL( -- si existe en el lookup entonces es ZLFN(Zona Libre Frontera Norte), de lo contrario es G(zona General)
+			(select MAX('ZLFN')
+			   from fnd_lookup_values
+			  where lookup_type 	= 'TOKS_ORG_ZONA_FRONTERIZA'
+				and language 		= 'E'
+				and enabled_flag 	= 'Y'
+				and trunc(nvl(pps.actual_termination_date,sysdate)) between start_date_active and NVL(end_date_active,trunc(nvl(pps.actual_termination_date,sysdate)))
+				and UPPER(description) = UPPER(pd.name)
+			)
+		,'G')													zona_economica,
+        UPPER(paf.ADDRESS_LINE_1)                            emp_calle,
+        UPPER(paf.addl_address_attribute2)                   emp_colonia,
+		UPPER(paf.REGION_2)                                                  emp_estado,
+		
+        paf.REGION_1                                         emp_delegacion,
+		
+        (
+                CASE 
+                WHEN UPPER(paf.REGION_2) = 'AGUASCALIENTES'   	THEN 'AGS'
+                WHEN UPPER(paf.REGION_2) = 'BAJA CALIFORNIA'  	THEN 'BC'     
+                WHEN UPPER(paf.REGION_2) = 'BAJA CALIFORNIA SUR'THEN 'BCS'
+                WHEN UPPER(paf.REGION_2) = 'CAMPECHE'  		  	THEN 'CAMP'
+                WHEN UPPER(paf.REGION_2) = 'COAHUILA'  			THEN 'COAH'
+                WHEN UPPER(paf.REGION_2) = 'COLIMA'   		 	THEN 'COL'
+                WHEN UPPER(paf.REGION_2) = 'CHIAPAS'  			THEN 'CHIS'
+                WHEN UPPER(paf.REGION_2) = 'CHIHUAHUA'  		THEN 'CHIH'
+                WHEN UPPER(paf.REGION_2) = 'CIUDAD DE M?XICO'   THEN 'CDMX'
+                WHEN UPPER(paf.REGION_2) = 'DF'    				THEN 'CDMX'
+                WHEN UPPER(paf.REGION_2) = 'CDMX'    			THEN 'CDMX'
+                WHEN UPPER(paf.REGION_2) = 'MEXICO DF'    		tHEN 'CDMX'
+                WHEN UPPER(paf.REGION_2) = 'DURANGO'   			THEN 'DGO'
+                WHEN UPPER(paf.REGION_2) = 'GUANAJUATO'   		THEN 'GTO'
+                WHEN UPPER(paf.REGION_2) = 'GUERRERO'   		THEN 'GRO'
+                WHEN UPPER(paf.REGION_2) = 'HIDALGO'   			THEN 'HGO'
+                WHEN UPPER(paf.REGION_2) = 'JALISCO'   			THEN 'JAL'
+                WHEN UPPER(paf.REGION_2) = 'M?XICO'   			THEN 'MEX'
+                WHEN UPPER(paf.REGION_2) = 'MEXICO'   			THEN 'MEX'
+                WHEN UPPER(paf.REGION_2) = 'MICHOAC?N'  		THEN 'MICH'
+                WHEN UPPER(paf.REGION_2) = 'MICHOACAN'  		THEN 'MICH'
+                WHEN UPPER(paf.REGION_2) = 'MORELOS'   			THEN 'MOR'
+                WHEN UPPER(paf.REGION_2) = 'NAYARIT'   			THEN 'NAY'
+                WHEN UPPER(paf.REGION_2) = 'NUEVO LE?N'    		THEN 'NL'
+                WHEN UPPER(paf.REGION_2) = 'OAXACA'			    THEN 'OAX'
+                WHEN UPPER(paf.REGION_2) = 'PUEBLA'   			THEN 'PUE'
+                WHEN UPPER(paf.REGION_2) = 'QUER?TARO'   		THEN 'QRO'
+                WHEN UPPER(paf.REGION_2) = 'QUERETARO'   		THEN 'QRO'
+                WHEN UPPER(paf.REGION_2) = 'QUINTANA ROO'  		THEN 'QROO'
+                WHEN UPPER(paf.REGION_2) = 'SAN LUIS POTOS?'   	THEN 'SLP'
+                WHEN UPPER(paf.REGION_2) = 'SAN LUIS POTOSI'   	THEN 'SLP'
+                WHEN UPPER(paf.REGION_2) = 'SINALOA'   			THEN 'SIN'
+                WHEN UPPER(paf.REGION_2) = 'SONORA'   			THEN 'SON'
+                WHEN UPPER(paf.REGION_2) = 'TABASCO'   			THEN 'TAB'
+                WHEN UPPER(paf.REGION_2) = 'TAMAULIPAS' 		THEN 'TAMPS'
+                WHEN UPPER(paf.REGION_2) = 'TLAXCALA'  			THEN 'TLAX'
+                WHEN UPPER(paf.REGION_2) = 'VERACRUZ'   		THEN 'VER'
+                WHEN UPPER(paf.REGION_2) = 'YUCAT?N'   			THEN 'YUC'
+                WHEN UPPER(paf.REGION_2) = 'YUCATAN'   			THEN 'YUC'
+                WHEN UPPER(paf.REGION_2) = 'ZACATECAS'   		THEN 'ZAC'    
+                ELSE '-'--pa.REGION_2
+                END
+            )                                         	emp_edo,
+		
+        paf.addl_address_attribute3                          tiempo_traslado,
+       -- paam.EMPLOYEE_CATEGORY                              employee_category,
+        substr(pgftl.NAME,1,3)  							employee_category,
+		pgftl.NAME grado_completo,
+        --eor.NAME                                            empresa_origen,
+		(  SELECT    pei_information1
+            FROM      per_people_extra_info_f ppei
+            WHERE     ppei.person_id = ppf.person_id
+            AND       ppei.information_type = 'Empresa Origen'
+            AND       TRUNC (SYSDATE) BETWEEN ppei.effective_start_date AND ppei. effective_end_date) empresa_origen,
+        TO_CHAR(pps.ACTUAL_TERMINATION_DATE,'YYYY-MM-DD')   fecha_baja,
+        TO_CHAR(pps.NOTIFIED_TERMINATION_DATE,'YYYY-MM-DD') captura_baja,
+        NVL2(pps.ACTUAL_TERMINATION_DATE,UPPER(par.ACTION_REASON), null)                 causa_baja,
+		--+
+        (select round(csh.salary_amount * 30, 2)
+		  from cmp_salary_history_v csh
+		 where csh.assignment_id = paam_ant.assignment_id
+		   and csh.date_to 					= cs.date_from - 1 )                              salario_anterior,
+        (select TO_CHAR(csh.date_to + 1, 'YYYY-MM-DD') 
+		  from cmp_salary_history_v csh
+		 where csh.assignment_id = paam_ant.assignment_id
+		   and csh.date_to 					= cs.date_from - 1 ) fecha_salario_anterior,
+        --(case 
+        --when TO_CHAR(ppf.START_DATE,'DD-MM-YYYY') = TO_CHAR(paam_ant.EFFECTIVE_START_DATE,'DD-MM-YYYY') then ' '
+        --else 
+        --paam_ant.ASSIGNMENT_NAME 
+        --end
+        --)
+        pj_ant.name AS puesto_anterior,	
+        /*(case 
+        --when TO_CHAR(ppf.START_DATE,'DD-MM-YYYY') = TO_CHAR(paam_ant.EFFECTIVE_START_DATE,'DD-MM-YYYY') then ' '
+        when paam_ant.ASSIGNMENT_NAME = paam.ASSIGNMENT_NAME THEN (SELECT TO_CHAR(MIN(EFFECTIVE_START_DATE), 'DD-MM-YYYY') 
+																 FROM PER_ALL_ASSIGNMENTS_M 
+																WHERE PERSON_ID = paam.PERSON_ID AND ASSIGNMENT_TYPE = 'E')
+        else 
+        TO_CHAR(paam_ant.EFFECTIVE_START_DATE,'DD-MM-YYYY') 
+        end
+        )*/
+		DECODE(pj_ant.name,NULL,NULL,to_char(paam_ant.effective_start_date,'YYYY-MM-DD')) AS fecha_puesto_anterior,
+		TO_CHAR(psdf.seniority_date,'YYYY-MM-DD') AS fecha_antiguedad
+       --,hr_general.Decode_lookup('HRT_DEPARTURE_REASON',paam.ACTION_CODE) ACTION_CODE
+	   --,ppr.payroll_relationship_id
+	   --,paam.assignment_id
+	   --,paam.assignment_status_type
+	   --,pa.action_type_code
+FROM    per_person_secured_list_v   	ppf, --per_all_people_f                ppf,
+        per_person_names_f              ppn,
+	    per_people_legislative_f        pplf,
+        per_assignment_secured_list_v   paam, --per_all_assignments_f           paam,
+        --+
+        per_jobs                        pj,
+        per_periods_of_service          pps,
+        per_action_occurrences          pao,
+        per_actions_vl                  pa,
+        per_action_reasons_vl           par, 
+	    --per_action_reasons_tl           par,
+        --+
+        per_national_identifiers        curp,
+        per_national_identifiers        rfc,
+        per_national_identifiers        imss,
+        --+
+        cmp_salary                      cs,
+        hr_all_organization_units       haou,
+        --hr_all_organization_units       eor,
+        per_person_addr_usages_f        ppau,
+        per_addresses_f                 paf,	
+        per_location_details_f_tl 		pldft, 
+        per_location_details_f 			pldf,
+        per_locations 					pl, 
+        per_departments 				pd,
+	    --+ ANTERIOR
+        --cmp_salary_history_v            csh,
+        per_assignment_secured_list_v   paam_ant, --per_all_assignments_f           paam_ant,
+        per_jobs                        pj_ant,
+        --+
+        pay_pay_relationships_dn        ppr,
+        pay_rel_groups_dn               prgdn,
+        --+
+--        pay_personal_payment_methods_f  pppm,
+--        pay_bank_accounts               pba,
+        hr_organization_information_f   hoif,
+        per_grades_f                    pgf,
+        per_grades_f_tl                 pgftl,
+	    --+
+	    per_seniority_dates_f           psdf, -- Seniority Date
+	    per_seniority_dates_setup       psds
+	    --+
+WHERE 1 = 1
+    And ppn.person_id 					= ppf.person_id
+    And ppn.name_type 					= 'MX'
+    And paam.person_id 					= ppn.person_id
+    And pplf.person_id 					= ppf.person_id
+    --+
+    --And ppf.person_number = '165011'
+    --+
+    And paam.primary_flag 				= 'Y'
+    And pps.legal_entity_id = paam.legal_entity_id
+    And pps.person_id = paam.person_id
+    And pps.period_of_service_id 		= paam.period_of_service_id
+    And pps.period_type = 'E'
+    --+
+    And pao.action_occurrence_id 		= pps.action_occurrence_id
+    And pa.action_id = pao.action_id
+    And par.action_reason_id(+) 		= pao.action_reason_id
+    And curp.person_id(+)				= ppf.person_id
+    And curp.national_identifier_type(+)	= 'CURP'
+    And rfc.person_id(+)				= ppf.person_id
+    And rfc.national_identifier_type(+)	= 'RFC'
+    And imss.person_id(+)				= ppf.person_id
+    And imss.national_identifier_type(+)	= 'IMSS'
+    --+
+    And cs.legal_entity_id(+) 			= paam.legal_entity_id
+    And cs.assignment_id(+) 			= paam.assignment_id
+    And cs.salary_approved(+)   	    = 'Y'
+    And pj.job_id 						= paam.job_id
+    And pj.active_status 				= 'A'
+    And haou.organization_id 			= paam.organization_id 
+    --AND eor.organization_id 			= paam.business_unit_id
+    --+ ANTERIOR
+    And paam_ant.legal_entity_id(+)     = paam.legal_entity_id
+    And paam_ant.person_id(+) 			= paam.person_id
+    And paam_ant.assignment_type(+) 	= 'E'
+    And paam_ant.primary_flag(+) 		= 'Y'
+    And paam_ant.assignment_status_type(+) = 'ACTIVE'
+    And trunc(paam.effective_start_date) -1 
+        Between paam_ant.effective_start_date(+) 
+            And paam_ant.effective_end_date(+)
+    And pj_ant.job_id(+) 				= paam_ant.job_id
+    And pj_ant.active_status(+) 		= 'A'
+    --+
+    And pgf.grade_id(+) 					= paam.grade_id
+    And pgf.active_status(+)               = 'A'
+    And pgf.grade_type(+)                  = 'STEP'
+    And pgftl.grade_id(+) 					= pgf.grade_id
+    And pgftl.language(+) 					= sys_context('USERENV','LANG')
+    And hoif.organization_id(+) 		= paam.organization_id
+    --AND HOIF.LEGISLATION_CODE           = PLDG.LEGISLATION_CODE
+    And hoif.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+	And pl.location_id 					= haou.location_id
+	And pldf.location_id 				= pl.location_id
+	And pldft.location_details_id 		= pldf.location_details_id
+	And pldft.LANGUAGE 					= 'E'
+	And pd.organization_id				= paam.organization_id
+	And pd.status						= 'A'
+    --+
+    And ppau.person_id(+) 				= ppf.person_id
+    And ppau.address_type(+) 			= 'HOME'
+    And ppr.person_id 				    = ppf.person_id
+    --+
+    And prgdn.legislative_data_group_id = ppr.legislative_data_group_id
+    And prgdn.payroll_relationship_id 	= ppr.payroll_relationship_id
+    And prgdn.legal_employer_id 		= paam.legal_entity_id
+    And prgdn.assignment_id             = paam.assignment_id
+    And prgdn.group_type 				= 'A'
+    --+ 
+    And paf.address_id(+) = ppau.address_id
+    --+
+    And ( ( nvl( pa.action_type_code , 'X' ) = 'EMPL_TERMINATE'
+            And paam.assignment_status_type = 'ACTIVE'
+            And trunc( pps.actual_termination_date )
+                Between paam.effective_start_date
+                    And paam.effective_end_date )
+        Or ( nvl( pa.action_type_code,'X') != 'EMPL_TERMINATE'
+            And paam.assignment_status_type = 'ACTIVE'
+            And trunc( sysdate )
+                Between paam.effective_start_date
+                    And paam.effective_end_date )
+    )
+	--+
+	AND psdf.person_id                 = paam.person_id
+	AND psdf.seniority_field           = 'ORA_ENT'
+	AND psds.seniority_date_code       = psdf.seniority_date_code
+	AND psds.active_flag               = 'Y'
+	AND TRUNC(SYSDATE) BETWEEN psdf.effective_start_date AND psdf.effective_end_date
+	--+
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN ppf.effective_start_date AND ppf.effective_end_date
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN ppn.effective_start_date AND ppn.effective_end_date
+    And trunc(nvl(pps.actual_termination_date,sysdate))	BETWEEN pplf.effective_start_date AND pplf.effective_end_date
+	And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN cs.date_from(+) AND cs.date_to(+)
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN paf.effective_start_date(+) AND paf.effective_end_date(+)
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN pldft.effective_start_date AND pldft.effective_end_date
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN pldf.effective_start_date AND pldf.effective_end_date
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN pd.effective_start_date AND pd.effective_end_date
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN ppau.effective_start_date(+) AND ppau.effective_end_date(+)
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN pgf.effective_start_date(+) AND pgf.effective_end_date(+)
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN pgftl.effective_start_date(+) AND pgftl.effective_end_date(+)
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN hoif.effective_start_date(+) AND hoif.effective_end_date(+)
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN pj.effective_start_date AND pj.effective_end_date
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN haou.effective_start_date AND haou.effective_end_date 
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN ppr.start_date AND ppr.end_date
+    And trunc(nvl(pps.actual_termination_date,sysdate)) BETWEEN prgdn.start_date and prgdn.end_date
+ORDER BY ppf.person_number ASC
