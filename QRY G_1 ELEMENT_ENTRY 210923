@@ -1,0 +1,45 @@
+--QRY G_1 ELEMENT_ENTRY 210923
+SELECT  a.person_number,
+	    paaf.assignment_number,
+	    paaf.assignment_id,
+	    MAX(peef.multiple_entry_count) as entry_count,
+        MAX(peef.effective_start_date) as start_date,
+        MAX(peef.effective_end_date) as end_date
+FROM
+	  per_all_people_f         a,
+	  per_all_assignments_f    paaf,
+	  per_periods_of_service   ppos,
+	  pay_rel_groups_dn        asg,
+	  pay_assigned_payrolls_dn papd,
+	  pay_all_payrolls_f       ppp,
+	  pay_entry_usages         peu,
+	  pay_element_entries_f    peef,
+	  pay_element_types_vl     pet
+WHERE 1=1
+	  AND paaf.person_id = a.person_id
+	  AND paaf.business_group_id = a.business_group_id
+	  AND ppos.legal_entity_id = paaf.legal_entity_id
+	  AND ppos.person_id = paaf.person_id
+	  AND ppos.period_of_service_id = paaf.period_of_service_id
+	  AND paaf.assignment_id = asg.assignment_id
+	  AND paaf.assignment_id = asg.assignment_id
+	  AND asg.parent_rel_group_id = papd.payroll_term_id(+)
+	  AND papd.payroll_id = ppp.payroll_id(+)
+	  AND asg.payroll_relationship_id = peu.payroll_relationship_id(+)
+	  AND peu.element_entry_id = peef.element_entry_id(+)
+	  AND peef.element_type_id = pet.element_type_id(+)
+	  AND TRUNC(sysdate) BETWEEN paaf.effective_start_date AND paaf.effective_end_date
+	  AND TRUNC(sysdate) BETWEEN a.effective_start_date AND a.effective_end_date
+	  AND TRUNC(Sysdate) BETWEEN papd.start_date(+) AND papd.end_date(+)
+  --
+      AND (  :p_tipo = 'ALTA' AND ppos.actual_termination_date is null
+		  OR :p_tipo = 'BAJA' AND ppos.pds_information1 is not null )
+	  AND ppp.payroll_name = :p_payroll_name 
+	  AND pet.element_name = :p_element_entry	
+	  AND a.person_number = NVL(:p_estafeta, a.person_number )	  
+GROUP BY
+	   a.person_number
+	  ,paaf.assignment_number
+	  ,paaf.assignment_id
+ORDER BY 
+	  person_number
