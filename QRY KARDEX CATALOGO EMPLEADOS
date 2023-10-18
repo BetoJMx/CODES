@@ -1,0 +1,209 @@
+--QRY KARDEX CATALOGO EMPLEADOS
+select DISTINCT papf.person_number estafeta,
+CONVERT( REPLACE( REPLACE( UPPER(ppn.full_name), ',', '' ), 'Ñ', 'N' ), 'us7ascii', 'al32utf8' ) AS nombre,
+          papf.person_id
+  from per_all_people_f papf,
+          per_person_names_f ppn,
+          per_all_assignments_f paaf,
+          per_person_types ppt
+where papf.person_number = nvl( :P_ESTAFETA, papf.person_number) 
+and upper(ppn.full_name) LIKE '%' || UPPER(:P_NOMBRE) || '%'
+and ppn.person_id 		= papf.person_id
+and ppn.name_type 			= 'MX'
+and paaf.person_id 			= papf.person_id
+and paaf.primary_flag 		= 'Y'
+and paaf.assignment_type 	= 'E'
+and trunc(sysdate) between papf.effective_start_date and papf.effective_end_date
+and trunc(sysdate) between ppn.effective_start_date and ppn.effective_end_date
+and trunc(sysdate) between paaf.effective_start_date and paaf.effective_end_date
+and ppt.person_type_id = paaf.person_type_id
+and ppt.system_person_type  = 'EMP'
+and paaf.assignment_type 	= 'E'
+and paaf.assignment_status_type  = 'ACTIVE'
+order by papf.person_number
+
+-------
+
+SELECT  --INFO GRAL--
+        pap.person_number AS estafeta,
+        pap.person_id,
+        TO_CHAR(pap.start_date,'YYYY/MM/DD') AS fecha_de_ingreso,
+        CONVERT( REPLACE( REPLACE( UPPER(ppn.full_name), ',', '' ), 'Ñ', 'N' ), 'us7ascii', 'al32utf8' ) AS nombre,
+        paa.legal_entity_id,
+        NVL (
+            SUBSTR (
+                rfc.national_identifier_number, 1, 4
+                ),'000'
+            ) || '-' || 
+        NVL (
+            SUBSTR (
+                rfc.national_identifier_number, 5, 6
+                ),'000'
+            ) || '-' || 
+        NVL (
+            SUBSTR (
+                rfc.national_identifier_number, 11, 3
+                ),'000'
+            ) AS rfc,
+        curp.national_identifier_number AS curp,
+        NVL (
+            SUBSTR (
+                imss.national_identifier_number, 1, 2
+                ),'000'
+            ) || '-' || 
+        NVL (
+            SUBSTR (
+                imss.national_identifier_number, 3, 2
+                ),'000'
+            ) || '-' || 
+        NVL (
+            SUBSTR (
+                imss.national_identifier_number, 5, 2
+                ),'000'
+            ) || '-' || 
+        NVL (
+            SUBSTR (
+                imss.national_identifier_number, 7, 4
+                ),'000'
+            ) || '-' || 
+        NVL (
+            SUBSTR (
+                imss.national_identifier_number, 11, 1
+                ),'000'
+            ) AS no_imss,
+        phone.country_code_number ||'-'||phone.phone_number AS telefono,
+        NVL(
+            CONVERT( dir.region_1, 'us7ascii', 'al32utf8' ), '-'
+        ) AS del_municipio,
+        
+		CONVERT( (dir.address_line_1 || ', ' || dir.addl_address_attribute2), 
+		    'us7ascii', 'al32utf8' ) AS domicilio,
+        
+        --PUESTO ACTUAL--
+
+        NVL(
+            CONVERT( pldft.location_name, 'us7ascii', 'al32utf8' ), 
+            '-'
+        ) AS unidad,
+        NVL(
+            CONVERT( pj.name, 'us7ascii', 'al32utf8' ), 
+            '-'
+        ) AS puesto,
+        NVL(
+            (
+                '$' || cs.salary_amount * 30
+            ),
+            0
+        ) AS sueldo,
+        NVL(
+            TO_CHAR(
+                pps.date_start, --paa.effective_start_date,
+                'DD/MM/YYYY'
+            ),
+            '00/00/0000'
+        ) AS apartir_de,
+
+        --BAJA--
+        TO_CHAR(pps.actual_termination_date,'DD/MM/YYYY') AS fecha_de_baja,
+        CONVERT( UPPER(par.action_reason), 'us7ascii', 'al32utf8' ) AS motivo,
+
+        --COMPETENCIA--
+
+        pei.pei_information2 AS tipo,
+        pei.pei_information1 AS descripcion_comp
+FROM    
+        per_person_secured_list_v pap,        
+        --per_all_people_f pap,
+        per_person_names_f ppn,
+        per_phones phone,
+        per_all_assignments_f paa,
+        --per_department_secured_list_v pdsl,
+        --per_departments pd,
+        per_jobs pj,
+        cmp_salary cs,
+        --------------------------------
+        per_locations pl,
+        --PER_LOCATION_SECURED_LIST_V pl, --vista de seguridad
+        per_location_details_f pldf,
+        per_location_details_f_tl pldft,
+        --------------------------------
+        per_periods_of_service pps,
+        per_action_occurrences pao,
+        per_action_reasons_tl par,
+        --------------------------------
+        per_national_identifiers curp,
+        per_national_identifiers rfc,
+        per_national_identifiers imss,
+        per_people_extra_info pei,
+        per_person_addr_usages_f padu,
+        per_addresses_f dir
+WHERE   1 = 1
+AND     pap.person_number = nvl( :P_ESTAFETA, pap.person_number) 
+AND     upper(ppn.full_name) LIKE '%' || UPPER(:P_NOMBRE) || '%'
+AND     ppn.person_id = pap.person_id
+AND     ppn.name_type = 'MX'
+AND     phone.person_id(+) = pap.person_id
+AND     phone.phone_type(+) = 'H1'
+---------------------------------------------------------------
+AND     paa.person_id = pap.person_id
+AND     paa.primary_flag = 'Y'
+AND     paa.assignment_type = 'E'
+--AND     pdsl.organization_id = paa.organization_id
+--AND     pd.organization_id = paa.organization_id
+--AND     pd.status = 'A'
+AND     pj.job_id = paa.job_id
+AND     cs.assignment_id = paa.assignment_id
+AND     cs.salary_approved = 'Y'
+---------------------------------------------------------------
+AND     pl.location_id = paa.location_id
+AND     pldf.location_id = pl.location_id
+AND     pldft.location_details_id = pldf.location_details_id
+AND     pldft.language = 'E'
+---------------------------------------------------------------
+AND     pps.legal_entity_id = paa.legal_entity_id
+AND     pps.person_id = paa.person_id
+AND     pps.period_of_service_id = paa.period_of_service_id
+AND     pao.action_occurrence_id(+) = pps.action_occurrence_id
+AND     par.action_reason_id(+) = pao.action_reason_id
+AND     par.language(+) = 'E'
+---------------------------------------------------------------
+AND     curp.person_id(+) = pap.person_id
+AND     curp.national_identifier_type(+) = 'CURP'
+AND     rfc.person_id(+) = pap.person_id
+AND     rfc.national_identifier_type(+) = 'RFC'
+AND     imss.person_id(+) = pap.person_id
+AND     imss.national_identifier_type(+) = 'IMSS'
+AND     pei.person_id(+) = pap.person_id
+AND     pei.information_type(+) = 'HR_TOKS_COMPETENCIA'
+AND     padu.person_id(+) = pap.person_id
+AND     padu.address_type(+) = 'HOME'
+AND     dir.address_id(+) = padu.address_id
+---------------------------------------------------------------
+AND     paa.effective_start_date = (
+            select  max(paaf.effective_start_date)
+            from    per_all_assignments_f paaf
+            where   paaf.person_id = pap.person_id
+            AND     paaf.primary_flag = 'Y'
+            AND     paaf.assignment_type = 'E'
+		)
+AND     paa.effective_start_date BETWEEN pap.effective_start_date   AND pap.effective_end_date
+AND     paa.effective_start_date BETWEEN ppn.effective_start_date   AND ppn.effective_end_date
+--AND     paa.effective_start_date BETWEEN pdsl.effective_start_date  AND pdsl.effective_end_date
+--AND     paa.effective_start_date BETWEEN pd.effective_start_date    AND pd.effective_end_date
+AND     paa.effective_start_date BETWEEN pldf.effective_start_date  AND pldf.effective_end_date
+AND     paa.effective_start_date BETWEEN pldft.effective_start_date AND pldft.effective_end_date
+AND     paa.effective_start_date BETWEEN pj.effective_start_date    AND pj.effective_end_date
+AND     paa.effective_start_date BETWEEN phone.date_from(+)         AND phone.date_to(+)
+
+AND     pps.date_start = (
+            select max(ppos.date_start)
+            from   per_periods_of_service ppos
+            where  ppos.person_id = paa.person_id
+		)
+AND     cs.date_from = (
+            select  max(cs2.date_from)
+            from    cmp_salary cs2
+            where   cs2.assignment_id = paa.assignment_id
+            AND     cs2.salary_approved = 'Y'
+		)
+AND ROWNUM < 60
