@@ -1,0 +1,611 @@
+--QRY AC_NEW CHNG 061022 PERF
+--+ ADIC NOMINA 210921
+--+ PERFORMANCE 061022
+WITH tks_cat_elements_v AS (
+    SELECT /*+ MATERIALIZE */
+          meaning as element_name --ORIGINAL
+        , description as description --CUSTOM
+        , replace(lookup_type,'XXGRG_ELEMENTOS_','') as classification
+    FROM  fnd_lookup_values
+    WHERE 1 = 1
+        And trim(lookup_type) in (  'XXGRG_ELEMENTOS_INFORMATIVOS'
+                                    , 'XXGRG_ELEMENTOS_PERCEPCIONES'
+                                    ,'XXGRG_ELEMENTOS_DEDUCCIONES'
+                                   )
+        And language = sys_context('USERENV','LANG')
+        And enabled_flag = 'Y'
+    )
+, tks_element_results_v As (
+    SELECT /*+ INDEX (ppa pay_payroll_actions_n5)
+             INDEX (ppra pay_payroll_rel_actions_n4) */ 
+        CASE 
+            WHEN UPPER (TRIM (pec.base_classification_name)) = 'SOCIAL INSURANCE DEDUCTIONS' AND UPPER(TRIM(pivtl.name)) = 'SDI' THEN
+                  CONVERT(
+                    REPLACE(
+                      REPLACE(
+                        TRIM(
+                          UPPER (
+                            'Salario Diario Integrado - ' || COALESCE  (elem.description,pettl.element_name)
+                            )
+                          )
+                        , 'Ñ'
+                        , 'N'
+                        )
+                      , 'ñ'
+                      , 'n'
+                      )
+                    , 'us7ascii'
+                    , 'al32utf8'
+                    ) 
+            WHEN UPPER (TRIM (pec.base_classification_name)) = 'SOCIAL INSURANCE DEDUCTIONS' AND UPPER(TRIM(pivtl.name)) = 'EMPLOYER SOCIAL SECURITY QUOTA' THEN
+              CONVERT(
+                REPLACE(
+                  REPLACE(
+                    TRIM(
+                      UPPER (
+                        'Calculo de Cuota de Seguro Social ER - ' || COALESCE  (elem.description,pettl.element_name)
+                        )
+                      )
+                    , 'Ñ'
+                    , 'N'
+                    )
+                  , 'ñ'
+                  , 'n'
+                  )
+                , 'us7ascii'
+                , 'al32utf8'
+                ) 
+            ELSE
+              CONVERT(
+                REPLACE(
+                  REPLACE(
+                    TRIM(
+                      UPPER (
+                        UPPER (COALESCE  (elem.description,pettl.element_name))
+                        )
+                      )
+                    , 'Ñ'
+                    , 'N'
+                    )
+                  , 'ñ'
+                  , 'n'
+                  )
+                , 'us7ascii'
+                , 'al32utf8'
+                ) 
+          END element_name
+        , CASE 
+            WHEN UPPER (TRIM (pec.base_classification_name)) = 'SOCIAL INSURANCE DEDUCTIONS' AND UPPER(TRIM(piv.base_name)) = 'SDI' AND prtf.shortname <> 'REGNOR' THEN
+                0
+            ELSE        
+                ABS (prrv.result_value)
+          END AS result_value
+        , elem.classification                       AS element_classification
+        , ppra.payroll_rel_action_id
+    FROM  pay_payroll_actions             ppa
+        , pay_payroll_rel_actions         ppra
+        , pay_run_types_f                 prtf
+        , pay_run_results                 prr
+        , pay_run_result_values           prrv
+        , pay_element_types_f             pet
+        , pay_element_types_tl            pettl
+        , fusion.pay_ele_classifications  pec
+        , fusion.pay_input_values_f       piv
+        , pay_input_values_tl             pivtl
+        , tks_cat_elements_v              elem
+    WHERE 1 = 1
+        And ppra.payroll_action_id = ppa.payroll_action_id
+        And ppra.action_status = 'C'
+        And ppa.action_type in ('R', 'B', 'Q')
+        --+
+        And prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+        And ppra.retro_component_id is null
+        And ppra.chunk_number is not null
+        And prtf.run_type_id = ppra.run_type_id
+        --+
+        And prrv.run_result_id = prr.run_result_id
+        And piv.input_value_id = prrv.input_value_id
+        And pet.element_type_id = piv.element_type_id
+        And prr.element_type_id = pet.element_type_id
+        And prr.status in ('P', 'PA')
+        And pettl.element_type_id = pet.element_type_id
+        And upper(elem.element_name) = upper(pettl.element_name)
+        And pec.classification_id = pet.classification_id
+        And pivtl.input_value_id = piv.input_value_id
+        And piv.user_display_flag = 'Y'
+        --+
+        And (    (     UPPER (pec.base_classification_name) IN (  'STANDARD EARNINGS'
+                                                                       , 'SUPPLEMENTAL EARNINGS'
+                                                                   , 'TAXABLE BENEFITS'
+                                                                  )
+                      AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                        , 'VALOR PAGO'
+                                                        , 'EARNINGS CALCULATED'
+                                                       )
+                    )
+                 OR (   (    UPPER (pec.base_classification_name) IN (  'TAX DEDUCTIONS'
+                                                                      , 'SOCIAL INSURANCE DEDUCTIONS'
+                                                                      , 'EMPLOYER TAXES'
+                                                                     )
+                         AND UPPER (TRIM (pivtl.name)) IN (  'EMPLOYER SOCIAL SECURITY QUOTA'
+                                                           , 'SDI'
+                                                           , 'PAY VALUE'
+                                                           , 'VALOR PAGO'
+                                                           , 'ISR WITHHELD'
+                                                           , 'ISR SUBSIDY FOR EMPLOYMENT PAID'
+                                                          )
+                        )
+                     OR (    UPPER (pec.base_classification_name) IN (  'ABSENCES'
+                                                                      , 'VOLUNTARY DEDUCTIONS'
+                                                                      , 'INVOLUNTARY DEDUCTIONS'
+                                                                     )
+                         AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                           , 'VALOR PAGO'
+                                                           , 'NET PAY'
+                                                          )
+                        )
+                    )
+                 OR (    UPPER (pec.base_classification_name) = 'INFORMATION'
+                     AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                       , 'VALOR PAGO'
+                                                       , 'EARNINGS AMOUNT'
+                                                       , 'DIAS'
+                                                       , 'HORAS'
+                                                       , 'SUELDO DIARIO'
+                                                      )
+                    )
+                 OR (    UPPER (pec.base_classification_name) = 'GLB_SEVERANCE_PAY'
+                     AND UPPER (TRIM (pivtl.name)) = 'EARNINGS CALCULATED'
+                    )
+               )
+        And trunc (sysdate) Between pet.effective_start_date And pet.effective_end_date
+        And trunc (sysdate) Between piv.effective_start_date And piv.effective_end_date
+        And trunc (sysdate) Between prtf.effective_start_date And prtf.effective_end_date
+        And pettl.language = 'US'
+        And pivtl.language = 'US'
+        --+
+        And ppa.effective_date
+            Between to_date ( :fechainicio, 'yyyy-mm-dd') 
+                And to_date ( :fechafin, 'yyyy-mm-dd')
+    )
+, tks_sdi_table_factor_v As (
+    SELECT  
+          pvdf2.base_name          tabla
+        , pvdf3.base_name           factor
+        , ptru.estab_name           tru_name
+        , prdf.base_name            tabla_sdi
+        , pdrc.tax_unit_id          tru_id
+        , pdc.payroll_relationship_id
+        , reg.registration_number   reg_patronal
+    FROM  pay_value_definitions_tl  pvdt
+        , pay_value_definitions_f   pvdf
+        , pay_value_groups          pvg
+        , pay_value_groups_tl       pvgtl
+        , pay_value_definitions_f   pvdf2
+        , pay_value_definitions_f   pvdf3
+        , pay_range_items_f         prif
+        , pay_range_items_f         prif2
+        , pay_rate_definitions_f    prdf
+        , xle_registrations         reg
+        , pay_dir_cards_f           pdc
+        , pay_dir_rep_cards_f       pdrc
+        , per_tax_reporting_units   ptru
+    WHERE 1 = 1
+        And pvdt.value_defn_id = pvdf.value_defn_id
+        And pvdf.value_group_id = pvg.value_group_id
+        And pvg.value_group_id = pvgtl.value_group_id
+        And prif.value_defn_id = pvdf2.value_defn_id
+        And prif2.value_defn_id = pvdf3.value_defn_id
+        And prdf.rate_definition_id = prif2.value1
+        And pvdf.value_defn_id = pvdf2.parent_value_defn_id
+        And pvdf2.value_defn_id = pvdf3.parent_value_defn_id
+        And pvgtl.language = 'US' --USERENV ('LANG')
+        And pvdt.name = 'Fixed SDI Calculation'
+        And pvdt.language = 'US' --USERENV ('LANG')
+        And pdc.dir_card_id = pdrc.dir_card_id
+        And ptru.organization_id = pdrc.tax_unit_id
+        And ptru.establishment_id = reg.source_id
+        And reg.identifying_flag = 'Y'
+        And pdrc.tax_unit_id = prif.low_value_text
+        And trunc (sysdate) between pvdf.effective_start_date and pvdf.effective_end_date
+        And trunc (sysdate) between pvdf2.effective_start_date and pvdf2.effective_end_date
+        And trunc (sysdate) between pvdf3.effective_start_date and pvdf3.effective_end_date
+        And trunc (sysdate) between prif.effective_start_date and prif.effective_end_date
+        And trunc (sysdate) between prif2.effective_start_date and prif2.effective_end_date
+        And trunc (sysdate) between prdf.effective_start_date and prdf.effective_end_date
+        And trunc (sysdate) between ptru.effective_from and COALESCE   (ptru.effective_to, sysdate + 1)
+        And trunc (sysdate) between pdc.effective_start_date(+) and pdc.effective_end_date(+)
+        And trunc (sysdate) between pdrc.effective_start_date(+) and pdrc.effective_end_date(+)
+)
+, tks_query_principal_v as (
+    SELECT  
+        lemp.name AS emp_leg
+        , TO_CHAR (hoi_unidad.org_information1) AS unidad
+        , CONVERT (   REPLACE (  REPLACE (  TRIM (UPPER (haou_unidad.name))
+                                          , 'Ñ'
+                                          , 'N'
+                                         )
+                               , 'ñ'
+                               , 'n'
+                              )
+                    , 'us7ascii'
+                    , 'al32utf8'
+                  ) AS descripcion
+        , pap.person_id
+        , pap.person_number AS estafeta
+        , CONVERT (   REPLACE (  REPLACE (  TRIM (UPPER ((ppn.last_name ||' '||ppn.previous_last_name||' '||ppn.first_name||' '||ppn.middle_names)))
+                                          , 'Ñ'
+                                          , 'N'
+                                         )
+                               , 'ñ'
+                               , 'n'
+                              )
+                    , 'us7ascii'
+                    , 'al32utf8'
+                  ) AS nombre
+        , CONVERT (   REPLACE (  REPLACE (  TRIM (UPPER (pj.name))
+                                          , 'Ñ'
+                                          , 'N'
+                                         )
+                               , 'ñ'
+                               , 'n'
+                              )
+                    , 'us7ascii'
+                    , 'al32utf8'
+                  ) AS puesto
+        , hr_general.decode_lookup('EMPLOYEE_CATG',paa.employee_category) AS categoria_empleado
+        , tabla_sdi.tabla_sdi AS tabla_factor
+        , (
+            SELECT    TO_CHAR(MIN(pposx.date_start), 'yyyy-mm-dd')
+            FROM      per_periods_of_service pposx
+            WHERE     1 = 1
+            AND       pposx.person_id = pap.person_id
+            AND       pposx.period_type = 'E'
+          ) AS fecha_ingreso
+        , TO_CHAR (
+            ppos.actual_termination_date, 
+            'yyyy-mm-dd'
+          ) AS fecha_baja
+        , tabla_sdi.reg_patronal AS reg_patronal
+        ,   COALESCE   (SUBSTR (pni.national_identifier_number, 1, 2), '000') 
+          || '-'
+          || COALESCE   (SUBSTR (pni.national_identifier_number, 3, 2), '000')
+          || '-'
+          || COALESCE   (SUBSTR (pni.national_identifier_number, 5, 2), '000')
+          || '-'
+          || COALESCE   (SUBSTR (pni.national_identifier_number, 7, 4), '000')
+          || '-'
+          || COALESCE   (SUBSTR (pni.national_identifier_number, 11, 1), '000') AS cve_imss
+        , COALESCE  (
+              (
+                SELECT TO_NUMBER(prrv.result_value) AS result_value 
+                FROM  pay_run_results               prr
+                    , pay_run_result_values         prrv
+                    , pay_element_types_f           pet
+                    , pay_element_types_tl          pettl
+                    , pay_ele_classifications       pec
+                    , pay_input_values_f            piv
+                    , pay_input_values_tl           pivtl
+                WHERE 1 = 1
+                    And prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+                    And prrv.run_result_id = prr.run_result_id
+                    And piv.input_value_id = prrv.input_value_id
+                    And pet.element_type_id = piv.element_type_id
+                    And prr.element_type_id = pet.element_type_id
+                    And prr.status in ('P', 'PA')
+                    And pettl.element_type_id = pet.element_type_id
+                    And pettl.element_name in ('NP001', 'NP001_H')
+                    And pec.classification_id = pet.classification_id
+                    And pivtl.input_value_id = piv.input_value_id
+                    And upper (pec.base_classification_name) = 'STANDARD EARNINGS'
+                    And upper (trim (pivtl.name)) = 'DAYS WORKED'
+                    And trunc (sysdate) between pet.effective_start_date and pet.effective_end_date
+                    And trunc (sysdate) between piv.effective_start_date and piv.effective_end_date
+                    And pettl.language = sys_context ('USERENV', 'LANG')
+                    And pivtl.language = sys_context ('USERENV', 'LANG')
+              )
+              , 0
+             ) dia
+        , (
+            SELECT COALESCE  (sum(TO_NUMBER(prrv.result_value)), 0)
+            FROM  pay_payroll_rel_actions         pprax
+                , pay_run_types_f                 prtf
+                , pay_run_results                 prr
+                , pay_run_result_values           prrv
+                , pay_element_types_f             pet
+                , pay_element_types_tl            pettl
+                , fusion.pay_ele_classifications  pec
+                , fusion.pay_input_values_f       piv
+                , pay_input_values_tl             pivtl
+            WHERE 1 = 1
+                And pprax.payroll_rel_action_id = ppra.payroll_rel_action_id
+                And prr.payroll_rel_action_id = pprax.payroll_rel_action_id
+                And prrv.run_result_id = prr.run_result_id
+                And prtf.run_type_id = pprax.run_type_id
+                --+
+                And pprax.action_status = 'C'
+                And pprax.retro_component_id is null
+                And pprax.chunk_number is not null
+                --+
+                And prr.status in ('P', 'PA')
+                And prr.element_type_id = pet.element_type_id
+                And pet.element_type_id = pettl.element_type_id
+                And pet.classification_id = pec.classification_id
+                And pet.element_type_id = piv.element_type_id
+                And prrv.input_value_id = piv.input_value_id
+                And piv.input_value_id = pivtl.input_value_id
+                And piv.user_display_flag = 'Y'
+                And upper(pettl.element_name) in ('SETUP NOMINA', 'SETUP FINIQUITO')
+                And upper (trim (pivtl.name)) in ('SUELDO DIARIO')
+                And trunc (sysdate) between pet.effective_start_date and pet.effective_end_date
+                And trunc (sysdate) between piv.effective_start_date and piv.effective_end_date
+                And pettl.language = sys_context ('USERENV', 'LANG')
+                And pivtl.language = sys_context ('USERENV', 'LANG')
+         ) salario
+        , (
+            SELECT    pei_information1
+            FROM      per_people_extra_info_f 
+            WHERE     1 = 1
+            AND       person_id = pap.person_id
+            AND       information_type = 'Empresa Origen'
+            AND       TRUNC (ppa.effective_date) BETWEEN effective_start_date AND effective_end_date
+        ) AS empresa_origen
+        , NULL element_name --XXX
+        , NULL result_value --XXX
+        , NULL AS element_classification --XXX
+        , 0 AS gross_earnings
+        , COALESCE  (
+                (
+                    SELECT    SUM(prb.balance_value)
+                    FROM      pay_run_balances        prb
+                            , pay_defined_balances    pdb
+                            , pay_balance_types       pbt
+                            , pay_balance_dimensions  pbd
+                    WHERE     1 = 1
+                    AND       prb.defined_balance_id = pdb.defined_balance_id
+                    AND       pdb.balance_type_id = pbt.balance_type_id
+                    AND       pbt.base_balance_name = 'MX_NET_PAY'
+                    AND       pdb.balance_dimension_id = pbd.balance_dimension_id
+                    AND       pbd.base_db_item_suffix = '_CORE_REL_TU_RUN'
+                    AND       prb.payroll_relationship_id = ppra.payroll_relationship_id
+                    AND       prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+                )
+              , 0
+             ) net_payment
+        , TO_CHAR (ppa.date_earned, 'yyyy-mm-dd') AS date_earned
+        , ppra.payroll_rel_action_id
+        , COALESCE  (
+                (
+                  SELECT    
+                          TO_NUMBER(prrv.result_value) AS result_value 
+                  FROM      pay_run_result_values           prrv
+                          , pay_run_results                 prr
+                          , pay_element_types_f             pet
+                          , pay_element_types_tl            pettl
+                          , fusion.pay_ele_classifications  pec
+                          , fusion.pay_input_values_f       piv
+                          , pay_input_values_tl             pivtl
+                  WHERE     1 = 1
+                  AND       prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+                  AND       prrv.run_result_id = prr.run_result_id
+                  AND       prr.status IN ('P', 'PA')
+                  AND       prr.element_type_id = pet.element_type_id
+                  AND       pet.element_type_id = pettl.element_type_id
+                  AND       pet.classification_id = pec.classification_id
+                  AND       pet.element_type_id = piv.element_type_id
+                  AND       prrv.input_value_id = piv.input_value_id
+                  AND       piv.input_value_id = pivtl.input_value_id
+                  AND       pettl.element_name = 'NP001_H'
+                  AND       UPPER (pec.base_classification_name) = 'STANDARD EARNINGS'
+                  AND       UPPER (TRIM (pivtl.name)) = 'HORAS'
+                  AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+                  AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+                  AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                  AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                )
+              , 0
+             ) AS horas_pagadas
+        , COALESCE  (
+                ( 
+                  SELECT    TO_NUMBER(prrv.result_value) AS result_value 
+                  FROM      pay_run_result_values           prrv
+                          , pay_run_results                 prr
+                          , pay_element_types_f             pet
+                          , pay_element_types_tl            pettl
+                          , fusion.pay_ele_classifications  pec
+                          , fusion.pay_input_values_f       piv
+                          , pay_input_values_tl             pivtl
+                  WHERE     1 = 1
+                  AND       prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+                  AND       prrv.run_result_id = prr.run_result_id
+                  AND       prr.status IN ('P', 'PA')
+                  AND       prr.element_type_id = pet.element_type_id
+                  AND       pet.element_type_id = pettl.element_type_id
+                  AND       pet.classification_id = pec.classification_id
+                  AND       pet.element_type_id = piv.element_type_id
+                  AND       prrv.input_value_id = piv.input_value_id
+                  AND       piv.input_value_id = pivtl.input_value_id
+                  AND       pettl.element_name = 'SUELDO POR HORA'
+                  AND       UPPER (pec.base_classification_name) = 'INFORMATION'
+                  AND       UPPER (TRIM (pivtl.name)) IN ('PAY VALUE', 'VALOR PAGO')
+                  AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+                  AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+                  AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                  AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                  )
+               , 0
+              ) AS sueldo_hora,
+              paa.organization_id,
+              --+
+              (
+            SELECT  nomina
+            FROM    (
+                        SELECT papf.payroll_name as nomina
+                        FROM  per_all_assignments_f    paam
+                            , pay_all_payrolls_f       papf
+                            , pay_assigned_payrolls_dn papd
+                            , pay_payroll_terms        ppt
+                            , pay_rel_groups_dn        prgd
+                            , pay_dir_cards_f          pdcf
+                            , pay_dir_rep_cards_f      pdrc
+                            , per_tax_reporting_units  ptru
+                        WHERE 1 = 1
+                            And ppt.payroll_term_id            = papd.payroll_term_id
+                            And papf.payroll_id                = papd.payroll_id
+                            And paam.assignment_id             = prgd.assignment_id
+                            And ppt.hr_term_id                 = prgd.term_id
+                            And paam.primary_flag              = 'Y'
+                            And paam.assignment_status_type_id = 1
+                            And paam.assignment_type           = 'E'
+                            And prgd.group_type                = 'A'
+                            And pap.person_id                  = paam.person_id
+                            And prgd.payroll_relationship_id   = pdcf.payroll_relationship_id
+                            And pdcf.dir_card_id               = pdrc.dir_card_id
+                            And ptru.organization_id           = pdrc.tax_unit_id
+                            And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between pdrc.effective_start_date and pdrc.effective_end_date
+                            And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between pdcf.effective_start_date and pdcf.effective_end_date
+                            And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between papd.fsed and COALESCE  (papd.lsed,sysdate)
+                            And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between papf.effective_start_date and papf.effective_end_date
+                            And trunc(COALESCE  (ppos.actual_termination_date, sysdate)) between paam.effective_start_date and paam.effective_end_date
+                    )
+            WHERE   rownum = 1
+        ) AS nomina,
+        ppra.payroll_action_id
+        --+
+    FROM  per_person_names_f                ppn
+        , per_person_secured_list_v         pap 
+        , per_assignment_secured_list_v     paa 
+        , per_periods_of_service            ppos
+        --+
+        , per_national_identifiers          pni
+        , per_jobs                          pj
+        , cmp_salary                        cs
+        --+
+        , hr_organization_information_f     hoi_unidad
+        , hr_all_organization_units         haou_unidad
+        , hr_all_organization_units         empresa_origen
+        --+
+        , pay_payroll_rel_actions           ppra
+        , pay_payroll_actions               ppa
+        , pay_consolidation_sets            pcs
+        , pay_rel_groups_dn                 prg
+        , pay_payroll_secured_list_v        pay 
+        --+
+        , per_legal_employers               lemp
+        --+
+        , tks_sdi_table_factor_v            tabla_sdi
+    WHERE 1 = 1
+        And pap.person_id = ppn.person_id
+        And paa.person_id = pap.person_id
+        And ppn.name_type = 'MX'
+        And paa.effective_latest_change = 'Y'
+        And paa.assignment_type = 'E'
+        And ppos.person_id = paa.person_id
+        And ppos.period_of_service_id = paa.period_of_service_id
+        And pap.person_number = COALESCE  (:estafeta, pap.person_number)
+        --+
+        And pni.person_id(+) = pap.person_id
+        And trim (upper (pni.national_identifier_type(+))) = 'IMSS'
+        And cs.assignment_id(+) = paa.assignment_id
+        --+
+        And prg.assignment_id = paa.assignment_id
+        And prg.group_type = 'A'
+        And ppra.payroll_relationship_id = prg.payroll_relationship_id
+        And ppa.payroll_action_id = ppra.payroll_action_id
+        And ppa.action_type in ('R', 'Q', 'B')
+        And ppra.action_status = 'C'
+        And ppra.retro_component_id is null
+        And ppra.chunk_number is not null
+        And ppa.payroll_id = pay.payroll_id
+        And pay.payroll_id = COALESCE   ( :nomina, pay.payroll_id )
+        And ppa.consolidation_set_id = pcs.consolidation_set_id
+        And pcs.consolidation_set_id = COALESCE   ( :juegoconsolidacion, pcs.consolidation_set_id)
+        And pj.job_id = paa.job_id
+        And paa.organization_id = hoi_unidad.organization_id(+)
+        And hoi_unidad.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+        And hoi_unidad.org_information7(+) = '1'
+        And paa.organization_id = haou_unidad.organization_id
+        And paa.business_unit_id = empresa_origen.organization_id
+        And prg.payroll_relationship_id = tabla_sdi.payroll_relationship_id(+)
+        --+
+        And lemp.organization_id = paa.legal_entity_id
+        --+
+        And ppa.effective_date between prg.start_date and prg.end_date
+        And trunc (ppa.date_earned) between to_date ( :fechainicio, 'yyyy-mm-dd') and to_date ( :fechafin, 'yyyy-mm-dd')
+        And to_date ( :fechafin, 'yyyy-mm-dd') between pay.effective_start_date and pay.effective_end_date
+        And to_date ( :fechafin, 'yyyy-mm-dd') between paa.effective_start_date and paa.effective_end_date
+        And to_date ( :fechafin, 'yyyy-mm-dd') between pap.effective_start_date and pap.effective_end_date
+        And to_date ( :fechafin, 'yyyy-mm-dd') between ppn.effective_start_date and ppn.effective_end_date
+        And trunc (ppa.effective_date) between pj.effective_start_date and pj.effective_end_date
+        And to_date ( :fechafin, 'yyyy-mm-dd') between cs.date_from(+) and cs.date_to(+)
+        And to_date ( :fechafin, 'yyyy-mm-dd') between hoi_unidad.effective_start_date and hoi_unidad.effective_end_date
+        And paa.legal_entity_id = COALESCE  (:emplegal, paa.legal_entity_id)
+        And hoi_unidad.organization_id = COALESCE  (:unidad, hoi_unidad.organization_id)
+        --AND       pap.person_number = '119956'
+    )
+,tks_query_balances_v as (
+    SELECT 
+            COALESCE  ( MAX(prb.balance_value), 0 )  as t_dias_aus_aguinaldo,
+            ppra.person_id
+    FROM    
+        (   select  person_id 
+                , max(payroll_rel_action_id) as payroll_rel_action_id
+            from tks_query_principal_v
+            group by person_id
+        )                       ppra,
+        pay_defined_balances    pdb,
+        pay_balance_types       pbt,
+        TABLE(
+                pay_balance_view_pkg.get_balance_dimensions 
+                (
+                        p_balance_type_id         => pbt.balance_type_id,
+                        p_payroll_rel_action_id   => ppra.payroll_rel_action_id,
+                        p_payroll_term_id         => NULL,
+                        p_payroll_assignment_id   => NULL
+                )
+        ) prb
+    WHERE   1 = 1
+        AND pdb.balance_type_id     = pbt.balance_type_id
+        AND pbt.base_balance_name   = 'TOTAL DIAS AUSENTISMOS AGUINALDO'
+        AND prb.suffix              = '_ASG_YTD'
+        AND prb.balance_dimension_id = pdb.balance_dimension_id
+    GROUP BY    ppra.person_id
+)
+SELECT qb.t_dias_aus_aguinaldo
+    , qp.emp_leg
+    , qp.unidad
+    , qp.descripcion
+    , qp.person_id
+    , qp.estafeta
+    , qp.nombre
+    , qp.puesto
+    , qp.categoria_empleado
+    , qp.tabla_factor
+    , qp.fecha_ingreso
+    , qp.fecha_baja
+    , qp.reg_patronal
+    , qp.cve_imss
+    , qp.dia
+    , qp.salario
+    , qp.empresa_origen
+    , qp.gross_earnings
+    , qp.net_payment
+    , qp.date_earned
+    , qp.payroll_rel_action_id
+    , qp.horas_pagadas
+    , qp.sueldo_hora
+    , qp.organization_id
+    , qp.nomina
+    , qp.payroll_action_id
+    --+
+    , ter.element_name
+    , ter.result_value
+    , ter.element_classification
+    , count(qp.estafeta) over (partition by qp.unidad) num_emp
+FROM tks_query_principal_v  qp
+    ,tks_query_balances_v   qb
+    --+
+    ,tks_element_results_v  ter
+WHERE  1 = 1
+    And qp.person_id = qb.person_id
+    And ter.payroll_rel_action_id = qp.payroll_rel_action_id
