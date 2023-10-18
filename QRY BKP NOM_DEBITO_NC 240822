@@ -1,0 +1,174 @@
+--QRY BKP NOM_DEBITO_NC 240822
+WITH xxtoks_pay_debito_bancomer_v as(
+    SELECT  /*+ materialize */  
+            CONVERT(REPLACE (ple.name ,'ñ','n'), 'us7ascii', 'al32utf8')                                compania
+          , ple.organization_id                                                                         legal_entity
+          , ppa.payroll_id
+          , papf.person_number
+          , CONVERT(REPLACE(REPLACE(UPPER (ppnf.full_name),',',''), 'Ñ', 'N'), 'us7ascii', 'al32utf8')  nombre_empleado
+          , pd.name                                                                                     departamento
+          , ppp.payroll_name
+          , pba.bank_account_num                                                                        cuenta
+          , 'Net Payment'                                                                               balance_name
+          , ptp.period_name
+          , ppa.effective_date
+          , ' '                                                                                         p_agreement
+          , ' '                                                                                         p_subservice
+          , ' '                                                                                         p_business
+          , ' '                                                                                         p_sign
+          , ' '                                                                                         p_account
+          , NVL(:p_pay_date, trunc(sysdate))                                                            p_pay_date
+          , NVl(:p_generation_date, trunc(sysdate))                                                     p_generation_date     
+          , NVL(pprp.value,0)                                                                           exento
+          , pcs.consolidation_set_name                                                                  consolidacion
+          , hoif.org_information1                                                                       unidad
+    FROM
+            pay_payroll_actions              ppa,
+            pay_payroll_secured_list_v       ppp,
+            pay_assigned_payrolls_dn         papd,
+            pay_rel_groups_dn                prgd,
+            pay_pay_relationships_dn         pprd,
+            per_person_secured_list_v        papf,  --PER_ALL_PEOPLE_F
+            per_person_names_f               ppnf,
+            per_assignment_secured_list_v    paam,   --PER_ALL_ASSIGNMENTS_M-- Revisar duplica informacion
+            hr_organization_information_f    hoif,
+            per_location_secured_list_v      loc,     --PER_LOCATIONS
+            per_legal_employers              ple,
+            per_departments                  pd,
+            pay_action_classes               pac,
+            pay_time_periods                 ptp,
+            pay_consolidation_sets           pcs,
+            pay_payroll_rel_actions          pra,
+            pay_personal_payment_methods_f   pppm,     --> *Metodos de Pago
+            pay_bank_accounts                pba,
+            pay_dir_cards_f                  pdc,-- validar
+            pay_dir_rep_cards_f              pdrc,
+            per_tax_reporting_units          tru,
+            pay_pre_payments                 pprp
+    WHERE
+            1 = 1 
+        AND ppa.payroll_id                  = ppp.payroll_id
+        AND ppp.payroll_id                  = papd.payroll_id
+        AND papd.payroll_term_id            = prgd.parent_rel_group_id
+        AND prgd.payroll_relationship_id    = pprd.payroll_relationship_id
+        AND pprd.person_id                  = papf.person_id
+        AND ppnf.person_id                  = papf.person_id
+        AND papf.person_id                  = paam.person_id
+        AND prgd.legal_employer_id          = paam.legal_entity_id
+        AND paam.organization_id            = hoif.organization_id
+        AND paam.location_id                = loc.location_id
+        AND ple.organization_id             = paam.legal_entity_id
+        AND pd.organization_id              = paam.organization_id
+        AND pac.action_type                 = ppa.action_type
+        --AND ptp.time_period_id              = ppa.earn_time_period_id  --Revisar ENP
+        AND ptp.payroll_id                  = ppa.payroll_id
+        AND ptp.legislative_data_group_id   = ppa.legislative_data_group_id
+        AND pcs.consolidation_set_id        = ppa.consolidation_set_id
+        AND ppa.payroll_action_id           = pra.payroll_action_id
+        AND pra.payroll_relationship_id     = pprd.payroll_relationship_id
+        AND pppm.payroll_relationship_id    = pprd.payroll_relationship_id
+        AND pdc.payroll_relationship_id     = pprd.payroll_relationship_id
+        AND pdrc.dir_card_id                = pdc.dir_card_id
+        AND tru.organization_id             = pdrc.tax_unit_id
+        AND pprp.payroll_rel_action_id      = pra.payroll_rel_action_id
+        AND pppm.personal_payment_method_id = pprp.personal_payment_method_id
+        AND pra.action_status               = 'C' 
+        AND pac.classification_name         = 'PPPAYMENT' --ENP Validar
+        AND pd.status                       = 'A'
+        AND ple.status                      = 'A'
+        AND hoif.org_information_context    = 'PER_GL_COST_CENTER_INFO'
+        AND paam.PRIMARY_ASSIGNMENT_FLAG    = 'Y'
+        AND paam.ASSIGNMENT_TYPE            = 'E'
+        AND paam.EFFECTIVE_LATEST_CHANGE    = 'Y'
+--        AND paam.ASSIGNMENT_STATUS_TYPE     = 'ACTIVE'   -- se cambia a peticion de Judith 29/04/22 
+        AND ppnf.name_type                  = 'MX'
+        AND prgd.group_type                 = 'A'
+        AND ppa.action_type                 = 'P'
+        AND ptp.period_category             = 'E'
+        --AND pppm.PRIORITY                 = 10
+        --AND pppm.NAME                     = 'NOMINA'
+        AND pba.bank_account_id             = pppm.bank_account_id                     
+        --AND pba.BANK_NAME                 = 'BBVA BANCOMER, S.A.' 
+        AND trim(pba.bank_name)          like '%BBVA BANCOMER%'   -- se cambia ya que asi se tiene en prod 220321 
+        AND nvl( pba.BANK_ACCOUNT_TYPE, 'DEBIT' )  in ( 'DEBIT', 'SAVINGS' )
+        AND trim(pba.bank_branch_name)            = 'NOMINA'
+		--aspirinita
+        AND pba.bank_account_num   NOT IN ('1556819125','2853136469')
+        AND pra.retro_component_id IS NULL  -- Que no tenga movimientos retroactivos 
+        AND pra.source_id          IS NULL 
+        AND pra.source_action_id   IS NULL
+        AND ppa.effective_date BETWEEN ptp.start_date AND ptp.end_date
+        --AND paam.ASSIGNMENT_STATUS_TYPE = NVL(:p_status_type , 'ACTIVE' )  
+        --AND papf.person_number = 107086
+        --AND ppa.action_type                 IN ('R', 'Q') 
+        --------------------------------------Filtros fecha-------------------
+        AND ppa.effective_date BETWEEN papd.start_date           AND papd.end_date
+        AND ppa.effective_date BETWEEN pprd.start_date           AND pprd.end_date
+        AND ppa.effective_date BETWEEN prgd.start_date           AND prgd.end_date 
+        AND ppa.effective_date BETWEEN ppp.effective_start_date  AND ppp.effective_end_date
+        AND ppa.effective_date BETWEEN papf.effective_start_date AND papf.effective_end_date
+        AND ppa.effective_date BETWEEN ppnf.effective_start_date AND ppnf.effective_end_date
+        AND ppa.effective_date BETWEEN paam.effective_start_date AND paam.effective_end_date
+        AND ppa.effective_date BETWEEN ple.effective_start_date  AND ple.effective_end_date
+        AND ppa.effective_date BETWEEN pd.effective_start_date   AND pd.effective_end_date
+        AND ppa.effective_date BETWEEN pppm.effective_start_date AND pppm.effective_end_date
+        AND ppa.effective_date BETWEEN pdc.effective_start_date     AND pdc.effective_end_date
+        AND ppa.effective_date BETWEEN pdrc.effective_start_date    AND pdrc.effective_end_date 
+        --+ ************************************************************************* +--
+        --+ *************************     Parametros    ***************************** +--
+        --+ ************************************************************************* +--
+        AND tru.organization_id        = nvl(:p_tru,tru.organization_id) 
+        AND pcs.consolidation_set_id   = nvl(:p_consolidation_sets, pcs.consolidation_set_id)
+        AND ppp.payroll_id             = nvl(:p_payroll, ppp.payroll_id)
+        AND ptp.time_period_id         = nvl(:p_period, ptp.time_period_id)
+        AND pd.organization_id         = nvl(:p_unity, pd.organization_id)
+        --+ ************************************************************************* +--   
+ )
+SELECT compania,
+       legal_entity, 
+       payroll_id, 
+       person_number, 
+       nombre_empleado, 
+       departamento, 
+       payroll_name,
+       cuenta, 
+       balance_name, 
+       period_name, 
+       effective_date,
+       p_agreement, 
+       p_subservice, 
+       p_business,
+       p_sign,
+       p_account,
+       p_pay_date,
+       p_generation_date,
+       exento,
+       consolidacion,
+       unidad
+FROM   xxtoks_pay_debito_bancomer_v
+WHERE  1 = 1
+AND    person_number = nvl( :p_person_number, person_number )
+AND    exento > 0
+GROUP BY compania,
+         legal_entity,
+         payroll_id,
+         person_number,
+         nombre_empleado,
+         departamento,
+         payroll_name,
+         cuenta,
+         balance_name,
+         period_name,
+         effective_date, 
+         p_agreement,
+         p_subservice,
+         p_business,
+         p_sign,
+         p_account,
+         p_pay_date,
+         p_generation_date,
+         exento,
+         consolidacion,
+         unidad
+ORDER BY --unidad,
+         person_number
