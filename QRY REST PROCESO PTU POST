@@ -1,0 +1,125 @@
+--QRY REST PROCESO PTU POST
+DECLARE 
+    pragma autonomous_transaction; 
+ 
+    p_process_year          VARCHAR2(250)   := :p_process_year; 
+    p_legal_employeer_id    VARCHAR2(250)   := :p_legal_employeer_id; 
+    p_effective_date        VARCHAR2(250)   := :p_effective_date; 
+    p_nomina_id             VARCHAR2(250)   := :p_nomina_id; 
+    p_unidad_id             VARCHAR2(250)   := :p_unidad_id; 
+    p_tipo                  VARCHAR2(250)   := :p_tipo;
+    p_user_name             VARCHAR2(250)   := :p_user_name;
+    p_user_token            CLOB            := :p_user_token;
+ 
+    l_job_name    VARCHAR2(2000):= 'GRG_PTU_PROCESO_'; 
+    l_sql         VARCHAR2(5000); 
+    l_job_action  VARCHAR2(5000); 
+ 
+    l_seq_job      NUMBER; 
+BEGIN 
+    l_seq_job := TO_NUMBER(TO_CHAR (SYSDATE -6/24, 'YYMMDDHHMISS'));
+    
+    IF p_tipo = 'R' THEN
+    
+        l_sql := '  DECLARE 
+                        p_status NUMBER; 
+                        v_error_msg VARCHAR2(512);
+                    BEGIN 
+                        GRG_PROCESO_PTU_V3.calculo_ptu ('   ||p_legal_employeer_id
+                                                            ||','||''''||p_unidad_id||''''
+                                                            ||','||''''||p_nomina_id||''''
+                                                            ||','||''''||p_effective_date||''''
+                                                            ||','||''''||p_process_year||''''
+                                                            ||','||l_seq_job
+                                                            ||','||''''||p_user_name||''''
+                                                            ||','||''''||p_user_token||''''
+                                                            ||',p_status); 
+                    EXCEPTION WHEN OTHERS THEN 
+                        v_error_msg := SQLERRM;
+                        INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES (''ERROR EN API: ''||v_error_msg);
+                    END;'; 
+        
+        l_job_action:= REPLACE(l_sql,'''''','NULL'); 
+        dbms_output.put_line(l_job_action); 
+
+        BEGIN
+            dbms_scheduler.create_job (job_name   => l_job_name||l_seq_job
+                                    ,job_type   => 'PLSQL_BLOCK' 
+                                    ,job_action => l_job_action 
+                                    ,enabled    => TRUE 
+                                    ,auto_drop  => TRUE 
+                                    ,comments   => 'Ejecuta de forma asincrona el servicio de calculo de PTU'); 
+            
+            EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END;
+    
+    ELSIF p_tipo = 'P' THEN
+
+        INSERT INTO GRG_PTU_V3_LOG (
+            ID, 
+            STATUS,
+            TYPE,
+            USERNAME,
+            LEGAL_EMPLOYER_ID,
+            UNIT_ID,
+            PAYROLL_ID
+        ) VALUES (
+            l_seq_job,
+            'PROCESADO',
+            'REPORTE PTU',
+            p_user_name,
+            p_legal_employeer_id,
+            p_unidad_id,
+            p_nomina_id
+        );
+
+        COMMIT;
+    
+    ELSE 
+
+        l_sql := '  DECLARE 
+                        p_status NUMBER; 
+                        v_error_msg VARCHAR2(512);
+                    BEGIN 
+
+                        GRG_PROCESO_PTU_V3.hdl_files('
+                                                        ||''''||p_effective_date||''''
+                                                        ||','||''''||p_process_year||''''
+                                                        ||','||''''||p_legal_employeer_id||''''
+                                                        ||','||l_seq_job
+                                                        ||','||''''||p_tipo||''''||'
+                                                    );
+                    EXCEPTION WHEN OTHERS THEN 
+                        v_error_msg := SQLERRM;
+                        INSERT INTO GRG_PROCESO_PTU_V3_ERROR (mensaje) VALUES (''ERROR EN API HDL: ''||v_error_msg);
+                    END;'; 
+
+        l_job_action:= REPLACE(l_sql,'''''','NULL'); 
+        dbms_output.put_line(l_job_action); 
+
+        BEGIN
+            dbms_scheduler.create_job (job_name   => l_job_name||l_seq_job
+                                    ,job_type   => 'PLSQL_BLOCK' 
+                                    ,job_action => l_job_action 
+                                    ,enabled    => TRUE 
+                                    ,auto_drop  => TRUE 
+                                    ,comments   => 'Ejecuta de forma asincrona el servicio de calculo de PTU'); 
+            
+            EXCEPTION WHEN OTHERS THEN
+            --DBMS_OUPUT.PUT_LINE(''||SQLERRM);
+            NULL;
+            -- apex_json.open_object; 
+            -- apex_json.write ('process_id:', ''||SQLERRM); 
+            -- apex_json.close_object;				
+        END;
+
+    END IF;
+ 
+    apex_json.open_object; 
+    apex_json.write ('process_id:', l_seq_job); 
+    apex_json.write ('sql:', l_sql); 
+    apex_json.write ('job_action:', l_job_action); 
+    apex_json.close_object;						   
+    dbms_output.put_line('termine');
+END; 
