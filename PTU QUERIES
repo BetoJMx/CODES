@@ -1,0 +1,84 @@
+--PTU QUERIES
+select * FROM PAY.GRG_PTU_V3_HEADER WHERE LEGAL_EMPLOYER_ID = 300000003143001;
+
+select COUNT(*) FROM PAY.GRG_PTU_V3_HEADER WHERE LEGAL_EMPLOYER_ID = 300000003143001;
+
+SELECT * FROM PAY.GRG_PTU_V3_TRACE ORDER BY ID DESC;
+
+SELECT * FROM PAY.GRG_PTU_V3_TRACE WHERE MSG LIKE '%TOTAL: 0%' AND FASE = 'INSERT F3' ORDER BY ID DESC;
+
+SELECT * FROM PAY.GRG_PROCESO_PTU_V3_ERROR;
+
+SELECT    MIN(ID_UNITS) start_id
+        , MAX(ID_UNITS) end_id
+FROM      (
+            SELECT    ID_UNITS
+                    , NTILE(14) OVER( ORDER BY ID_UNITS asc ) grupo 
+            FROM      pay.GRG_PTU_V3_UNITS
+            WHERE     1 = 1
+            AND       ID_EMP_LEGAL = 300000009681083
+            )
+GROUP BY  grupo;
+
+SELECT * FROM PAY.GRG_PTU_V3_UNITS WHERE ID_UNITS BETWEEN 14896 AND 14903;
+
+SELECT * FROM PAY.GRG_PTU_V3_UNITS WHERE ID_UNIDAD = 300000014668601;
+--300000014667228 = 15370
+--300000014668601 = 15416
+
+SELECT * FROM PAY.GRG_PTU_V3_LOG ORDER BY ID DESC;
+
+SELECT * FROM PAY.GRG_PTU_V3_INFO;
+
+SELECT  H.EMPLEADOR_LEGAL,
+                    H.UNIDAD,
+                    H.ORGANIZACION,
+                    H.UNIDAD_ACT,
+                    H.ORGANIZACION_ACT,
+                    H.ESTAFETA,
+                    H.NOMBRE,
+                    H.PUESTO,
+                    H.PUESTO_ACT,
+                    H.RFC,
+                    H.NSS,
+                    H.CURP,
+                    H.CATEGORIA,
+                    H.FECHA_CONTRATACION,
+                    H.FECHA_BAJA,
+                    H.FECHA_CAMBIO_COMP,
+                    H.FECHA_BAJA_R,
+                    GREATEST(H.COMPENSACION_BASE,0),
+                    GREATEST(H.DIAS_BASE,0),
+                    --+
+                    H.AVERAGE_DAILY_SALARY,
+                    H.CAPPED_AVERAGE_SALARY,
+                    --+
+                    NVL((
+                    SELECT  NVL(T.MONTO,0)
+                    FROM    GRG_PTU_V3_CARGAS T
+                    WHERE   T.ANIO = 2020  
+                            AND LPAD(H.ESTAFETA,6,0)  =  LPAD(T.ESTAFETA,6,0)
+                            AND H.EMPLEADOR_LEGAL = T.EMPLEADOR_LEGAL
+                    ),0) as "2018",
+                    NVL((
+                    SELECT  NVL(T.MONTO,0)
+                    FROM    GRG_PTU_V3_CARGAS T
+                    WHERE   T.ANIO = 2021  
+                            AND LPAD(H.ESTAFETA,6,0)  =  LPAD(T.ESTAFETA,6,0)
+                            AND H.EMPLEADOR_LEGAL = T.EMPLEADOR_LEGAL
+                    ),0) as "2019",
+                    NVL((
+                    SELECT  NVL(T.MONTO,0)
+                    FROM    GRG_PTU_V3_CARGAS T
+                    WHERE   T.ANIO = 2022  
+                            AND LPAD(H.ESTAFETA,6,0)  =  LPAD(T.ESTAFETA,6,0)
+                            AND H.EMPLEADOR_LEGAL = T.EMPLEADOR_LEGAL
+                    ),0) as "2020"
+            FROM    PAY.GRG_PTU_V3_HEADER H 
+            WHERE   1 = 1 --DIAS_BASE >= 0
+                    AND LEGAL_EMPLOYER_ID = 300000003143001
+                    --AND DIAS_BASE > 0
+                    AND DIAS_BASE >= 60 --**
+                    AND COMPENSACION_BASE > 0;
+                    
+SELECT * FROM PAY.XXTOKS_PAY_AC_EXEC ORDER BY ID_PROCESS DESC;
