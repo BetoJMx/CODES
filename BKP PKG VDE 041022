@@ -1,0 +1,323 @@
+--BKP PKG VDE 041022
+create or replace package body     TOKS_PAY_VDE is
+-- variables globales
+    l_loc  VARCHAR2(1000);
+    l_bg   number := 103;
+    l_deb  VARCHAR2 (1000);
+    
+ PROCEDURE output (p_message IN VARCHAR2)
+    IS
+    BEGIN
+        UTL_FILE.put_line (v_file_load, p_message);
+    EXCEPTION
+        WHEN UTL_FILE.invalid_path
+        THEN
+            raise_application_error (-20000, 'ERROR: Invalid PATH FOR file.');
+           --dbms_output.line_ouput(1);
+    END output;	
+	
+ procedure imprime (p_message IN VARCHAR2) is
+    begin
+     --fnd_file.put(fnd_file.output,p_message);
+     --fnd_file.new_line(fnd_file.output,1);
+     DBMS_OUTPUT.put_line ('entra');
+      exception
+         when others then
+            return;
+    end imprime;
+-----
+    procedure imprime_blco (nlineas IN number)is
+    begin
+        for i IN 1..nlineas loop
+            imprime(' ');
+        end loop;
+    end imprime_blco;
+-----	
+    PROCEDURE get_person_number_vales(
+        p_set_name      IN VARCHAR2,
+        p_periodo       IN VARCHAR2,
+        p_nomina        IN VARCHAR2,
+        p_user_token    IN VARCHAR2 DEFAULT NULL
+    ) AS
+        l_user_name             VARCHAR2 (100); --Aquí van las credenciales
+        l_password              VARCHAR2 (100);
+        l_ws_url                VARCHAR2 (500); --Aquí va el WSDL de Oracle para consumir información de informacion del wsdl
+        l_ws_action             VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar
+        l_ws_response_clob      CLOB;
+        l_ws_envelope           CLOB;
+        l_ws_resp_xml           XMLTYPE;
+        l_ws_resp_xml2          XMLTYPE;
+        v_cdata                 CLOB;
+        l_clob                  CLOB;
+        v_val                   PLS_INTEGER;
+        --  bloque que llena la tabla de payroll
+        l_rownum            NUMBER := 0;
+    BEGIN
+        execute immediate 'truncate table XXTOKS_VALES_DESP_T';
+        DBMS_OUTPUT.put_line ('entra');
+        l_ws_envelope :=
+        '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+            <soap:Body>
+                <pub:runReport>
+                    <pub:reportRequest>
+                        <pub:parameterNameValues>
+						    <pub:item>
+                                <pub:name>p_set_name</pub:name>
+                                <pub:values>
+                                    <pub:item>'|| p_set_name||'</pub:item>
+                                </pub:values>
+                            </pub:item>
+                            <pub:item>
+                                <pub:name>p_periodo</pub:name>
+                                <pub:values>
+                                    <pub:item>'|| p_periodo ||'</pub:item>
+                                </pub:values>
+                            </pub:item>
+                    	    <pub:item>
+                                <pub:name>p_nomina</pub:name>
+                                <pub:values>
+                                    <pub:item>'|| p_nomina ||'</pub:item>
+                                </pub:values>
+                            </pub:item>
+                        </pub:parameterNameValues>
+                        <pub:reportAbsolutePath>/Reportes Custom/PAY/Toks Pago de VDE/TOKS_PAGO_VDE.xdo</pub:reportAbsolutePath>
+                        <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+                    </pub:reportRequest>
+                </pub:runReport>
+            </soap:Body>
+        </soap:Envelope>';                   --Este es el XML que se manda al servicio
+
+        DBMS_OUTPUT.put_line ('SALIO CONSULTA REPORT');
+
+        ---REQUEST TOKEN---
+        /*GRG_COMMON_CONNECTIONS.get_otbi_report(
+            l_ws_envelope => l_ws_envelope,
+            l_user_token  => null, --p_user_token,
+            x_ws_response => l_clob,
+            p_instance_name => 'DEV1');  -- ADLH, 30.05.21 - Se agrega instancia
+            get_otbi_report_for_oacs
+        */
+        GRG_COMMON_CONNECTIONS.get_otbi_report(l_ws_envelope 	=> l_ws_envelope
+                                               ,l_user_token 	=> NULL --NVL(p_user_token,l_token)
+                                               ,x_ws_response 	=> l_clob
+                                               ,p_instance_name	=> 'DEV1');
+
+        l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+        ---REQUEST TOKEN---
+
+        DBMS_OUTPUT.put_line ('entra11');
+
+        FOR i IN ( SELECT xml_data.NO_COLABORADOR,
+                       xml_data.MONTO_PAGO,
+                       xml_data.VRFC,
+					   xml_data.PAYROLL_ID,
+					   xml_data.PAYROLL_NAME,	
+					   xml_data.TIME_PERIOD_ID,
+					   xml_data.PERIOD_NAME,
+					   xml_data.CONSOLIDATION_SET_ID,
+					   xml_data.CONSOLIDATION_SET_NAME
+                    FROM XMLTABLE (
+                           '/DATA_DS/G_1'
+                           PASSING xmltype.createxml (l_clob)
+                           COLUMNS NO_COLABORADOR 		    VARCHAR2 (250) PATH 'NO_COLABORADOR',
+                                   MONTO_PAGO 				VARCHAR2 (250) PATH 'MONTO_PAGO',
+                                   VRFC					 	VARCHAR2 (250) PATH 'VRFC',
+								   PAYROLL_ID               VARCHAR2 (250) PATH 'PAYROLL_ID',
+								   PAYROLL_NAME             VARCHAR2 (250) PATH 'PAYROLL_NAME',
+								   TIME_PERIOD_ID           VARCHAR2 (250) PATH 'TIME_PERIOD_ID',
+								   PERIOD_NAME              VARCHAR2 (250) PATH 'PERIOD_NAME',
+								   CONSOLIDATION_SET_ID     VARCHAR2 (250) PATH 'CONSOLIDATION_SET_ID',
+								   CONSOLIDATION_SET_NAME   VARCHAR2 (250) PATH 'CONSOLIDATION_SET_NAME'								   			   
+                    )
+            xml_data) -- Aquí se crea el XML de respuesta por nodos, es como formatear.
+        LOOP --En este ciclo es donde puedes insertar los datos que recuperas en tu nueva tabla de APEX.
+            if l_rownum = 0 then
+                Delete XXTOKS_VALES_DESP_T
+                Where 1 = 1
+                    And payroll_id = i.payroll_id
+                    And time_period_id = i.time_period_id
+                    And consolidation_set_id = i.consolidation_set_id;
+                --+
+                Commit;
+            end if;
+            --+
+            Begin
+                insert into xxtoks_vales_desp_t (
+                    no_colaborador,
+                    monto_pago, 
+                    vrfc,
+                    payroll_id, 
+                    payroll_name,
+                    time_period_id, 
+                    period_name,
+                    consolidation_set_id,
+                    consolidation_set_name
+                ) VALUES (
+                    i.no_colaborador,
+                    i.monto_pago,
+                    i.vrfc,
+                    i.payroll_id,
+                    i.payroll_name,
+                    i.time_period_id,
+                    i.period_name,
+                    i.consolidation_set_id,
+                    i.consolidation_set_name
+                );
+            Exception when others then
+                DBMS_OUTPUT.put_line ('Se ha producido una excepción 12.{'||i.NO_COLABORADOR||'} -> '||SQLCODE||' - '||SQLERRM);
+            End;
+            l_rownum := l_rownum + 1;
+
+            IF MOD(l_rownum,50) = 0 THEN COMMIT; END IF;
+        END LOOP;
+        --+ 
+        DBMS_OUTPUT.put_line (p_set_name);
+        DBMS_OUTPUT.put_line (p_periodo);
+        DBMS_OUTPUT.put_line (p_nomina);
+        --+
+        DISPERCION_VDE (p_set_name,p_periodo,p_nomina);
+        --+
+		DBMS_OUTPUT.put_line ('entra111');  
+    EXCEPTION
+        WHEN OTHERS
+        THEN
+            DBMS_OUTPUT.put_line ('Se ha producido una excepción 12.'|| SQLERRM);         
+    END get_person_number_vales; 
+
+
+    procedure DISPERCION_VDE (
+        p_set_name IN VARCHAR2,
+        p_periodo  IN VARCHAR2,
+        p_nomina   IN VARCHAR2
+    ) as
+        --- declaraci?n de Variables
+        v_filei            	     utl_file.file_type;
+        v_ruta             		 VARCHAR2(2000);
+        v_nombre_archivo   		 VARCHAR2(2000);
+        v_buffer           		 VARCHAR2(10000);
+        v_empresa          		 VARCHAR2(100);
+        v_bal_dim_id       		 number ;
+        v_total            		 number := 0;
+        v_rfc              		 VARCHAR2 (50);
+        v_consolidation_set_name VARCHAR2(100);
+        v_payroll_id             number;
+        l_vrfc                   VARCHAR2(250);
+        v_contenido              CLOB;
+        v_contenido1             CLOB;
+        v_datos                  CLOB;
+        v_ac_id                  NUMBER;
+    BEGIN
+        DBMS_OUTPUT.put_line ('OK Creando el archivo');   
+        --  v_nombre_archivo 	:= 'Dispercion_VDE_PRUEBA.txt';
+        v_nombre_archivo 	:= 'Dispercion_VDE_'||NVL(to_char(p_nomina),'TODAS')||'.txt';
+        --v_nombre_archivo 	:= 'Dispercion_VDE_300000015981163.txt';
+        --v_filei 			:= utl_file.fopen('XXTOKS_OUTGOING', v_nombre_archivo,'W');
+        DBMS_OUTPUT.put_line ('OK 1');
+        DBMS_OUTPUT.put_line (v_nombre_archivo);
+        --+
+        Begin
+            SELECT DISTINCT VRFC INTO l_vrfc
+            FROM XXTOKS_VALES_DESP_T
+            WHERE PAYROLL_ID  = NVL(p_nomina,PAYROLL_ID)
+            AND PERIOD_NAME       = p_periodo 
+            AND CONSOLIDATION_SET_ID = p_set_name;
+
+        Exception when others then
+            l_vrfc := null;
+            DBMS_OUTPUT.put_line ('Error al obtener el RFC: '||SQLERRM||' - '||SQLCODE);
+        End;
+        --
+        
+            v_rfc := ('XCLIENTE');
+        imprime ('XCLIENTE'||chr(9)||l_vrfc);
+        --v_buffer 	:= 'XCLIENTE'||chr(9)||l_vrfc;
+        v_contenido := 'XCLIENTE'||chr(9)||l_vrfc || chr(10);
+
+        --utl_file.put_line(v_filei, v_buffer);
+        imprime ('XDISPERSION'||chr(9));
+        --v_buffer 	:= 'XDISPERSION'||chr(9);
+        v_contenido := v_contenido || 'XDISPERSION' ||chr(9)|| chr(10);
+
+        --utl_file.put_line(v_filei, v_buffer);
+        imprime ('XNUMERO'||chr(9)||'XIMPORTE');
+       -- v_buffer 	:= 'XNUMERO'||chr(9)||'XIMPORTE';
+        v_contenido := v_contenido || 'XNUMERO'||chr(9)||'XIMPORTE' || chr(10);
+       -- utl_file.put_line(v_filei, v_buffer);
+        --+
+        DBMS_OUTPUT.put_line ('OK 2');
+        INSERT INTO GRG_VDE_CLOB_DATA (contenido,id,TIPO_DATE) 
+        VALUES(v_contenido,1,'Cabecero Archivo')RETURNING ID INTO v_ac_id;
+         DBMS_OUTPUT.put_line ('inserta en tabla GRG_VDE_CLOB_DATA');
+
+            for l IN ( SELECT NO_COLABORADOR employee_number,
+                               MONTO_PAGO     importe,
+                               'PAGO VALES'    VRFC
+                          FROM XXTOKS_VALES_DESP_T
+                         WHERE PAYROLL_ID  = NVL(p_nomina,PAYROLL_ID)
+                           AND PERIOD_NAME       = p_periodo 
+                           AND CONSOLIDATION_SET_ID = p_set_name
+	        ) loop 
+                --+
+                DBMS_OUTPUT.put_line (l.employee_number);
+                v_total := v_total + l.Importe;
+                DBMS_OUTPUT.put_line (v_total); 
+                imprime (l.employee_number||chr(9)||l.importe);
+                v_buffer := l.employee_number||chr(9)||l.importe;
+
+                v_datos := l.employee_number||chr(9)||l.importe || chr(10) ;
+                --utl_file.put_line(v_filei, v_buffer);
+                --commit;
+                INSERT INTO GRG_VDE_CLOB_DATA (contenido,id,TIPO_DATE) 
+                VALUES(v_datos,1,'datos')RETURNING ID INTO v_ac_id;
+            end loop;
+                
+                --+
+		       imprime ('XSUBTOTAL'||chr(9)||v_total);
+		       --v_buffer := 'XSUBTOTAL'||chr(9)||v_total ;
+               v_contenido1 := v_contenido1 || 'XSUBTOTAL'||chr(9)||v_total;
+                INSERT INTO GRG_VDE_CLOB_DATA (contenido,id,TIPO_DATE) 
+                VALUES(v_contenido1,1,'sumatoria')RETURNING ID INTO v_ac_id;
+
+            apex_json.open_object;
+		    apex_json.write ('STATUS', 20);
+		    apex_json.write ('AC_ID', v_ac_id);
+            --apex_json.write ('datos', v_datos);
+		    apex_json.close_object;
+
+		--utl_file.put_line(v_filei, v_buffer);
+		--utl_file.fclose(v_filei);
+
+        DBMS_OUTPUT.put_line ('No se pudo recuperar algun RFC para dispersion');
+        imprime ('Error --> No se pudo recuperar algun RFC para dispersion'||l_loc||sqlerrm);
+commit;
+    Exception when others then
+       -- utl_file.fclose(v_filei);
+        imprime ('Error'||l_loc||sqlerrm);
+    End dispercion_vde;   
+
+PROCEDURE get_archive_descarga (p_id         IN  NUMBER,
+                                x_contenido  OUT CLOB)
+as
+    v_contenido CLOB;
+BEGIN
+    FOR i IN (SELECT CONTENIDO
+                FROM GRG_VDE_CLOB_DATA
+               WHERE 1=1
+                 AND ID = p_id
+                 ORDER BY TIPO_DATE ASC) LOOP
+
+        v_contenido := v_contenido || i.CONTENIDO ;
+
+    END LOOP;
+  --DBMS_OUTPUT.put_line(v_contenido);
+  x_contenido := v_contenido;
+
+
+EXCEPTION
+        WHEN OTHERS
+        THEN
+            DBMS_OUTPUT.put_line ('Se ha producido una excepción 12.'|| SQLERRM);
+
+END get_archive_descarga;
+  
+end TOKS_PAY_VDE;
