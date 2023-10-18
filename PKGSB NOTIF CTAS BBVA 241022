@@ -1,0 +1,760 @@
+--PKGSB NOTIF CTAS BBVA 241022
+create or replace package GRG_PRUEBA_CORREO as
+
+procedure get_lookup_correos_prueba;
+--+
+procedure GET_EMPLEADOS_PRUEBA;
+--+
+procedure prueba_correo (p_nombre_archivo IN VARCHAR2,
+			             p_tipo_archivo   IN VARCHAR2);
+						 
+end;
+----------------------------------
+----------------------------------
+create or replace package body grg_prueba_correo is
+
+
+	procedure "GET_LOOKUP_CORREOS_PRUEBA"
+	IS 
+	 
+	    l_user_name          VARCHAR2(100); 
+        l_password           VARCHAR2(100); 
+        l_ws_url             VARCHAR2(500); 
+        l_ws_action          VARCHAR2(500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; 
+        l_ws_response_clob   CLOB; 
+        l_ws_envelope        CLOB; 
+        l_ws_resp_xml        XMLTYPE; 
+        l_ws_resp_xml2       XMLTYPE; 
+        v_cdata              CLOB; 
+        l_clob               CLOB; 
+        v_val                PLS_INTEGER; 
+		-- 
+		v_error              VARCHAR2(500); 
+        v_contador_8         NUMBER;
+    BEGIN 
+        v_contador_8 := 1;
+        l_ws_envelope :=    '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+                                <soap:Body> 
+                                    <pub:runReport> 
+                                        <pub:reportRequest> 
+                                            <pub:parameterNameValues> 
+													 
+ 
+                                            </pub:parameterNameValues> 
+                                            <pub:reportAbsolutePath>/Reportes Custom/PAY/Respuestas BBVA PRU/GRG_CORREOS_PRUEBA_REP.xdo</pub:reportAbsolutePath> 
+                                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+                                        </pub:reportRequest> 
+                                    </pub:runReport> 
+                                </soap:Body> 
+                            </soap:Envelope>';    
+							 
+        --------------------------------------------------- 
+        -------------------TOKEN--------------------------- 
+        		GRG_COMMON_CONNECTIONS_ATI_PKG.get_otbi_report( 
+                    l_ws_envelope    => l_ws_envelope, 
+                    l_user_token     => null,  --p_user_token
+                    x_ws_response    => l_clob,
+					p_instance_name  => 'DEV1'
+        			); 
+        ------------------------------------------------- 
+        ------------------------------------------------- 
+        l_ws_resp_xml2 := xmltype.createxml (l_clob);  
+ 
+        BEGIN 
+
+		DELETE FROM GRG_MAIL_LISTA_RESP;
+ 
+			FOR i  
+					IN (SELECT  xml_data.CORREO, 
+								xml_data.FLAG, 
+								xml_data.UNIDAD
+						FROM XMLTABLE (
+										'/DATA_DS/G_1'  
+										PASSING xmltype.createxml(l_clob) 
+										COLUMNS CORREO VARCHAR2(250) PATH 'CORREO', 
+										FLAG      	   VARCHAR2(250) PATH 'FLAG', 
+										UNIDAD         VARCHAR2(250) PATH 'UNIDAD'
+									  )  
+						xml_data )  
+					LOOP 
+		 
+						INSERT INTO GRG_MAIL_LISTA_RESP(CORREO_ELECTRONICO,
+														FLAG, 
+														UNIDAD) VALUES (i.CORREO, 
+																	    i.FLAG, 
+																		i.UNIDAD); 						 
+	 
+					END LOOP;                                           
+				COMMIT;
+				
+		EXCEPTION
+		    WHEN OTHERS THEN 
+				v_error := SQLERRM;
+				   
+				INSERT INTO GRG_CALC_EMP_ERROR(PROCESS_ID,
+												ERROR,
+												FECHA,
+												CREATED_BY,
+												CREATION_DATE,
+												LAST_UPDATED_BY,
+												LAST_UPDATE_DATE) VALUES ( null,
+																		   'Ocurrio un error en el procedimiento get_empleados_rp:  ' ||v_error,
+																		   SYSDATE - 5/24,
+																		   '-1',
+																		   SYSDATE - 5/24,
+																		   '-1',
+																		   SYSDATE - 5/24);	
+	END;
+	END get_lookup_correos_prueba;
+
+--------------------------------------------------
+--+
+--------------------------------------------------
+
+
+
+	procedure "GET_EMPLEADOS_PRUEBA"
+	IS 
+	 
+	    l_user_name          VARCHAR2(100); 
+        l_password           VARCHAR2(100); 
+        l_ws_url             VARCHAR2(500); 
+        l_ws_action          VARCHAR2(500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; 
+        l_ws_response_clob   CLOB; 
+        l_ws_envelope        CLOB; 
+        l_ws_resp_xml        XMLTYPE; 
+        l_ws_resp_xml2       XMLTYPE; 
+        v_cdata              CLOB; 
+        l_clob               CLOB; 
+        v_val                PLS_INTEGER; 
+		-- 
+		v_error              VARCHAR2(500); 
+        v_contador_8         NUMBER;
+    BEGIN 
+        v_contador_8 := 1;
+        l_ws_envelope :=    '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+                                <soap:Body> 
+                                    <pub:runReport> 
+                                        <pub:reportRequest> 
+                                            <pub:parameterNameValues> 
+													 
+ 
+                                            </pub:parameterNameValues> 
+                                            <pub:reportAbsolutePath>/Reportes Custom/PAY/Respuestas BBVA PRU/GRG_EMPLEADOS_PRUEBA_REP.xdo</pub:reportAbsolutePath> 
+                                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+                                        </pub:reportRequest> 
+                                    </pub:runReport> 
+                                </soap:Body> 
+                            </soap:Envelope>';    
+							 
+        --------------------------------------------------- 
+        -------------------TOKEN--------------------------- 
+        		GRG_COMMON_CONNECTIONS_ATI_PKG.get_otbi_report( 
+                    l_ws_envelope    => l_ws_envelope, 
+                    l_user_token     => null,  --p_user_token
+                    x_ws_response    => l_clob,
+					p_instance_name  => 'DEV1'
+        			); 
+        ------------------------------------------------- 
+        ------------------------------------------------- 
+        l_ws_resp_xml2 := xmltype.createxml (l_clob);  
+ 
+        BEGIN 
+
+		DELETE FROM GRG_EMP_PRUEBA;
+ 
+			FOR i  
+
+					IN (SELECT  xml_data.PERSON_NUMBER, 
+								xml_data.PERSON_ID,
+								xml_data.ASSINGMENT_NUMBER,
+								xml_data.FULL_NAME,
+								xml_data.EMPRESA,
+								xml_data.UNIDAD,
+								xml_data.LEGAL_ENTITY_ID,
+								xml_data.ID_UNIDAD,
+								xml_data.CODIGO_UNIDAD
+							FROM XMLTABLE ('/DATA_DS/G_1'  
+								PASSING xmltype.createxml(l_clob) 
+								COLUMNS PERSON_NUMBER       VARCHAR2(250) PATH 'PERSON_NUMBER', 
+										PERSON_ID      	 	VARCHAR2(250) PATH 'PERSON_ID', 
+										ASSINGMENT_NUMBER	VARCHAR2(250) PATH 'ASSINGMENT_NUMBER',
+										FULL_NAME           VARCHAR2(250) PATH 'FULL_NAME',
+										EMPRESA         	VARCHAR2(250) PATH 'EMPRESA',
+										UNIDAD         		VARCHAR2(250) PATH 'UNIDAD',
+										LEGAL_ENTITY_ID		VARCHAR2(250) PATH 'LEGAL_ENTITY_ID',
+										ID_UNIDAD			VARCHAR2(250) PATH 'ID_UNIDAD',
+										CODIGO_UNIDAD		VARCHAR2(250) PATH 'CODIGO_UNIDAD'
+										  )  
+								xml_data )  
+					LOOP 
+ 
+					INSERT INTO GRG_EMP_PRUEBA(	PERSON_NUMBER,
+												PERSON_ID,
+												ASSINGMENT_NUMBER,
+												FULL_NAME,
+												EMPRESA,
+												UNIDAD,
+												LEGAL_ENTITY_ID,
+												ID_UNIDAD,
+												CODIGO_UNIDAD )	VALUES (	i.PERSON_NUMBER, 
+																			i.PERSON_ID,
+																			i.ASSINGMENT_NUMBER,
+																			i.FULL_NAME,
+																			i.EMPRESA,
+																			i.UNIDAD,
+																			i.LEGAL_ENTITY_ID,
+																			i.ID_UNIDAD,
+																			i.CODIGO_UNIDAD); 				 
+          	 
+					END LOOP;                                           
+				COMMIT;
+				
+		EXCEPTION
+		    WHEN OTHERS THEN 
+				v_error := SQLERRM;
+				   
+				INSERT INTO GRG_CALC_EMP_ERROR(PROCESS_ID,
+												ERROR,
+												FECHA,
+												CREATED_BY,
+												CREATION_DATE,
+												LAST_UPDATED_BY,
+												LAST_UPDATE_DATE) VALUES ( null,
+																		   'Ocurrio un error en el procedimiento get_empleados_rp:  ' ||v_error,
+																		   SYSDATE - 5/24,
+																		   '-1',
+																		   SYSDATE - 5/24,
+																		   '-1',
+																		   SYSDATE - 5/24);	
+	END;
+	END GET_EMPLEADOS_PRUEBA;
+
+
+--------------------------------------------------
+--+
+--------------------------------------------------
+
+
+
+	PROCEDURE  prueba_correo (p_nombre_archivo IN VARCHAR2,
+			                  p_tipo_archivo   IN VARCHAR2) 
+							  IS
+									  
+				v_body_html  VARCHAR2(4000);
+				v_user_name  VARCHAR2(200);
+				v_from       VARCHAR2(250)  := 'no-reply@toks.com.mx';
+				v_subject    VARCHAR2(300);             --Asunto
+				v_subject2   VARCHAR2(300) 	:= 'TARJETA YA ESTA ASIGNADA';
+				v_mailbody   VARCHAR2(4000);            			  --Cuerpo de correo
+				v_mail_body  VARCHAR2(4000) := '';
+				v_estafeta   VARCHAR2(250);			  --nombre empleado
+				v_correo	 VARCHAR2(250);
+				v_nombre	 VARCHAR2(250);
+				v_correo2	 VARCHAR2(250) 	:= 'luisroberto181@gmail.com,alancontreras199720@gmail.com';--'luisroberto.estrada@4ce.com.mx';
+			    --+
+				v_lines_arr apex_t_varchar2;
+				v_tipo_respuesta VARCHAR2(250);
+				l_tipo_archivo   VARCHAR2(250);
+				p_archivo        CLOB;
+				l_curp           VARCHAR2(250);
+				v_unidad         VARCHAR2(250);
+				l_numero_tarjeta VARCHAR2(500);
+				acum_numero_tarjeta VARCHAR2(500);
+				 
+				
+			CURSOR c_lista_respuestas IS
+
+			SELECT --xacct.person_number,	
+                    xacct.full_name,
+                    gmlr.correo_electronico
+								
+            FROM xxgrg_crea_ctasban_cortas_t xacct,
+                 grg_mail_lista_resp	   gmlr,
+                 grg_emp_prueba			   gep
+            WHERE 1=1
+            AND  xacct.ASSINGMENT_NUMBER = gep.ASSINGMENT_NUMBER
+            AND  gep.CODIGO_UNIDAD       =gmlr.UNIDAD
+            AND xacct.national_identifier_number = l_curp;
+								
+		
+			
+			
+			BEGIN
+			
+				SELECT lineas_archivo,
+				       tipo_archivo
+                INTO   p_archivo, 
+				       l_tipo_archivo
+                FROM archivos_cuentas_cortas
+                WHERE 1 =1 
+                AND nombre_archivo = p_nombre_archivo;
+				
+				
+				--+
+				DELETE FROM GRG_TIPO_RESPUESTAS_BBVA;
+				--+
+				v_lines_arr := apex_string.split (p_archivo);
+    
+				FOR i IN 2 .. v_lines_arr.COUNT  LOOP
+            
+					IF SUBSTR (v_lines_arr (i), 1, 2) = '02' THEN
+                    
+						IF  l_tipo_archivo = 'CORTAS' THEN
+						    
+                            v_tipo_respuesta      := TRIM (REPLACE (SUBSTR (v_lines_arr (i), 248, 50), ' ', ''));
+							v_subject             := TRIM (SUBSTR (v_lines_arr (i), 248, 50));
+							l_curp                := TRIM (SUBSTR (v_lines_arr (i), 3, 18));
+							l_numero_tarjeta	  := TRIM (SUBSTR (v_lines_arr (i), 85, 16));
+
+							
+
+							INSERT INTO GRG_TIPO_RESPUESTAS_BBVA (
+							                                       NOMBRE,
+																   NUMERO_TARJETA,
+																   TIPO_RESPUESTA)VALUES(v_nombre,
+																                         l_numero_tarjeta,
+																						 v_subject);
+
+							  	IF NOT c_lista_respuestas%ISOPEN THEN
+          						OPEN c_lista_respuestas;
+         						--DBMS_OUTPUT.PUT_LINE('Cursor Abierto');
+      							END IF;
+								LOOP 
+								FETCH c_lista_respuestas
+								INTO  v_nombre,
+									  v_correo;
+								EXIT WHEN c_lista_respuestas%NOTFOUND;
+								
+								DBMS_OUTPUT.PUT_LINE ('FETCH #: '			||c_lista_respuestas%ROWCOUNT);
+								DBMS_OUTPUT.PUT_LINE ('Nombre: '  			||v_nombre);
+								DBMS_OUTPUT.PUT_LINE ('Correo: '  			||v_correo);
+								DBMS_OUTPUT.PUT_LINE ('TIPO DE RESPUESTA: '	||v_tipo_respuesta);
+								DBMS_OUTPUT.PUT_LINE ('CURP: ' 				||l_curp);
+								
+								DBMS_OUTPUT.PUT_LINE('-----------------------------------------');
+
+								END LOOP;
+								IF c_lista_respuestas%ISOPEN THEN
+          						CLOSE c_lista_respuestas;
+          						--DBMS_OUTPUT.PUT_LINE('Cursor Cerrado');
+								END IF;
+							
+							END IF;
+				    	END IF;
+						
+				IF v_tipo_respuesta lIKE '%TARJETANOASIGNADAAESTAEMPRESA%' THEN
+			
+					v_body_html := '<html>'||
+										'<head>'||
+										'<style type="text/css">'||
+								' .container .main .texto-img{ display: flex; } ' ||
+								' .container .main .texto-img .thumb {  width: 10%;  }' ||
+								' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+								' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+								' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+								' </style> ' ||
+								'</head>'||
+									'<body>'||
+										' <div class="container"> ' ||
+											'<div class="main"> ' ||
+												'<div class="msj-usuario"> '||
+													--'<h4 class="titulo"> <b>Estimado </b> '|| v_user_name ||'</h4>'||
+												
+													'<p class="msj">'|| 'Solicitar al área de Reclutamiento una tarjeta nueva que corresponda a la empresa actual del colaborador'
+													||'</p>'||
+												
+												
+											'</div>'||
+											'<div class="msj-usuario"> '||
+												--'<h4 class="titulo"> <b>Enviar correo a:  </b> '|| v_correo ||'</h4>'||
+											'</div>'||
+											'<div class="texto-img">'||
+											'<div class="txtImagen">'||
+													'<b>Atentamente <br/>'||
+													'Grupo Restaurantero Gigante</b> <br/><br/>'||
+											'</div>'||
+											'<div class="thumb">' ||
+										  
+												'<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+											'</div>'||
+										'</div>'||
+										'</div>'||
+									'</div>'||
+									'</body>'||
+								'</html>';
+								
+				apex_mail.send(	p_to        =>    v_correo,
+								p_from      =>    v_from,
+								p_subj      =>    v_subject,
+								p_body      =>    v_mail_body,
+								p_body_html =>    v_body_html);
+
+--------------------------------------------
+--+
+--------------------------------------------			
+								 
+				ELSIF v_tipo_respuesta lIKE '%TARJETAYAESTAASIGNADA%' THEN
+			
+				acum_numero_tarjeta := acum_numero_tarjeta||CHR(10)||l_numero_tarjeta;
+			
+--------------------------------------------
+--+
+--------------------------------------------
+		
+				ELSIF v_tipo_respuesta 	lIKE  '%VALIDARCURPYPOSTERIORMENTEENVIARLO%' 
+				OR v_tipo_respuesta 	lIKE  '%LACURPSEENCUENTRAINACTIVA%' THEN
+			
+					v_body_html := '<html>'||
+								   '<head>'||
+										'<style type="text/css">'||
+								' .container .main .texto-img{ display: flex; } ' ||
+								' .container .main .texto-img .thumb {  width: 10%;  }' ||
+								' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+								' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+								' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+								   ' </style> ' ||
+								  '</head>'||
+									'<body>'||
+									   ' <div class="container"> ' ||
+											 '<div class="main"> ' ||
+												'<div class="msj-usuario"> '||
+													--'<h4 class="titulo"> <b>Estimado </b> '|| v_user_name ||'</h4>'||
+													
+													'<p class="msj">'|| 'La solicitud de cuenta del colaborador ' ||v_nombre|| 
+													', no pudo ser asignada a la tarjeta que se le entrego debido a que se requiere validar CURP, 
+													solicitamos su valioso apoyo para enviar documento oficial de la CURP del colaborador para cotejo 
+													y revisión en sistema al correo gpo_nomina@toks.com.mx'
+													||'</p>'||
+													
+													
+											  '</div>'||
+											  '<div class="msj-usuario"> '||
+													--'<h4 class="titulo"> <b>Enviar correo a:  </b> '|| v_correo ||'</h4>'||
+													
+											  '</div>'||
+										'<div class="texto-img">'||
+											   '<div class="txtImagen">'||
+													'<b>Atentamente <br/>'||
+											   'Grupo Restaurantero Gigante</b> <br/><br/>'||
+											  '</div>'||
+											  '<div class="thumb">' ||
+											  
+												   '<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+											  '</div>'||
+										'</div>'||
+										'</div>'||
+									  '</div>'||
+									'</body>'||
+								 '</html>';
+				apex_mail.send(	p_to        =>    v_correo,
+								p_from      =>    v_from,
+								p_subj      =>    v_subject,
+								p_body      =>    v_mail_body,
+								p_body_html =>    v_body_html );
+					
+--------------------------------------------
+--+
+--------------------------------------------
+
+				ELSIF v_tipo_respuesta lIKE  '%CAMPOCELULARDUPLICADOCONOTROREGISTRO%' THEN
+				
+					v_body_html := '<html>'||
+									   '<head>'||
+											'<style type="text/css">'||
+									' .container .main .texto-img{ display: flex; } ' ||
+									' .container .main .texto-img .thumb {  width: 10%;  }' ||
+									' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+									' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+									' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+									   ' </style> ' ||
+									  '</head>'||
+										'<body>'||
+										   ' <div class="container"> ' ||
+												 '<div class="main"> ' ||
+													'<div class="msj-usuario"> '||
+														--'<h4 class="titulo"> <b>Estimado </b> '|| v_user_name ||'</h4>'||
+														
+														'<p class="msj">'|| 'La solicitud de cuenta del colaborador '||v_nombre||', no pudo ser asignada a 
+														la tarjeta que se le entrego al ingresar debido a que el número telefónico que proporcionó el colaborador 
+														corresponde a otro colaborador, por favor solicitarle un número celular propio y enviarlo al correo 
+														gpo_nomina@toks.com.mx, para proceder con la corrección.'
+														||'</p>'||
+														
+														
+												  '</div>'||
+												  '<div class="msj-usuario"> '||
+														--'<h4 class="titulo"> <b>Enviar correo a:  </b> '|| v_correo ||'</h4>'||
+														
+												  '</div>'||
+											'<div class="texto-img">'||
+												   '<div class="txtImagen">'||
+														'<b>Atentamente <br/>'||
+												   'Grupo Restaurantero Gigante</b> <br/><br/>'||
+												  '</div>'||
+												  '<div class="thumb">' ||
+												  
+													   '<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+												  '</div>'||
+											'</div>'||
+											'</div>'||
+										  '</div>'||
+										'</body>'||
+									 '</html>';
+				apex_mail.send(	p_to        =>    v_correo,
+								p_from      =>    v_from,
+								p_subj      =>    v_subject,
+								p_body      =>    v_mail_body,
+								p_body_html =>    v_body_html);
+									
+		--------------------------------------------
+--+
+--------------------------------------------				
+				
+				ELSIF v_tipo_respuesta lIKE  '%NUMERODECELULARINVALIDO%' THEN
+			
+					v_body_html := '<html>'||
+									   '<head>'||
+											'<style type="text/css">'||
+									' .container .main .texto-img{ display: flex; } ' ||
+									' .container .main .texto-img .thumb {  width: 10%;  }' ||
+									' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+									' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+									' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+									   ' </style> ' ||
+									  '</head>'||
+										'<body>'||
+										   ' <div class="container"> ' ||
+												 '<div class="main"> ' ||
+													'<div class="msj-usuario"> '||
+														--'<h4 class="titulo"> <b>Estimado </b> '|| v_user_name ||'</h4>'||
+														
+														'<p class="msj">'|| 'La solicitud de cuenta BBVA del colaborador '||v_nombre|| 
+														', no pudo ser asignada a la tarjeta que se le entrego al ingresar debido a que el 
+														número telefónico que proporcionó el colaborador no corresponde a un equipo celular movil, 
+														solicitar al colaborador un número de celular movil y enviarlo al correo 
+														gpo_nomina@toks.com.mx, para proceder con la corrección.'
+														||'</p>'||
+														
+														
+												  '</div>'||
+												  '<div class="msj-usuario"> '||
+														--'<h4 class="titulo"> <b>Enviar correo a:  </b> '|| v_correo ||'</h4>'||
+														
+												  '</div>'||
+											'<div class="texto-img">'||
+												   '<div class="txtImagen">'||
+														'<b>Atentamente <br/>'||
+												   'Grupo Restaurantero Gigante</b> <br/><br/>'||
+												  '</div>'||
+												  '<div class="thumb">' ||
+												  
+													   '<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+												  '</div>'||
+											'</div>'||
+											'</div>'||
+										  '</div>'||
+										'</body>'||
+									 '</html>';
+			
+			
+				apex_mail.send(	p_to        =>    v_correo,
+								p_from      =>    v_from,
+								p_subj      =>    v_subject,
+								p_body      =>    v_mail_body,
+								p_body_html =>    v_body_html);
+
+--------------------------------------------
+--+
+--------------------------------------------				
+				
+				ELSIF v_tipo_respuesta lIKE  '%NOEXISTETARJETAENLATABLATPAN%' THEN
+			
+					v_body_html := '<html>'||
+									   '<head>'||
+											'<style type="text/css">'||
+									' .container .main .texto-img{ display: flex; } ' ||
+									' .container .main .texto-img .thumb {  width: 10%;  }' ||
+									' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+									' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+									' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+									   ' </style> ' ||
+									  '</head>'||
+										'<body>'||
+										   ' <div class="container"> ' ||
+												 '<div class="main"> ' ||
+													'<div class="msj-usuario"> '||
+														--'<h4 class="titulo"> <b>Estimado </b> '|| v_user_name ||'</h4>'||
+														
+														'<p class="msj">'|| 'La solicitud de cuenta BBVA del colaborador ' ||v_nombre||
+														', no pudo ser asignada a la tarjeta que se le entrego al ingresar debido a que 
+														ingresó la tarjeta  al Cajerto Automatico antes de aplicar el deposito de nómina, 
+														por favor solicitar al Reclutador que lo contrato le otorgue un nuevo plástico y 
+														enviar el nuevo número de tarjeta a gpo_nomina@toks.com.mx para proceder con la corrección.'
+														||'</p>'||
+
+														'<p class="msj">'|| 'Indicar al colaborador cuando le otorguen la nueva tarjeta que espere 
+														a que se realice el deposito de nómina, el cual se puede confirmar cuando en su recibo de 
+														nómina en la parte inferior derecha en el campo "Deposito en Cuenta de Banco"  se refleje un 
+														número de 10 dígitos el cual corresponde a la cuenta que se asigno a la tarjeta.'
+														||'</p>'||
+														
+														
+												  '</div>'||
+												  '<div class="msj-usuario"> '||
+														--'<h4 class="titulo"> <b>Enviar correo a:  </b> '|| v_correo ||'</h4>'||
+														
+												  '</div>'||
+											'<div class="texto-img">'||
+												   '<div class="txtImagen">'||
+														'<b>Atentamente <br/>'||
+												   'Grupo Restaurantero Gigante</b> <br/><br/>'||
+												  '</div>'||
+												  '<div class="thumb">' ||
+												  
+													   '<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+												  '</div>'||
+											'</div>'||
+											'</div>'||
+										  '</div>'||
+										'</body>'||
+									 '</html>';
+			
+			
+				apex_mail.send(	p_to        =>    v_correo,
+								p_from      =>    v_from,
+								p_subj      =>    v_subject,
+								p_body      =>    v_mail_body,
+								p_body_html =>    v_body_html);
+			
+--------------------------------------------
+--+
+--------------------------------------------		
+			
+				ELSIF v_tipo_respuesta lIKE  '%CLIENTECONCUENTAACTIVA%' 
+				OR v_tipo_respuesta lIKE  '%CLIENTECONCTABBVA,ASISTIRA%'  
+				OR v_tipo_respuesta LIKE  '%CLIENTECONCUENTAYPLASTICOEXISTENTE%' 
+				OR v_tipo_respuesta lIKE  '%CLIENTEESPECIAL%' 
+				THEN
+				
+			
+					v_body_html := '<html>'||
+									   '<head>'||
+											'<style type="text/css">'||
+									' .container .main .texto-img{ display: flex; } ' ||
+									' .container .main .texto-img .thumb {  width: 10%;  }' ||
+									' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+									' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+									' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+									   ' </style> ' ||
+									  '</head>'||
+										'<body>'||
+										   ' <div class="container"> ' ||
+												 '<div class="main"> ' ||
+													'<div class="msj-usuario"> '||
+														--'<h4 class="titulo"> <b>Estimado </b> '|| v_user_name ||'</h4>'||
+														
+														'<p class="msj">'|| 'La respuesta por parte de BBVA al intentar asignar cuenta al colaborador '||v_nombre|| ' es que ya tiene una cuenta BBVA,  indicar al colabrador(a) para que se presente en 
+														cualquier sucursal BBVA con su Identificación Oficial Vigente y pida le proporcionen un comprobante del banco con los datos de su cuenta. la información que se requere es: cuenta (10 dígitos), 
+														CLABE Interbancaria (18 dígitos) y Número de tarjeta (16 dígitos).'
+														||'</p>'||
+
+														'<p class="msj">'|| ' Y enviar  los siguientes documentos escaneados al correo a gpo_nomina@toks.com.mx y vía valija en original al área de nómina en Centro de apoyo:'  
+														||'</p>'||
+														
+														'<p class="msj">'|| '1.	Llenar el Formato de Consentimiento para deposito en cuenta BBVA (adjunto formato, por favor actualizar fecha) debidamente requisitado y firmado por el/la colaborador(a).'  
+														||'</p>'||
+														
+														'<p class="msj">'|| '2.	Foto de Estado de Cuenta o comprobante por parte del banco en donde se muestre su nombre, número de cuenta y CLABE Interbancaria.'  
+														||'</p>'||
+
+														'<p class="msj">'|| '3.	Foto de los 16 dígitos de la tarjeta que tiene asignada a esa cuenta.'  
+														||'</p>'||
+														
+												  '</div>'||
+												  '<div class="msj-usuario"> '||
+														--'<h4 class="titulo"> <b>Enviar correo a:  </b> '|| v_correo ||'</h4>'||
+														
+												  '</div>'||
+											'<div class="texto-img">'||
+												   '<div class="txtImagen">'||
+														'<b>Atentamente <br/>'||
+												   'Grupo Restaurantero Gigante</b> <br/><br/>'||
+												  '</div>'||
+												  '<div class="thumb">' ||
+												  
+													   '<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+												  '</div>'||
+											'</div>'||
+											'</div>'||
+										  '</div>'||
+										'</body>'||
+									 '</html>';
+				apex_mail.send(	p_to        =>    v_correo,
+								p_from      =>    v_from,
+								p_subj      =>    v_subject,
+								p_body      =>    v_mail_body,
+								p_body_html =>    v_body_html);
+								
+--------------------------------------------
+--+
+--------------------------------------------			
+			
+				END IF;
+		    	END LOOP;
+					
+				IF LENGTH(TRIM(acum_numero_tarjeta||chr(10))) >  2 THEN
+
+                     v_body_html := '<html>'||
+						   '<head>'||
+								'<style type="text/css">'||
+						' .container .main .texto-img{ display: flex; } ' ||
+						' .container .main .texto-img .thumb {  width: 10%;  }' ||
+						' .container .main .texto-img .thumb img{ width: 100%;  } ' || 
+						' .container .main .texto-img .txtImagen { width: 90%; } ' ||
+							' .container .main .texto-img .txtImagen {  width: 100%;  margin-top: 50px;  margin-left: 20px;  }'||
+							   ' </style> ' ||
+							  '</head>'||
+								'<body>'||
+								   ' <div class="container"> ' ||
+										 '<div class="main"> ' ||
+											'<div class="msj-usuario"> '||
+												--'<h4 class="titulo"> <b>Estimado </b> '|| v_user_name ||'</h4>'||
+												
+												'<p class="msj">'|| 'Mandar correo con el listado de tarjetas ya asignadas a Gpo_Nomina@toks.com.mx'
+												||'</p>'||'Listado de tarjetas ya asignadas: '||acum_numero_tarjeta||chr(10)||'<br>'||
+												
+												
+										  '</div>'||
+										  '<div class="msj-usuario"> '||
+												--'<h4 class="titulo"> <b>Enviar correo a:  </b> '|| v_correo ||'</h4>'||
+												
+										  '</div>'||
+									'<div class="texto-img">'||
+										   '<div class="txtImagen">'||
+												'<b>Atentamente <br/>'||
+										   'Grupo Restaurantero Gigante</b> <br/><br/>'||
+										  '</div>'||
+										  '<div class="thumb">' ||
+										  
+											   '<img src = "https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/092018/untitled-3_29.png?xNdj_hOF1ZWKZBrLuGMKGVXrGZQx_iar&itok=uEjElo00"/>'||
+										  '</div>'||
+									'</div>'||
+									'</div>'||
+								  '</div>'||
+								'</body>'||
+							 '</html>';
+			
+			
+				apex_mail.send(	p_to    	=>    v_correo2,
+								p_from      =>    v_from,
+								p_subj      =>    v_subject2,
+								p_body      =>    v_mail_body,
+								p_body_html =>    v_body_html);
+							
+
+
+
+                END IF;
+	END prueba_correo;
+end grg_prueba_correo;
