@@ -1,0 +1,152 @@
+--ALTA_CTAS_SMDP
+SELECT pap.business_group_id,
+	   paypf.payroll_id,
+	   paypf.payroll_name									            				payroll_name,
+	   pap.person_number,                                          
+       convert(REPLACE(UPPER(ppn.first_name),'Ñ','N'),'us7ascii','al32utf8')            first_name,
+       convert(REPLACE(UPPER(ppn.last_name),'Ñ','N'),'us7ascii','al32utf8')             last_name,
+       convert(REPLACE(UPPER(ppn.previous_last_name),'Ñ','N'),'us7ascii','al32utf8')    previous_last_name,
+	   to_char(pp.date_of_birth, 'yyyy-mm-dd')                     						date_of_birth,
+	   TRIM(pni.national_identifier_number) 											national_identifier_number,                             
+	   ppl.sex,                                                    
+	   DECODE (ppn.legislation_code, 'MX', 'M',ppn.legislation_code)               		nationality,
+	   UPPER(pp.town_of_birth)             												town_of_birth,
+	   'EPL'                                                       						ocupation,
+	   to_char(NVL(pps.adjusted_svc_date, pap.start_date), 'yyyy-mm-dd')            	start_date, -------------*********************** ------------------
+	   convert(REPLACE(upper(paf.address_line_1),'Ñ','N'),'us7ascii','al32utf8')    	street, --y num
+	   convert(REPLACE(upper(paf.address_line_2),'Ñ','N'),'us7ascii','al32utf8')    	colonia,
+	   paf.postal_code,                                            
+	   convert(REPLACE(upper(paf.region_2),'Ñ','N'),'us7ascii','al32utf8')          	poblacion,
+	   convert(REPLACE(upper(paf.town_or_city),'Ñ','N'),'us7ascii','al32utf8')      	estado,
+--	   upper(convert(paf.region_1,'us7ascii','al32utf8'))   country_of_birth,
+	   -- 
+	   (SELECT translate(upper(substr(fnd_lvt.meaning,1,3)),'ÁÉÍÓÚ','AEIOU')
+          FROM fnd_lookup_values_tl     fnd_lvt,
+               fnd_lookup_values_b      fnd_lvb
+         WHERE 1 = 1 
+           AND fnd_lvt.lookup_type         = fnd_lvb.lookup_type
+           AND fnd_lvt.lookup_type         = 'JEES_EURO_COUNTRY_CODES'
+           AND fnd_lvt.LANGUAGE            = sys_context('USERENV','LANG')
+		   AND fnd_lvt.lookup_code         = paf.country
+           AND fnd_lvt.lookup_code         = fnd_lvb.lookup_code
+           AND fnd_lvt.view_application_id = fnd_lvb.view_application_id
+           AND fnd_lvt.set_id              = fnd_lvb.set_id ) country_of_birth,
+	   -- 
+	   substr(REGEXP_REPLACE( lpad(pph.phone_number,10,DECODE(pph.AREA_CODE,NULL,'0',pph.AREA_CODE )),'[^0-9]'),-10)   tel_casa,
+	   '5521225700'                                           tel_oficina,
+       EXTI.PEI_INFORMATION1      				              cuenta, -- cuenta o numero de tarjeta
+	   '3465'                                                 sucursal
+	   --
+,pea_per.email_address                                      correo_per
+,reg.organization_code                                      rfc_cia
+  FROM --per_person_secured_list_v     pap
+       per_all_people_f		         pap
+	   ,per_person_names_f 		  	 ppn
+	   ,per_persons 				 pp
+	   ,per_national_identifiers 	 pni
+	   ,per_addresses_f 			 paf
+	   ,per_person_addr_usages_f 	 ppa
+	   ,per_people_legislative_f 	 ppl
+	   ,per_all_assignments_m 	     paaf
+	   --,per_all_assignments_f        paaf
+	   ,per_periods_of_service       pps
+       ,pay_pay_relationships_dn     ppr
+	   --+
+	   ,pay_rel_groups_dn            asg
+	   --
+	   --,pay_payroll_secured_list_v   paypf
+	   ,pay_all_payrolls_f			 paypf
+	   ,pay_assigned_payrolls_dn 	 paypd
+	   ,pay_payroll_terms 			 ppt
+	   ,hr_all_organization_units_f  reg
+	   --
+	   ,PER_PEOPLE_EXTRA_INFO_F  	 EXTI
+	   ,per_phones 	 				 pph
+	   ,per_email_addresses 		 pea_per
+	   --,pay_personal_payment_methods_f pppm
+ WHERE 1 = 1
+   AND pap.person_id                  = ppn.person_id
+   AND EXTI.person_id                 = pap.person_id
+   AND EXTI.INFORMATION_TYPE 		  = 'NumTarjeta'
+   AND EXTI.PEI_INFORMATION_CATEGORY  = 'NumTarjeta'
+  -- AND pap.person_number  IN ('162279',
+   AND pp.person_id                   = pap.person_id
+   AND ppn.name_type                  = 'MX'
+   AND EXTI.PEI_INFORMATION1 LIKE '415231%' -- numero_tarjeta
+   AND ppr.person_id                  = pap.person_id
+   AND paaf.primary_flag              = 'Y'
+   AND paaf.assignment_status_type    = 'ACTIVE'
+   AND paaf.system_person_type        = 'EMP'
+   AND paaf.person_id                 = pap.person_id
+   AND paaf.effective_end_date 	      >= SYSDATE
+   AND (SELECT MAX(paaf1.effective_start_date) 
+		from per_all_assignments_f paaf1
+		where 1 = 1 
+		and paaf1.person_id = paaf.person_id) BETWEEN paaf.effective_start_date and paaf.effective_end_date
+   AND ( NOT EXISTS(
+					SELECT 1
+					FROM pay_personal_payment_methods_f pppm,
+						 PAY_ORG_PAY_METHODS_F          popmf
+					WHERE 1 = 1
+					AND popmf.org_payment_method_id   = pppm.org_payment_method_id
+				    AND pppm.payroll_relationship_id  = ppr.payroll_relationship_id
+				    AND TRUNC(SYSDATE) BETWEEN pppm.effective_start_date 	AND pppm.effective_end_date
+				    AND TRUNC(SYSDATE) BETWEEN popmf.effective_start_date   AND popmf.effective_end_date
+				    AND UPPER(popmf.base_org_pay_method_name) LIKE '%EFT%')
+	AND  
+	 EXISTS(
+					SELECT 1
+					FROM pay_personal_payment_methods_f   pppm,
+						 PAY_ORG_PAY_METHODS_F            popmf
+					WHERE 1 = 1
+					AND popmf.org_payment_method_id   = pppm.org_payment_method_id
+				    AND pppm.payroll_relationship_id  = ppr.payroll_relationship_id
+				    AND TRUNC(SYSDATE) BETWEEN pppm.effective_start_date 	AND pppm.effective_end_date
+				    AND TRUNC(SYSDATE) BETWEEN popmf.effective_start_date   AND popmf.effective_end_date
+				    AND UPPER(popmf.base_org_pay_method_name) LIKE '%CHEQUE%')
+	)
+   AND pap.person_id                 = ppa.person_id
+   AND ppa.address_id                = paf.address_id(+)
+   AND pap.person_id                 = pni.person_id
+   AND pni.national_identifier_type  = 'CURP'
+   AND pap.person_id                 = ppl.person_id
+   AND paaf.primary_flag             = 'Y'
+   AND paaf.assignment_status_type   = 'ACTIVE'
+   AND paaf.system_person_type       = 'EMP'
+   AND paaf.person_id                = pap.person_id
+   AND pps.period_of_service_id 	 = paaf.period_of_service_id
+   AND pps.actual_termination_date is null
+   --+
+  AND paypf.payroll_id               = NVL(:p_payroll_id, paypf.payroll_id)
+  AND paypf.payroll_id            	 = paypd.payroll_id
+  AND paypd.payroll_term_id       	 = ppt.payroll_term_id
+  AND ppt.payroll_relationship_id 	 = ppr.payroll_relationship_id
+  AND asg.parent_rel_group_id 		 = paypd.payroll_term_id
+  AND paaf.assignment_id 			 = asg.assignment_id
+  -- 
+  AND paaf.legal_entity_id 			 = reg.organization_id
+  
+  AND UPPER(ppa.address_type) = 'HOME' --**
+  
+  --
+  --AND pppm.payroll_relationship_id(+)  = ppr.payroll_relationship_id
+  --AND SYSDATE+12 BETWEEN pppm.effective_start_date(+) AND pppm.effective_end_date(+)
+  -- 
+  AND paaf.effective_start_date BETWEEN pap.effective_start_date AND pap.effective_end_date
+  AND paaf.effective_start_date BETWEEN ppn.effective_start_date AND ppn.effective_end_date
+  AND paaf.effective_start_date BETWEEN ppl.effective_start_date AND ppl.effective_end_date
+  AND paaf.effective_start_date BETWEEN paf.effective_start_date(+) AND paf.effective_end_date(+)
+
+  --AND paaf.effective_start_date BETWEEN ppa.effective_start_date AND ppa.effective_end_date
+  --
+  AND trunc(sysdate) BETWEEN ppa.effective_start_date 	AND ppa.effective_end_date
+  --
+  AND paaf.effective_start_date BETWEEN ppl.effective_start_date AND ppl.effective_end_date
+  AND paaf.effective_start_date BETWEEN paypf.effective_start_date AND paypf.effective_end_date
+  AND paaf.effective_start_date BETWEEN paypd.start_date and paypd.end_date
+  --
+  AND pph.person_id(+)                 = pap.person_id
+	AND pph.phone_type(+)  = 'HM'--'H1' 
+	--and paaf.effective_start_date BETWEEN pph.DATE_FROM(+) and NVL(pph.DATE_TO(+))
+  AND pea_per.person_id(+) = pap.person_id
+	AND pea_per.email_type(+) = 'H1'
