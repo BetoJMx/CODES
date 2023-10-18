@@ -1,0 +1,438 @@
+--QRY ATI G4 CHNG 131022 PERF
+WITH hrs_extra_reg AS (
+    SELECT  TRIM(TO_CHAR(CEIL(SUM(bal.balance_value)/3),'999,999,999,990.00')) dias
+            , '01' tipohoras
+            , SUM(bal.balance_value) horasextra
+            , NULL importe
+            , CASE
+                WHEN TO_DATE(:p_fecha_liquidacion, 'YYYY-MM-DD') <= TO_DATE('15/01/2022', 'DD/MM/YYYY') THEN
+                    'NP005'
+                ELSE
+                    'NP005_2'
+                END base_element_name
+            , 'N' hora_extra_real
+            , pra.payroll_rel_action_id
+    FROM per_legislative_data_groups_vl ldg,
+            pay_pay_relationships_dn      pprd,
+            pay_payroll_rel_actions       pra,
+            pay_payroll_actions           ppa,
+            pay_action_classes            pac,
+            pay_balance_types_vl          pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl       pdu
+    WHERE     1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name IN ('DESCANSO LAB 1ERA SEMANA', 'DESCANSO LAB 2DA SEMANA', 'DESCANSO LAB 3ERA SEMANA')
+            AND pdu.database_item_suffix = '_ASG_RUN'
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND NVL (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND :p_tipo_nomina <> 'FINIQUITO'
+    GROUP BY  pra.payroll_rel_action_id
+    UNION ALL
+    SELECT  TRIM(TO_CHAR(CEIL(SUM(bal.balance_value)/3),'999,999,999,990.00')) dias
+            , '01' tipohoras
+            , SUM(bal.balance_value) horasextra
+            , NULL importe
+            , CONVERT(  REPLACE(  TRIM(UPPER('NP006'))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        ) base_element_name
+            , 'Y' hora_extra_real
+            , pra.payroll_rel_action_id
+    FROM per_legislative_data_groups_vl ldg,
+            pay_pay_relationships_dn      pprd,
+            pay_payroll_rel_actions       pra,
+            pay_payroll_actions           ppa,
+            pay_action_classes            pac,
+            pay_balance_types_vl          pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl       pdu
+    WHERE     1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name = 'NP006 Hours Worked'
+            AND pdu.database_item_suffix = '_ASG_RUN'
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND NVL (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND :p_tipo_nomina <> 'FINIQUITO'
+    GROUP BY  pra.payroll_rel_action_id
+    UNION ALL
+    SELECT  TRIM(TO_CHAR(CEIL(SUM(bal.balance_value)/3),'999,999,999,990.00')) dias
+            , '01' tipohoras
+            , SUM(bal.balance_value) horasextra
+            , NULL importe
+            , CASE
+                WHEN TO_DATE(:p_fecha_liquidacion, 'YYYY-MM-DD') <= TO_DATE('15/01/2022', 'DD/MM/YYYY') THEN
+                    'NP007'
+                ELSE
+                    'NP007_2'
+                END base_element_name
+            , 'Y' hora_extra_real
+            , pra.payroll_rel_action_id
+    FROM per_legislative_data_groups_vl ldg,
+            pay_pay_relationships_dn      pprd,
+            pay_payroll_rel_actions       pra,
+            pay_payroll_actions           ppa,
+            pay_action_classes            pac,
+            pay_balance_types_vl          pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl       pdu
+    WHERE     1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name IN ('TIEMPO EXTRA TRIPLE')
+            AND pdu.database_item_suffix = '_ASG_RUN'
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND NVL (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND :p_tipo_nomina <> 'FINIQUITO'
+    GROUP BY  pra.payroll_rel_action_id
+    UNION ALL
+    SELECT  TRIM(TO_CHAR(CEIL(SUM(bal.balance_value)/3),'999,999,999,990.00')) dias
+            , '01' tipohoras
+            , SUM(bal.balance_value) horasextra
+            , NULL importe
+            , CASE
+                WHEN TO_DATE(:p_fecha_liquidacion, 'YYYY-MM-DD') <= TO_DATE('15/01/2022', 'DD/MM/YYYY') THEN
+                    'NP008'
+                ELSE
+                    'NP008_2'
+                END base_element_name
+            , 'N' hora_extra_real
+            , pra.payroll_rel_action_id
+    FROM per_legislative_data_groups_vl ldg,
+            pay_pay_relationships_dn      pprd,
+            pay_payroll_rel_actions       pra,
+            pay_payroll_actions           ppa,
+            pay_action_classes            pac,
+            pay_balance_types_vl          pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl       pdu
+    WHERE     1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name IN ('FESTIVO LABORADO 1ERA SEMANA', 'FESTIVO LABORADO 2DA SEMANA', 'FESTIVO LABORADO 3ERA SEMANA')
+            AND pdu.database_item_suffix = '_ASG_RUN'
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND NVL (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND :p_tipo_nomina <> 'FINIQUITO'
+    GROUP BY  pra.payroll_rel_action_id
+), hrs_extra_fin AS (
+    SELECT  TRIM(TO_CHAR(CEIL(SUM(bal.balance_value)/3),'999,999,999,990.00')) dias
+            , '01' tipohoras
+            , SUM(bal.balance_value) horasextra
+            , NULL importe
+            , CONVERT(  REPLACE(  TRIM(UPPER('FP004'))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        ) base_element_name
+            , 'N' hora_extra_real
+            , pra.payroll_rel_action_id
+    FROM per_legislative_data_groups_vl ldg,
+            pay_pay_relationships_dn      pprd,
+            pay_payroll_rel_actions       pra,
+            pay_payroll_actions           ppa,
+            pay_action_classes            pac,
+            pay_balance_types_vl          pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl       pdu
+    WHERE     1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name = 'FP004 Hours Worked'
+            AND pdu.database_item_suffix = '_ASG_RUN'
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND NVL (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND :p_tipo_nomina = 'FINIQUITO'
+    GROUP BY  pra.payroll_rel_action_id
+    UNION ALL
+    SELECT  TRIM(TO_CHAR(CEIL(SUM(bal.balance_value)/3),'999,999,999,990.00')) dias
+            , '01' tipohoras
+            , SUM(bal.balance_value) horasextra
+            , NULL importe
+            , CONVERT(  REPLACE(  TRIM(UPPER('FP005'))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        ) base_element_name
+            , 'Y' hora_extra_real
+            , pra.payroll_rel_action_id
+    FROM per_legislative_data_groups_vl ldg,
+            pay_pay_relationships_dn      pprd,
+            pay_payroll_rel_actions       pra,
+            pay_payroll_actions           ppa,
+            pay_action_classes            pac,
+            pay_balance_types_vl          pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl       pdu
+    WHERE     1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name = 'FP005 Hours Worked'
+            AND pdu.database_item_suffix = '_ASG_RUN'
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND NVL (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND :p_tipo_nomina = 'FINIQUITO'
+    GROUP BY  pra.payroll_rel_action_id
+    UNION ALL
+    SELECT  TRIM(TO_CHAR(CEIL(SUM(bal.balance_value)/3),'999,999,999,990.00')) dias
+            , '01' tipohoras
+            , SUM(bal.balance_value) horasextra
+            , NULL importe
+            , CONVERT(  REPLACE(  TRIM(UPPER('FP006'))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        ) base_element_name
+            , 'Y' hora_extra_real
+            , pra.payroll_rel_action_id
+    FROM per_legislative_data_groups_vl ldg,
+            pay_pay_relationships_dn      pprd,
+            pay_payroll_rel_actions       pra,
+            pay_payroll_actions           ppa,
+            pay_action_classes            pac,
+            pay_balance_types_vl          pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl       pdu
+    WHERE     1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name = 'FP006 Hours Worked'
+            AND pdu.database_item_suffix = '_ASG_RUN'
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND NVL (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND :p_tipo_nomina = 'FINIQUITO'
+    GROUP BY  pra.payroll_rel_action_id
+    UNION ALL
+    SELECT  TRIM(TO_CHAR(CEIL(SUM(bal.balance_value)/3),'999,999,999,990.00')) dias
+            , '01' tipohoras
+            , SUM(bal.balance_value) horasextra
+            , NULL importe
+            , CONVERT(  REPLACE(  TRIM(UPPER('FP007'))
+                                , 'Ñ'
+                                , 'N'
+                                )
+                        , 'US7ASCII'
+                        , 'AL32UTF8'
+                        ) base_element_name
+            , 'N' hora_extra_real
+            , pra.payroll_rel_action_id
+    FROM per_legislative_data_groups_vl ldg,
+            pay_pay_relationships_dn      pprd,
+            pay_payroll_rel_actions       pra,
+            pay_payroll_actions           ppa,
+            pay_action_classes            pac,
+            pay_balance_types_vl          pbt,
+            TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                    p_balance_type_id         => pbt.balance_type_id,
+                    p_payroll_rel_action_id   => pra.payroll_rel_action_id,
+                    p_payroll_term_id         => NULL,
+                    p_payroll_assignment_id   => NULL)) bal,
+            pay_dimension_usages_vl       pdu
+    WHERE     1 = 1
+            AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+            AND pra.payroll_relationship_id = pprd.payroll_relationship_id
+            AND pra.retro_component_id IS NULL
+            AND EXISTS
+                    (SELECT 1
+                    FROM pay_run_results prr
+                    WHERE prr.payroll_rel_action_id = pra.payroll_rel_action_id)
+            AND ppa.payroll_action_id = pra.payroll_action_id
+            AND pac.action_type = ppa.action_type
+            AND pac.classification_name = 'SEQUENCED'
+            AND NVL (pbt.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND pbt.base_balance_name = 'FP007 Hours Worked'
+            AND pdu.database_item_suffix = '_ASG_RUN'
+            AND pdu.balance_dimension_id = bal.balance_dimension_id
+            AND NVL (pdu.legislation_code, ldg.legislation_code) =
+                ldg.legislation_code
+            AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) =
+                ldg.legislative_data_group_id
+            AND :p_tipo_nomina = 'FINIQUITO'
+    GROUP BY  pra.payroll_rel_action_id
+), hrs_extra AS (
+    SELECT  dias,
+            tipohoras,
+            horasextra,
+            importe,
+            base_element_name,
+            hora_extra_real,
+            payroll_rel_action_id
+    FROM    hrs_extra_reg
+    WHERE   1 = 1
+            AND :p_tipo_nomina <> 'FINIQUITO'
+    UNION ALL
+    SELECT  dias,
+            tipohoras,
+            horasextra,
+            importe,
+            base_element_name,
+            hora_extra_real,
+            payroll_rel_action_id
+    FROM    hrs_extra_fin
+    WHERE   1 = 1
+            AND :p_tipo_nomina = 'FINIQUITO'
+
+)
+
+SELECT	/*+ALL_ROWS*/
+        SUM(dias) dias
+		, tipohoras
+		, SUM(horasextra) horasextra
+		, NULL importe
+		, base_element_name
+		, hora_extra_real
+		, payroll_rel_action_id
+FROM 	hrs_extra
+WHERE	  1 = 1
+GROUP BY  tipohoras
+		, base_element_name
+		, hora_extra_real
+		, payroll_rel_action_id
+HAVING    SUM(horasextra) <> 0
