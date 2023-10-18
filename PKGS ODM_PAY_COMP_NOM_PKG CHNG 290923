@@ -1,0 +1,43 @@
+--PKGS ODM_PAY_COMP_NOM_PKG CHNG 290923
+create or replace PACKAGE     ODM_PAY_COMP_NOM_PKG AS      
+    --
+    PROCEDURE ac_data (
+        contenido       IN CLOB, 
+        p_process_id    IN NUMBER
+    );   
+    --
+    PROCEDURE ac_clob ( 
+        p_process_id1           IN NUMBER,
+        p_process_id2           IN NUMBER,
+        p_process_id            IN NUMBER,
+        p_juegoconsolidacion_n  IN VARCHAR2 DEFAULT NULL,
+        p_nomina_n              IN VARCHAR2 DEFAULT NULL,
+        p_emp_legal_n           IN VARCHAR2 DEFAULT NULL
+    );
+    --   
+    PROCEDURE main(  
+        p_periodo1              IN VARCHAR2,    
+        p_periodo2              IN VARCHAR2,    
+        p_periodo1_n            IN VARCHAR2,    
+        p_periodo2_n            IN VARCHAR2,    
+        p_juegoconsolidacion    IN VARCHAR2,    
+        p_juegoconsolidacion_n  IN VARCHAR2,    
+        p_nomina                IN VARCHAR2,    
+        p_nomina_n              IN VARCHAR2,    
+        p_emp_legal             IN VARCHAR2,   
+        p_emp_legal_n           IN VARCHAR2,   
+        p_user_token            IN VARCHAR2,    
+		p_process_id            IN NUMBER,   
+		p_user_name             IN VARCHAR2
+    );   
+    --  
+    PROCEDURE get_period_info (
+        p_period_id     IN NUMBER,
+        p_payroll_id    IN NUMBER,
+        p_process_id    IN NUMBER,
+        p_period_seq    IN NUMBER,
+        x_period_i      OUT VARCHAR2,   
+        x_period_f      OUT VARCHAR2   
+    ); 
+END ODM_PAY_COMP_NOM_PKG;
+/
