@@ -1,0 +1,60 @@
+--QRYS LOVS INT AP VD
+
+--ELEMENTOS
+SELECT  DISTINCT element_name||' '|| reporting_name AS NAME, 
+        element_type_id AS VALUE
+FROM    pay_element_types_tl
+WHERE   LANGUAGE = 'US'
+        AND element_type_id IN ('300000017467684',
+                                '300000017470570')
+
+--CUENTAS
+SELECT  DESCRIPTION AS VALUE,
+        FLEX_VALUE  AS NAME
+FROM    FND_FLEX_VALUES_VL
+WHERE   VALUE_CATEGORY = 'GTKS_Account'
+        AND FLEX_VALUE IN ('2010005','2020009')
+ORDER BY 2
+
+--UNIDAD
+SELECT  CONVERT(description,'us7ascii','al32utf8') AS NAME,
+        flex_value AS VALUE
+FROM    fnd_flex_values_vl
+WHERE   value_category = 'GTKS_CostCenter'
+ORDER BY 2
+
+--PERIODO
+WITH PERIODO (
+    PERIODO,
+    DIA,
+    MES,
+    ANIO,
+    FEC
+) AS (SELECT /*+ materialize */  
+    DISTINCT PERIOD_NAME,
+    TO_CHAR(REGULAR_EARN_DATE, 'DD') AS DIA,
+    (CASE   WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 01 THEN 'ENE' 
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 02 THEN 'FEB'
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 03 THEN 'MAR'
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 04 THEN 'ABR'
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 05 THEN 'MAY'
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 06 THEN 'JUN'
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 07 THEN 'JUL'
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 08 THEN 'AGO'
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 09 THEN 'SEP'
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 10 THEN 'OCT' 
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 11 THEN 'NOV'
+            WHEN TO_CHAR(REGULAR_EARN_DATE, 'MM') = 12 THEN 'DIC' END) AS MES,
+    TO_CHAR(REGULAR_EARN_DATE, 'YYYY') AS ANIO,
+    REGULAR_EARN_DATE FEC
+FROM 
+    PAY_TIME_PERIODS 
+WHERE start_date >= add_months(SYSDATE,-6)
+    And end_date <= add_months(SYSDATE,6)
+	AND STATUS = 'O' 
+    AND time_period_id in (select earn_time_period_id from pay_payroll_actions))
+
+SELECT  (PERIODO || ' ( ' || DIA || '-' || MES || '-' || ANIO || ' )') AS NAME,
+        PERIODO AS VALUE
+FROM    PERIODO
+ORDER BY FEC DESC
