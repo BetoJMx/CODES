@@ -1,0 +1,500 @@
+--QRY RGEV2 NORMAL 090123
+WITH base_rge AS (
+    SELECT  /*+
+                INDEX (ppa pay_payroll_actions_n5)
+                INDEX (ppra pay_payroll_rel_actions_n4)
+            */
+            REPLACE (ple.name, ',', '')                             emp_leg,
+            papf.person_number                                      estafeta,
+            REPLACE(
+                UPPER(
+                    (
+                        ppn.last_name ||' '||
+                        ppn.previous_last_name||' '||
+                        ppn.first_name||' '||
+                        ppn.middle_names
+                    )
+                ),'  ',' '
+            )                                                       nombre,
+            pj.name                                                 puesto,
+            hoif.org_information1                                   unidad,
+            TO_CHAR(
+                NVL( 
+                    MIN(ppei.pei_information_date1)
+                    , psdf.seniority_date
+                    ), 'DD/MM/YYYY'
+                )                                                   fec_ingreso,
+            MAX(NVL(
+                (  
+                    SELECT  TO_CHAR(p.actual_termination_date, 'YYYY-MM-DD','NLS_DATE_LANGUAGE=SPANISH')
+                    FROM    per_periods_of_service  p,
+                            per_action_occurrences  pao, --Action Reasons
+                            per_actions_vl          pa
+                    WHERE   1 = 1
+                            AND pao.action_occurrence_id    = p.action_occurrence_id
+                            AND pa.action_id                = pao.action_id
+                            AND pa.action_type_code         = 'EMPL_TERMINATE'
+                            AND p.person_id                 = papf.person_id
+                            AND p.period_type               = 'E'
+                            --+
+                            AND p.period_of_service_id      = paaf.period_of_service_id
+                )
+                , NULL ))                                           fec_baja, --+
+            MAX(NVL(
+                (  
+                    SELECT  MAX(TO_CHAR(p.actual_termination_date, 'YYYY-MM-DD','NLS_DATE_LANGUAGE=SPANISH'))
+                    FROM    per_periods_of_service  p,
+                            per_action_occurrences  pao, --Action Reasons
+                            per_actions_vl          pa
+                    WHERE   1 = 1
+                            AND pao.action_occurrence_id    = p.action_occurrence_id
+                            AND pa.action_id                = pao.action_id
+                            AND pa.action_type_code         = 'EMPL_GLB_TRANSFER'
+                            AND p.person_id                 = papf.person_id
+                            AND p.period_type               = 'E'
+                            --AND ROWNUM                      = 1
+                )
+            , NULL ))                                               fec_glb_transfer,
+            curp.national_identifier_number                         curp,
+            NVL (SUBSTR (rfc.national_identifier_number, 1, 4),
+                        '000') || '-'
+                || NVL (SUBSTR (rfc.national_identifier_number, 5, 6),
+                        '000') || '-'
+                || NVL (SUBSTR (rfc.national_identifier_number, 11, 3),
+                        '000')                                      rfc,
+            NVL (SUBSTR (imss.national_identifier_number, 1, 2),
+                        '000') || '-'
+                || NVL (SUBSTR (imss.national_identifier_number, 3, 2),
+                        '000') || '-'
+                || NVL (SUBSTR (imss.national_identifier_number, 5, 2),
+                        '000') || '-'
+                || NVL (SUBSTR (imss.national_identifier_number, 7, 4),
+                        '000') || '-'
+                || NVL (SUBSTR (imss.national_identifier_number, 11, 1),
+                        '000')                                      nss,
+            DECODE(:p_acumulado,'Y','Acumulado',ptp.period_name)    periodo,
+            NVL(
+                (
+                    SELECT  SUM(prb.balance_value) MONTO
+                    FROM      pay_run_balances        prb
+                            , pay_defined_balances    pdb
+                            , pay_balance_types       pbt
+                            , pay_balance_dimensions  pbd
+                    WHERE   1 = 1
+                            AND prb.defined_balance_id = pdb.defined_balance_id
+                            AND pdb.balance_type_id = pbt.balance_type_id
+                            AND UPPER(pbt.base_balance_name) IN ('MX_ISR_SUBJECT','MX_SEVERANCE_EARNINGS_SUBJECT')
+                            AND pdb.balance_dimension_id = pbd.balance_dimension_id
+                            AND pbd.base_db_item_suffix = '_CORE_REL_TU_RUN'
+                            AND prb.payroll_relationship_id = ppra.payroll_relationship_id
+                            AND prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+                )
+            ,0) isr_subject,
+            NVL(
+                (
+                    SELECT  SUM(prb.balance_value) MONTO
+                    FROM      pay_run_balances        prb
+                            , pay_defined_balances    pdb
+                            , pay_balance_types       pbt
+                            , pay_balance_dimensions  pbd
+                    WHERE   1 = 1
+                            AND prb.defined_balance_id = pdb.defined_balance_id
+                            AND pdb.balance_type_id = pbt.balance_type_id
+                            AND UPPER(pbt.base_balance_name) IN ('MX_ISR_EXEMPT','MX_SEVERANCE_EARNINGS_EXEMPT')
+                            AND pdb.balance_dimension_id = pbd.balance_dimension_id
+                            AND pbd.base_db_item_suffix = '_CORE_REL_TU_RUN'
+                            AND prb.payroll_relationship_id = ppra.payroll_relationship_id
+                            AND prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+                )
+            ,0) isr_exempt,
+            NVL(
+                (
+                    SELECT  SUM(prb.balance_value) MONTO
+                    FROM      pay_run_balances        prb
+                            , pay_defined_balances    pdb
+                            , pay_balance_types       pbt
+                            , pay_balance_dimensions  pbd
+                    WHERE   1 = 1
+                            AND prb.defined_balance_id = pdb.defined_balance_id
+                            AND pdb.balance_type_id = pbt.balance_type_id
+                            AND UPPER(pbt.base_balance_name) = 'MX_ISR_WITHHELD'
+                            AND pdb.balance_dimension_id = pbd.balance_dimension_id
+                            AND pbd.base_db_item_suffix = '_CORE_REL_TU_RUN'
+                            AND prb.payroll_relationship_id = ppra.payroll_relationship_id
+                            AND prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+                )
+            ,0) isr_withheld,
+            NVL(
+                (
+                    SELECT  SUM(prb.balance_value) MONTO
+                    FROM      pay_run_balances        prb
+                            , pay_defined_balances    pdb
+                            , pay_balance_types       pbt
+                            , pay_balance_dimensions  pbd
+                    WHERE   1 = 1
+                            AND prb.defined_balance_id = pdb.defined_balance_id
+                            AND pdb.balance_type_id = pbt.balance_type_id
+                            AND UPPER(pbt.base_balance_name) = 'NP044 ISR EXEMPT'
+                            AND pdb.balance_dimension_id = pbd.balance_dimension_id
+                            AND pbd.base_db_item_suffix = '_CORE_REL_RUN'
+                            AND prb.payroll_relationship_id = ppra.payroll_relationship_id
+                            AND prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+                )
+            ,0) np044,
+            NVL(
+                (
+                    SELECT  SUM(prb.balance_value) MONTO
+                    FROM      pay_run_balances        prb
+                            , pay_defined_balances    pdb
+                            , pay_balance_types       pbt
+                            , pay_balance_dimensions  pbd
+                    WHERE   1 = 1
+                            AND prb.defined_balance_id = pdb.defined_balance_id
+                            AND pdb.balance_type_id = pbt.balance_type_id
+                            AND UPPER(pbt.base_balance_name) = 'MX_ISR_SUBSIDY_FOR_EMPLOYMENT_PAID'
+                            AND pdb.balance_dimension_id = pbd.balance_dimension_id
+                            AND pbd.base_db_item_suffix = '_CORE_REL_TU_RUN'
+                            AND prb.payroll_relationship_id = ppra.payroll_relationship_id
+                            AND prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+                )
+            ,0) np052,
+            NVL(
+                (
+                    SELECT  SUM(prb.balance_value) MONTO
+                    FROM      pay_run_balances        prb
+                            , pay_defined_balances    pdb
+                            , pay_balance_types       pbt
+                            , pay_balance_dimensions  pbd
+                    WHERE   1 = 1
+                            AND prb.defined_balance_id = pdb.defined_balance_id
+                            AND pdb.balance_type_id = pbt.balance_type_id
+                            AND UPPER(pbt.base_balance_name) = 'MX_ISR_SUBSIDY_FOR_EMPLOYMENT'
+                            AND pdb.balance_dimension_id = pbd.balance_dimension_id
+                            AND pbd.base_db_item_suffix = '_CORE_REL_TU_RUN'
+                            AND prb.payroll_relationship_id = ppra.payroll_relationship_id
+                            AND prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+                )
+            ,0) subsidy_for_employment,
+            NVL(
+                (
+                    SELECT  SUM(prb.balance_value) MONTO
+                    FROM      pay_run_balances        prb
+                            , pay_defined_balances    pdb
+                            , pay_balance_types       pbt
+                            , pay_balance_dimensions  pbd
+                    WHERE   1 = 1
+                            AND prb.defined_balance_id = pdb.defined_balance_id
+                            AND pdb.balance_type_id = pbt.balance_type_id
+                            AND UPPER(pbt.base_balance_name) = 'MX_ISR_CALCULATED'
+                            AND pdb.balance_dimension_id = pbd.balance_dimension_id
+                            AND pbd.base_db_item_suffix = '_CORE_REL_TU_RUN'
+                            AND prb.payroll_relationship_id = ppra.payroll_relationship_id
+                            AND prb.payroll_rel_action_id = ppra.payroll_rel_action_id
+                )
+            ,0) isr_calculated,
+            NVL(
+                (
+                    SELECT  SUM(prrv.result_value) AS result_value 
+                    FROM      pay_run_result_values           prrv
+                            , pay_run_results                 prr
+                            , pay_element_types_f             pet
+                            , pay_element_types_tl            pettl
+                            , fusion.pay_ele_classifications  pec
+                            , fusion.pay_input_values_f       piv
+                            , pay_input_values_tl             pivtl
+                    WHERE     1 = 1
+                    AND       prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+                    AND       prrv.run_result_id = prr.run_result_id
+                    AND       prr.status IN ('P', 'PA')
+                    AND       prr.element_type_id = pet.element_type_id
+                    AND       pet.element_type_id = pettl.element_type_id
+                    AND       pet.classification_id = pec.classification_id
+                    AND       pet.element_type_id = piv.element_type_id
+                    AND       prrv.input_value_id = piv.input_value_id
+                    AND       piv.input_value_id = pivtl.input_value_id
+                    --AND       UPPER (pettl.element_name) IN ('NP066 EARNINGS RESULTS','ND517 RESULTS')
+                    AND       UPPER (pettl.element_name) = 'NP066 EARNINGS RESULTS'
+                    AND       UPPER (pec.base_classification_name) IN ('VOLUNTARY DEDUCTIONS','SUPPLEMENTAL EARNINGS')
+                    AND       UPPER (TRIM (pivtl.name)) IN ('PAY VALUE','EARNINGS CALCULATED')
+                    AND       TRUNC (SYSDATE) BETWEEN pet.effective_start_date AND pet.effective_end_date
+                    AND       TRUNC (SYSDATE) BETWEEN piv.effective_start_date AND piv.effective_end_date
+                    AND       pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                    AND       pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+                )
+            , 0) AS fah,
+            CASE 
+                WHEN UPPER(pcs.consolidation_set_name) NOT LIKE '%AGUI%' THEN
+                    (   
+                        SELECT  MAX(bal.balance_value) importe
+                                --pra.payroll_rel_action_id
+                        FROM    per_legislative_data_groups_vl  ldg,
+                                pay_pay_relationships_dn        pprd,
+                                --pay_payroll_rel_actions         pra,
+                                pay_payroll_actions             ppa1,
+                                pay_action_classes              pac,
+                                pay_balance_types_vl            pbt,
+                                TABLE (pay_balance_view_pkg.get_balance_dimensions (
+                                            p_balance_type_id         => pbt.balance_type_id,
+                                            p_payroll_rel_action_id   => ppra.payroll_rel_action_id,
+                                            p_payroll_term_id         => NULL,
+                                            p_payroll_assignment_id   => NULL)) bal,
+                                pay_dimension_usages_vl         pdu
+                        WHERE   1 = 1
+                                AND pprd.legislative_data_group_id = ldg.legislative_data_group_id
+                                AND ppra.payroll_relationship_id = pprd.payroll_relationship_id
+                                --AND pra.retro_component_id IS NULL
+                                AND EXISTS
+                                        (SELECT 1
+                                            FROM pay_run_results prr
+                                            WHERE prr.payroll_rel_action_id = ppra.payroll_rel_action_id)
+                                AND ppa1.payroll_action_id = ppra.payroll_action_id
+                                AND pac.action_type = ppa1.action_type
+                                AND pac.classification_name = 'SEQUENCED'
+                                AND NVL (pbt.legislation_code, ldg.legislation_code) = ldg.legislation_code
+                                AND NVL (pbt.legislative_data_group_id, ldg.legislative_data_group_id) = ldg.legislative_data_group_id
+                                AND pbt.base_balance_name = 'FDO_AHO_RECIBO'
+                                AND pdu.database_item_suffix = '_REL_ITD'
+                                AND pdu.balance_dimension_id = bal.balance_dimension_id
+                                AND NVL (pdu.legislation_code, ldg.legislation_code) = ldg.legislation_code
+                                AND NVL (pdu.legislative_data_group_id, ldg.legislative_data_group_id) = ldg.legislative_data_group_id
+                                --+
+                                AND ppa1.effective_date BETWEEN TO_DATE(:p_fecha_final,'YYYY-MM-DD') - 3 AND TO_DATE(:p_fecha_final,'YYYY-MM-DD')
+                    ) 
+                ELSE 
+                    0
+            END fah_acumulado
+            ,TO_CHAR(ppa.effective_date,'YYYY-MM-DD') AS effective_date
+    FROM    per_person_secured_list_v       papf --per_all_people_f
+            ,per_assignment_secured_list_v  paaf --per_all_assignments_f
+            ,per_person_names_f             ppn
+            ,per_periods_of_service         ppos
+            ,per_jobs                       pj
+            ,per_people_extra_info_f        ppei
+            ,per_seniority_dates_f          psdf -- Seniority Date
+            ,per_seniority_dates_setup      psds
+            --+
+            ,per_national_identifiers       curp
+            ,per_national_identifiers       rfc
+            ,per_national_identifiers       imss
+            --+
+            ,per_legal_employers            hou2
+            ,per_departments                pd
+            ,hr_organization_information_f  hoif
+            --+
+            ,per_locations                  pl
+            ,per_location_details_f         pld
+            ,per_location_details_f_tl      pldt
+            --+
+            ,pay_rel_groups_dn              prg
+            ,pay_payroll_actions            ppa
+            ,pay_time_periods               ptp
+            ,pay_all_payrolls_f             paypf
+            --+
+            ,pay_payroll_rel_actions        ppra
+            ,per_legal_employers            ple
+            --*
+            ,pay_run_types_f                prtf    
+            ,pay_consolidation_sets         pcs          
+
+    WHERE   1 = 1
+            AND paaf.person_id = papf.person_id
+            AND ppn.name_type = 'MX'
+            AND papf.person_number = COALESCE(:p_person_number, papf.person_number)
+            --AND papf.person_number = '111384' --'110303' --'101358' --'03752'
+            --+
+            AND ppn.person_id = papf.person_id
+            AND ppos.legal_entity_id = paaf.legal_entity_id
+            AND ppos.person_id = paaf.person_id
+            AND ppos.period_of_service_id = paaf.period_of_service_id
+            AND paaf.primary_flag = 'Y'
+            AND paaf.effective_latest_change = 'Y' --+
+            --AND paaf.assignment_status_type = 'ACTIVE' --*
+            AND pj.job_id = paaf.job_id
+            AND pj.active_status = 'A'
+            AND ppei.person_id(+) = paaf.person_id
+            AND ppei.information_type(+) = 'Cambio de Empleador Legal'
+            AND psdf.person_id = paaf.person_id
+            AND psdf.seniority_field = 'ORA_ENT'
+            AND psds.seniority_date_code = psdf.seniority_date_code
+            AND psds.seniority_date_code            = psdf.seniority_date_code
+            AND psds.active_flag                    = 'Y' 
+            --+
+            AND curp.person_id(+)                   = papf.person_id
+            AND curp.national_identifier_type(+)    = 'CURP'
+            AND rfc.person_id(+)                    = papf.person_id
+            AND rfc.national_identifier_type(+)     = 'RFC'
+            AND imss.person_id(+)                   = papf.person_id
+            AND imss.national_identifier_type(+)    = 'IMSS'
+            --+
+            AND hou2.organization_id = paaf.legal_entity_id
+            AND hou2.status = 'A'
+            AND pd.organization_id = paaf.organization_id
+            AND pd.status = 'A'
+            AND hoif.organization_id(+) = pd.organization_id
+            AND hoif.org_information_context(+) = 'PER_GL_COST_CENTER_INFO'
+            AND hoif.org_information7(+) = '1'
+            --+
+            AND pl.location_id = paaf.location_id
+            AND pld.location_id = pl.location_id
+            AND pld.active_status = 'A'
+            AND pldt.location_details_id = pld.location_details_id
+            AND pldt.language = SYS_CONTEXT ('USERENV', 'LANG')
+            --+
+            AND prg.assignment_id = paaf.assignment_id
+            AND prg.group_type = 'A'
+            AND ppra.payroll_relationship_id = prg.payroll_relationship_id
+            AND ppra.action_status = 'C'
+            AND ppra.retro_component_id is null
+            AND ppra.chunk_number is not null
+            --AND ppra.run_type_id is not null
+            AND ppa.payroll_action_id = ppra.payroll_action_id
+            AND ppa.action_type IN ('R','B','Q')
+            AND ptp.time_period_id = ppa.earn_time_period_id
+            AND ptp.payroll_id = ppa.payroll_id
+            AND paypf.payroll_id = ppa.payroll_id
+            --*
+            AND prtf.run_type_id = ppra.run_type_id
+            AND pcs.consolidation_set_id = ppa.consolidation_set_id
+            --+ PARAMETERS
+            AND paypf.payroll_id            = COALESCE(TO_NUMBER(:p_payroll_id),paypf.payroll_id) --NOMINA
+            --AND (paypf.payroll_id           = :p_payroll_id OR :p_payroll_id is null) 
+            AND ppa.consolidation_set_id    = COALESCE(TO_NUMBER(:p_consolidation_set_id),ppa.consolidation_set_id) --CONSOLIDACION
+            --AND (ppa.consolidation_set_id   = :p_consolidation_set_id OR :p_consolidation_set_id is null) 
+            AND paaf.legal_entity_id        = COALESCE(TO_NUMBER(:p_legal_entity_id),paaf.legal_entity_id) --ORGANIZACION
+            --AND (paaf.legal_entity_id       = :p_legal_entity_id OR :p_legal_entity_id is null)
+            AND ppa.effective_date          BETWEEN NVL(:p_fecha_inicio, ptp.start_date) --FECHA_INICIO
+                                            AND NVL(:p_fecha_final, ptp.end_date) --FECHA_FIN
+            AND paaf.location_id            = COALESCE(TO_NUMBER(:p_location_id),paaf.location_id) --+UNIDAD
+            --+
+            AND paaf.legal_entity_id        = ple.organization_id
+            AND ple.organization_id         = COALESCE(TO_NUMBER(:p_legal_entity_id), ple.organization_id)
+            --*
+			AND (
+					(
+						:p_type = 'A'
+						AND paaf.assignment_status_type = 'ACTIVE' --*
+						AND NOT EXISTS  (  
+										SELECT  NULL
+										FROM    per_periods_of_service  p,
+												per_action_occurrences  pao, --Action Reasons
+												per_actions_vl          pa
+										WHERE   1 = 1
+												AND pao.action_occurrence_id    = p.action_occurrence_id
+												AND pa.action_id                = pao.action_id
+												AND pa.action_type_code         = 'EMPL_TERMINATE'
+												AND p.person_id                 = papf.person_id
+												AND p.period_type               = 'E'
+												--+
+												AND p.period_of_service_id      = paaf.period_of_service_id
+										)
+					)
+					OR
+					(
+						:p_type = 'B'
+						AND EXISTS (  
+									SELECT  NULL
+									FROM    per_periods_of_service  p,
+											per_action_occurrences  pao, --Action Reasons
+											per_actions_vl          pa
+									WHERE   1 = 1
+											AND pao.action_occurrence_id    = p.action_occurrence_id
+											AND pa.action_id                = pao.action_id
+											AND pa.action_type_code         = 'EMPL_TERMINATE'
+											AND p.person_id                 = papf.person_id
+											AND p.period_type               = 'E'
+											--+
+											AND p.period_of_service_id      = paaf.period_of_service_id
+									)
+					)
+			)
+            --+
+            AND TRUNC(SYSDATE)     BETWEEN psdf.effective_start_date    AND psdf.effective_end_date
+            AND ppa.effective_date BETWEEN pld.effective_start_date     AND pld.effective_end_date
+            AND ppa.effective_date BETWEEN prg.start_date               AND prg.end_date
+            --+
+            AND :p_fecha_final BETWEEN papf.effective_start_date    AND papf.effective_end_date
+            AND :p_fecha_final BETWEEN paaf.effective_start_date    AND paaf.effective_end_date
+            AND :p_fecha_final BETWEEN pj.effective_start_date      AND pj.effective_end_date
+            AND :p_fecha_final BETWEEN ppei.effective_start_date(+) AND ppei.effective_end_date(+)
+            AND :p_fecha_final BETWEEN ppei.PEI_INFORMATION_DATE1(+) AND ppei.PEI_INFORMATION_DATE2(+) --+
+            AND :p_fecha_final BETWEEN ppn.effective_start_date     AND ppn.effective_end_date
+            AND :p_fecha_final BETWEEN paypf.effective_start_date   AND paypf.effective_end_date
+            --+
+            AND :p_fecha_final BETWEEN pd.effective_start_date      AND pd.effective_end_date
+            AND :p_fecha_final BETWEEN hoif.effective_start_date    AND hoif.effective_end_date
+            AND :p_fecha_final BETWEEN hou2.effective_start_date    AND hou2.effective_end_date
+            --*
+            AND :p_fecha_final BETWEEN prtf.effective_start_date AND prtf.effective_end_date
+
+    GROUP BY 
+            ple.name
+            ,papf.person_number
+            ,REPLACE(
+                UPPER(
+                    (
+                        ppn.last_name ||' '||
+                        ppn.previous_last_name||' '||
+                        ppn.first_name||' '||
+                        ppn.middle_names
+                    )
+                ),'  ',' '
+            )
+            ,pj.name
+            ,hoif.org_information1 
+            ,psdf.seniority_date
+            --,papf.person_id
+            --,TO_CHAR(ppos.ACTUAL_TERMINATION_DATE,'DD/MM/YYYY')
+            ,curp.national_identifier_number
+            ,NVL (SUBSTR (rfc.national_identifier_number, 1, 4),
+                        '000') || '-'
+                || NVL (SUBSTR (rfc.national_identifier_number, 5, 6),
+                        '000') || '-'
+                || NVL (SUBSTR (rfc.national_identifier_number, 11, 3),
+                        '000')
+            ,NVL (SUBSTR (imss.national_identifier_number, 1, 2),
+                        '000') || '-'
+                || NVL (SUBSTR (imss.national_identifier_number, 3, 2),
+                        '000') || '-'
+                || NVL (SUBSTR (imss.national_identifier_number, 5, 2),
+                        '000') || '-'
+                || NVL (SUBSTR (imss.national_identifier_number, 7, 4),
+                        '000') || '-'
+                || NVL (SUBSTR (imss.national_identifier_number, 11, 1),
+                        '000')
+            ,upper (pldt.location_name)
+            ,upper (hou2.name)
+            ,ptp.period_name
+            ,ppra.payroll_rel_action_id
+            ,ppra.payroll_relationship_id
+            ,ppra.payroll_action_id
+            --*
+            ,UPPER(pcs.consolidation_set_name)
+            ,TO_CHAR(ppa.effective_date,'YYYY-MM-DD')
+)
+
+SELECT  
+        periodo                 AS C1,
+        unidad                  AS C2,
+        estafeta                AS C4,
+        nombre                  AS C5,
+        puesto                  AS C6,
+        fec_ingreso             AS C7,
+        fec_baja                AS C8,
+        curp                    AS C9,
+        rfc                     AS C10,
+        nss                     AS C11,
+        emp_leg                 AS C12,
+        isr_subject             AS C13,
+        isr_exempt              AS C14,
+        isr_withheld            AS C15,
+        np044                   AS C16,
+        np052                   AS C17,
+        subsidy_for_employment  AS C18,
+        isr_calculated          AS C19,
+        fah                     AS C20,
+        fah_acumulado           AS C21,
+        effective_date          AS C22,
+        fec_glb_transfer        AS C23,
+        COUNT(estafeta) OVER (PARTITION BY unidad) AS C24 --num_emp
+FROM    base_rge
+WHERE   1 = 1
