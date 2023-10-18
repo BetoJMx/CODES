@@ -1,0 +1,700 @@
+--QRY ATI G6 CHNG 030723 PERF
+WITH      cat_elements AS (
+    SELECT    meaning AS element_name
+            , regexp_substr (description, '[^' || '~' || ']+', 1, 1) element_name_reporte
+            , regexp_substr (description, '[^' || '~' || ']+', 1, 2) element_description_reporte
+            , tag tipootropago
+    FROM      fnd_lookup_values
+    WHERE     1 = 1
+    AND       TRIM(lookup_type) IN (  'XXGRG_OTROSPAGOS_ATI'
+                                    )
+    AND       language = 'US' --SYS_CONTEXT('USERENV','LANG')
+    AND       enabled_flag = 'Y'
+), otros_pagos_1 AS (
+    SELECT  /*+FIRST_ROWS*/
+          elem.tipootropago
+        , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_name_reporte))
+                            , 'Ñ'
+                            , 'N'
+                            )
+                    , 'US7ASCII'
+                    , 'AL32UTF8'
+                    ) clave
+        , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_description_reporte))
+                            , 'Ñ'
+                            , 'N'
+                            )
+                    , 'US7ASCII'
+                    , 'AL32UTF8'
+                    ) concepto
+        , CASE
+            WHEN :p_tipo_nomina = 'FINIQUITO' THEN
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) IN ('NP028_2 EARNINGS RESULTS','FP042 EARNINGS RESULTS') AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'FP049 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'VALOR PAGO' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) NOT IN ('FP049 COSTEO', 'NP028_2') AND UPPER(TRIM(pivtl.name)) IN ('PAY VALUE', 'VALOR PAGO') THEN
+                        TO_NUMBER(prrv.result_value)
+                    ELSE
+                        0
+                END
+                --
+            WHEN :p_tipo_nomina <> 'FINIQUITO' THEN
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) IN ('NP028_2 EARNINGS RESULTS','FP042 EARNINGS RESULTS') AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'NP052 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'VALOR PAGO' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN (UPPER(pettl.element_name) NOT IN ('NP052 COSTEO', 'NP028_2') AND UPPER(TRIM(pivtl.name)) IN ('PAY VALUE', 'VALOR PAGO')) OR (UPPER(pettl.element_name) NOT IN ('NP052 COSTEO', 'NP028_2') AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED') THEN
+                        TO_NUMBER(prrv.result_value)
+                    ELSE
+                        0
+                END
+                --
+            END importe
+        , CASE
+            WHEN :p_tipo_nomina = 'FINIQUITO' THEN
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) = 'NP028_2 EARNINGS RESULTS' AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'FP049 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'ISR SUBSIDY FOR EMPLOYMENT' THEN
+                        TO_NUMBER(prrv.result_value)
+                    ELSE
+                        0
+                END
+                --
+            WHEN :p_tipo_nomina = 'PTU BAJAS' THEN   --+alegaspi 02/08/2022 : para mostrar el Subsidio Causado  para PTU BAJAS 
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) = 'NPU052 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'ISR SUBSIDY FOR EMPLOYMENT' AND TO_NUMBER(prrv.result_value) > 0 THEN	--+alegaspi 
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'NPU052 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'ISR SUBSIDY FOR EMPLOYMENT' AND TO_NUMBER(prrv.result_value) < 0 THEN	--+alegaspi 
+                        TO_NUMBER('0.01')
+                    ELSE
+                        0
+                END
+                --
+            WHEN :p_tipo_nomina <> 'FINIQUITO' THEN
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) = 'NP028_2 EARNINGS RESULTS' AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'NP052 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'ISR SUBSIDY FOR EMPLOYMENT' THEN
+                        TO_NUMBER(prrv.result_value)
+                    ELSE
+                        0
+                END
+                --
+            END subsidiocausado
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'AMOUNT' THEN
+                TO_NUMBER(prrv.result_value)
+            ELSE
+                0
+            END saldoafavor_amount
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'FUTURO1' THEN
+                TO_NUMBER(prrv.result_value)
+            ELSE
+                0
+            END saldoafavor_futuro1_input
+        , TO_NUMBER( 
+            COALESCE(  
+                (SELECT    SUM(peevf.screen_entry_value) screen_entry_value
+                FROM      pay_payroll_rel_actions pprax
+                        , pay_entry_usages peu
+                        , pay_element_entries_f peef
+                        , pay_element_types_tl pett
+                        , pay_element_entry_values_f peevf
+                        , pay_input_values_tl pivt
+                WHERE     1 = 1
+                AND       pprax.payroll_rel_action_id = ppra.payroll_rel_action_id
+                AND       pprax.action_status = 'C'
+                AND       peu.payroll_relationship_id = pprax.payroll_relationship_id
+                AND       peef.element_entry_id = peu.element_entry_id
+                AND       pett.element_type_id = peef.element_type_id
+                AND       peevf.element_entry_id = peef.element_entry_id
+                AND       pivt.input_value_id = peevf.input_value_id
+                AND       UPPER(pett.element_name) = 'NP028_2'
+                AND       UPPER(pivt.name) = 'FUTURO1'
+                AND       pett.language = 'US'
+                AND       pivt.language = 'US'
+                AND       ppa.effective_date BETWEEN peef.effective_start_date AND peef.effective_end_date
+                AND       ppa.effective_date BETWEEN peevf.effective_start_date AND peevf.effective_end_date
+                --+
+                And exists(
+                    Select 1
+                    From pay_element_entry_values_f peevf2
+                        , pay_input_values_tl pivt2
+                    Where 1 = 1
+                        And peevf2.element_entry_id = peef.element_entry_id
+                        And pivt2.input_value_id = peevf2.input_value_id
+                        And UPPER(pivt2.name) = 'AÑO EJERCICIO'
+                        And trim(replace(peevf2.screen_entry_value,',')) = ''||extract(year from ppa.effective_date)
+                        And pivt2.language = 'US'
+                        And ppa.effective_date 
+                            BETWEEN peevf2.effective_start_date 
+                                AND peevf2.effective_end_date
+                )
+            ) 
+            , 0
+            )
+        ) saldoafavor_futuro1_entry
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'AÑO EJERCICIO' THEN
+                prrv.result_value
+            ELSE
+                ''
+            END anio
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'SALDO FAVOR 1' THEN
+                TO_NUMBER(prrv.result_value)
+            ELSE
+                0
+            END remanente_saldo_favor1
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'SALDO FAVOR 2' THEN
+                TO_NUMBER(prrv.result_value)
+            ELSE
+                0
+            END remanente_saldo_favor2
+        , ppra.payroll_rel_action_id
+        , ppa.effective_date
+    FROM  pay_rel_groups_dn                 prg
+        , pay_payroll_rel_actions           ppra
+        --+
+        , pay_payroll_actions               ppa
+        , pay_time_periods                  ptp
+        --+
+        , pay_run_types_f                   prtf
+        , pay_run_results                   prr
+        , pay_run_result_values             prrv
+        , pay_element_types_f               pet
+        , pay_element_types_tl              pettl
+        , fusion.pay_ele_classifications    pec
+        , fusion.pay_input_values_f         piv
+        , pay_input_values_tl               pivtl
+        , cat_elements                      elem
+    WHERE     1 = 1
+        And ppra.payroll_relationship_id = prg.payroll_relationship_id
+        And prg.group_type = 'A'
+        --+
+        And ppa.payroll_action_id = ppra.payroll_action_id
+        And ppra.action_status = 'C'
+        And ppra.retro_component_id is null
+        And ppra.chunk_number is not null
+        And ppra.source_action_id is not null
+        And ppa.action_status = 'C'
+        And ppa.action_type in ('R', 'Q', 'B')
+        And ppa.payroll_id  = COALESCE (TO_NUMBER(:p_payroll_id), ppa.payroll_id)
+        And ptp.time_period_id = ppa.earn_time_period_id
+        And ptp.period_name = :p_period_name
+        --+
+        And ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+        And ppra.run_type_id = prtf.run_type_id
+        --+ 
+        And prr.run_result_id = prrv.run_result_id
+        And prr.status IN ('P', 'PA')
+        And prr.element_type_id = pet.element_type_id
+        And pet.element_type_id = pettl.element_type_id
+        And pet.classification_id = pec.classification_id
+        And pet.element_type_id = piv.element_type_id
+        And prrv.input_value_id = piv.input_value_id
+        And piv.input_value_id = pivtl.input_value_id
+        And piv.user_display_flag = 'Y'
+        And UPPER(pettl.element_name) = UPPER(elem.element_name)
+        And ( ( UPPER (pec.base_classification_name) IN (  'STANDARD EARNINGS'
+                                                                    , 'SUPPLEMENTAL EARNINGS'
+                                                                    , 'TAXABLE BENEFITS'
+                                                                    )
+                        AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                        , 'VALOR PAGO'
+                                                        , 'EARNINGS CALCULATED'
+                                                        , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                        , 'AMOUNT'
+                                                        , 'AÑO EJERCICIO'
+                                                        , 'SALDO FAVOR 1'
+                                                        , 'SALDO FAVOR 2'
+                                                        , 'FUTURO1'
+                                                        )
+                    )
+                    OR (   (    UPPER (pec.base_classification_name) IN (  'TAX DEDUCTIONS'
+                                                                        , 'SOCIAL INSURANCE DEDUCTIONS'
+                                                                        , 'EMPLOYER TAXES'
+                                                                        )
+                            AND UPPER (TRIM (pivtl.name)) IN (  'EMPLOYER SOCIAL SECURITY QUOTA'
+                                                            , 'SDI'
+                                                            , 'PAY VALUE'
+                                                            , 'VALOR PAGO'
+                                                            , 'ISR WITHHELD'
+                                                            , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                            , 'AMOUNT'
+                                                            , 'AÑO EJERCICIO'
+                                                            , 'SALDO FAVOR 1'
+                                                            , 'SALDO FAVOR 2'
+                                                            )
+                        )
+                        OR (    UPPER (pec.base_classification_name) IN (  'ABSENCES'
+                                                                        , 'VOLUNTARY DEDUCTIONS'
+                                                                        , 'INVOLUNTARY DEDUCTIONS'
+                                                                        )
+                            AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                            , 'VALOR PAGO'
+                                                            , 'NET PAY'
+                                                            , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                            , 'AMOUNT'
+                                                            , 'AÑO EJERCICIO'
+                                                            , 'SALDO FAVOR 1'
+                                                            , 'SALDO FAVOR 2'
+                                                            )
+                        )
+                    )
+                    OR (    UPPER (pec.base_classification_name) = 'INFORMATION'
+                        AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                        , 'VALOR PAGO'
+                                                        , 'EARNINGS AMOUNT'
+                                                        , 'DIAS'
+                                                        , 'HORAS'
+                                                        , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                        , 'AMOUNT'
+                                                        , 'AÑO EJERCICIO'
+                                                        , 'SALDO FAVOR 1'
+                                                        , 'SALDO FAVOR 2'
+                                                        )
+                    )
+                    OR (    UPPER (pec.base_classification_name) = 'GLB_SEVERANCE_PAY'
+                        AND UPPER (TRIM (pivtl.name)) IN (  'EARNINGS CALCULATED'
+                                                        , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                        , 'AMOUNT'
+                                                        , 'AÑO EJERCICIO'
+                                                        , 'SALDO FAVOR 1'
+                                                        , 'SALDO FAVOR 2'
+                                                        )
+                    )
+                )
+    AND ppa.effective_date BETWEEN pet.effective_start_date AND pet.effective_end_date
+    AND ppa.effective_date BETWEEN piv.effective_start_date AND piv.effective_end_date
+    AND pettl.language = 'US'--SYS_CONTEXT ('USERENV', 'LANG')
+    AND pivtl.language = 'US'--SYS_CONTEXT ('USERENV', 'LANG')
+    --+
+    And ppa.effective_date between prg.start_date and prg.end_date
+    --+
+    And Not Exists(
+        SELECT    1
+        FROM      pay_payroll_rel_actions pprax
+                , pay_entry_usages peu
+                , pay_element_entries_f peef
+                , pay_element_types_tl pett
+                , pay_element_entry_values_f peevf
+                , pay_input_values_tl pivt
+        WHERE     1 = 1
+            And peef.element_entry_id = prr.element_entry_id --+ Link 
+            And pprax.payroll_rel_action_id = ppra.payroll_rel_action_id
+            And pprax.action_status = 'C'
+            And peu.payroll_relationship_id = pprax.payroll_relationship_id
+            And peef.element_entry_id = peu.element_entry_id
+            And pett.element_type_id = peef.element_type_id
+            And peevf.element_entry_id = peef.element_entry_id
+            And pivt.input_value_id = peevf.input_value_id
+            And UPPER(pett.element_name) = 'NP028_2'
+            And UPPER(pivt.name) = 'AÑO EJERCICIO'
+            And pett.language = 'US'
+            And pivt.language = 'US'
+            --And trim(replace(peevf.screen_entry_value,',')) = ''||extract(year from ppa.effective_date)
+            And ppa.effective_date BETWEEN peef.effective_start_date AND peef.effective_end_date
+            And ppa.effective_date BETWEEN peevf.effective_start_date AND peevf.effective_end_date
+    )
+    --+
+    Union All
+    --+
+    SELECT elem.tipootropago
+        , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_name_reporte))
+                            , 'Ñ'
+                            , 'N'
+                            )
+                    , 'US7ASCII'
+                    , 'AL32UTF8'
+                    ) clave
+        , CONVERT(  REPLACE(  TRIM(UPPER(elem.element_description_reporte))
+                            , 'Ñ'
+                            , 'N'
+                            )
+                    , 'US7ASCII'
+                    , 'AL32UTF8'
+                    ) concepto
+        , CASE
+            WHEN :p_tipo_nomina = 'FINIQUITO' THEN
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) IN ('NP028_2 EARNINGS RESULTS','FP042 EARNINGS RESULTS') AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'FP049 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'VALOR PAGO' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) NOT IN ('FP049 COSTEO', 'NP028_2') AND UPPER(TRIM(pivtl.name)) IN ('PAY VALUE', 'VALOR PAGO') THEN
+                        TO_NUMBER(prrv.result_value)
+                    ELSE
+                        0
+                END
+                --
+            WHEN :p_tipo_nomina <> 'FINIQUITO' THEN
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) IN ('NP028_2 EARNINGS RESULTS','FP042 EARNINGS RESULTS') AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'NP052 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'VALOR PAGO' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN (UPPER(pettl.element_name) NOT IN ('NP052 COSTEO', 'NP028_2') AND UPPER(TRIM(pivtl.name)) IN ('PAY VALUE', 'VALOR PAGO')) OR (UPPER(pettl.element_name) NOT IN ('NP052 COSTEO', 'NP028_2') AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED') THEN
+                        TO_NUMBER(prrv.result_value)
+                    ELSE
+                        0
+                END
+                --
+            END importe
+        , CASE
+            WHEN :p_tipo_nomina = 'FINIQUITO' THEN
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) = 'NP028_2 EARNINGS RESULTS' AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'FP049 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'ISR SUBSIDY FOR EMPLOYMENT' THEN
+                        TO_NUMBER(prrv.result_value)
+                    ELSE
+                        0
+                END
+                --
+            WHEN :p_tipo_nomina = 'PTU BAJAS' THEN   --+alegaspi 02/08/2022 : para mostrar el Subsidio Causado  para PTU BAJAS 
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) = 'NPU052 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'ISR SUBSIDY FOR EMPLOYMENT' AND TO_NUMBER(prrv.result_value) > 0 THEN	--+alegaspi 
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'NPU052 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'ISR SUBSIDY FOR EMPLOYMENT' AND TO_NUMBER(prrv.result_value) < 0 THEN	--+alegaspi 
+                        TO_NUMBER('0.01')
+                    ELSE --**
+                        0
+                END
+                --
+            WHEN :p_tipo_nomina <> 'FINIQUITO' THEN
+                --
+                CASE
+                    WHEN UPPER(pettl.element_name) = 'NP028_2 EARNINGS RESULTS' AND UPPER(TRIM(pivtl.name)) = 'EARNINGS CALCULATED' THEN
+                        TO_NUMBER(prrv.result_value)
+                    WHEN UPPER(pettl.element_name) = 'NP052 COSTEO' AND UPPER(TRIM(pivtl.name)) = 'ISR SUBSIDY FOR EMPLOYMENT' THEN
+                        TO_NUMBER(prrv.result_value)
+                    ELSE
+                        0
+                END
+                --
+            END subsidiocausado
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'AMOUNT' THEN
+                TO_NUMBER(prrv.result_value)
+            ELSE
+                0
+            END saldoafavor_amount
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'FUTURO1' THEN
+                TO_NUMBER(prrv.result_value)
+            ELSE
+                0
+            END saldoafavor_futuro1_input
+        , TO_NUMBER( 
+            COALESCE(  
+                (SELECT    SUM(peevf.screen_entry_value) screen_entry_value
+                FROM      pay_payroll_rel_actions pprax
+                        , pay_entry_usages peu
+                        , pay_element_entries_f peef
+                        , pay_element_types_tl pett
+                        , pay_element_entry_values_f peevf
+                        , pay_input_values_tl pivt
+                WHERE     1 = 1
+                AND       pprax.payroll_rel_action_id = ppra.payroll_rel_action_id
+                AND       pprax.action_status = 'C'
+                AND       peu.payroll_relationship_id = pprax.payroll_relationship_id
+                AND       peef.element_entry_id = peu.element_entry_id
+                AND       pett.element_type_id = peef.element_type_id
+                AND       peevf.element_entry_id = peef.element_entry_id
+                AND       pivt.input_value_id = peevf.input_value_id
+                AND       UPPER(pett.element_name) = 'NP028_2'
+                AND       UPPER(pivt.name) = 'FUTURO1'
+                AND       pett.language = 'US'
+                AND       pivt.language = 'US'
+                AND       ppa.effective_date BETWEEN peef.effective_start_date AND peef.effective_end_date
+                AND       ppa.effective_date BETWEEN peevf.effective_start_date AND peevf.effective_end_date
+                --+
+                And exists(
+                    Select 1
+                    From pay_element_entry_values_f peevf2
+                        , pay_input_values_tl pivt2
+                    Where 1 = 1
+                        And peevf2.element_entry_id = peef.element_entry_id
+                        And pivt2.input_value_id = peevf2.input_value_id
+                        And UPPER(pivt2.name) = 'AÑO EJERCICIO'
+                        And trim(replace(peevf2.screen_entry_value,',')) = ''||extract(year from ppa.effective_date)
+                        And pivt2.language = 'US'
+                        And ppa.effective_date 
+                            BETWEEN peevf2.effective_start_date 
+                                AND peevf2.effective_end_date
+                )
+            ) 
+            , 0
+            )
+        ) saldoafavor_futuro1_entry
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'AÑO EJERCICIO' THEN
+                prrv.result_value
+            ELSE
+                ''
+            END anio
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'SALDO FAVOR 1' THEN
+                TO_NUMBER(prrv.result_value)
+            ELSE
+                0
+            END remanente_saldo_favor1
+        , CASE
+            WHEN elem.tipootropago = '004' AND UPPER(TRIM(pivtl.name)) = 'SALDO FAVOR 2' THEN
+                TO_NUMBER(prrv.result_value)
+            ELSE
+                0
+            END remanente_saldo_favor2
+        , ppra.payroll_rel_action_id
+        , ppa.effective_date
+    FROM  pay_rel_groups_dn                 prg
+        , pay_payroll_rel_actions           ppra
+        --+
+        , pay_payroll_actions               ppa
+        , pay_time_periods                  ptp
+        --+
+        , pay_run_types_f                   prtf
+        , pay_run_results                   prr
+        , pay_run_result_values             prrv
+        , pay_element_types_f               pet
+        , pay_element_types_tl              pettl
+        , fusion.pay_ele_classifications    pec
+        , fusion.pay_input_values_f         piv
+        , pay_input_values_tl               pivtl
+        , cat_elements                      elem
+    WHERE     1 = 1
+        And ppra.payroll_relationship_id = prg.payroll_relationship_id
+        And prg.group_type = 'A'
+        --+
+        And ppa.payroll_action_id = ppra.payroll_action_id
+        And ppra.action_status = 'C'
+        And ppra.retro_component_id is null
+        And ppra.chunk_number is not null
+        And ppra.source_action_id is not null
+        And ppa.action_status = 'C'
+        And ppa.action_type in ('R', 'Q', 'B')
+        And ppa.payroll_id  = COALESCE (TO_NUMBER(:p_payroll_id), ppa.payroll_id)
+        And ptp.time_period_id = ppa.earn_time_period_id
+        And ptp.period_name = :p_period_name
+        --+
+        And ppra.payroll_rel_action_id = prr.payroll_rel_action_id
+        And ppra.run_type_id = prtf.run_type_id
+        --+ 
+        And prr.run_result_id = prrv.run_result_id
+        And prr.status IN ('P', 'PA')
+        And prr.element_type_id = pet.element_type_id
+        And pet.element_type_id = pettl.element_type_id
+        And pet.classification_id = pec.classification_id
+        And pet.element_type_id = piv.element_type_id
+        And prrv.input_value_id = piv.input_value_id
+        And piv.input_value_id = pivtl.input_value_id
+        And piv.user_display_flag = 'Y'
+        And UPPER(pettl.element_name) = UPPER(elem.element_name)
+        And ( ( UPPER (pec.base_classification_name) IN (  'STANDARD EARNINGS'
+                                                                    , 'SUPPLEMENTAL EARNINGS'
+                                                                    , 'TAXABLE BENEFITS'
+                                                                    )
+                        AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                        , 'VALOR PAGO'
+                                                        , 'EARNINGS CALCULATED'
+                                                        , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                        , 'AMOUNT'
+                                                        , 'AÑO EJERCICIO'
+                                                        , 'SALDO FAVOR 1'
+                                                        , 'SALDO FAVOR 2'
+                                                        , 'FUTURO1'
+                                                        )
+                    )
+                    OR (   (    UPPER (pec.base_classification_name) IN (  'TAX DEDUCTIONS'
+                                                                        , 'SOCIAL INSURANCE DEDUCTIONS'
+                                                                        , 'EMPLOYER TAXES'
+                                                                        )
+                            AND UPPER (TRIM (pivtl.name)) IN (  'EMPLOYER SOCIAL SECURITY QUOTA'
+                                                            , 'SDI'
+                                                            , 'PAY VALUE'
+                                                            , 'VALOR PAGO'
+                                                            , 'ISR WITHHELD'
+                                                            , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                            , 'AMOUNT'
+                                                            , 'AÑO EJERCICIO'
+                                                            , 'SALDO FAVOR 1'
+                                                            , 'SALDO FAVOR 2'
+                                                            )
+                        )
+                        OR (    UPPER (pec.base_classification_name) IN (  'ABSENCES'
+                                                                        , 'VOLUNTARY DEDUCTIONS'
+                                                                        , 'INVOLUNTARY DEDUCTIONS'
+                                                                        )
+                            AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                            , 'VALOR PAGO'
+                                                            , 'NET PAY'
+                                                            , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                            , 'AMOUNT'
+                                                            , 'AÑO EJERCICIO'
+                                                            , 'SALDO FAVOR 1'
+                                                            , 'SALDO FAVOR 2'
+                                                            )
+                        )
+                    )
+                    OR (    UPPER (pec.base_classification_name) = 'INFORMATION'
+                        AND UPPER (TRIM (pivtl.name)) IN (  'PAY VALUE'
+                                                        , 'VALOR PAGO'
+                                                        , 'EARNINGS AMOUNT'
+                                                        , 'DIAS'
+                                                        , 'HORAS'
+                                                        , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                        , 'AMOUNT'
+                                                        , 'AÑO EJERCICIO'
+                                                        , 'SALDO FAVOR 1'
+                                                        , 'SALDO FAVOR 2'
+                                                        )
+                    )
+                    OR (    UPPER (pec.base_classification_name) = 'GLB_SEVERANCE_PAY'
+                        AND UPPER (TRIM (pivtl.name)) IN (  'EARNINGS CALCULATED'
+                                                        , 'ISR SUBSIDY FOR EMPLOYMENT'
+                                                        , 'AMOUNT'
+                                                        , 'AÑO EJERCICIO'
+                                                        , 'SALDO FAVOR 1'
+                                                        , 'SALDO FAVOR 2'
+                                                        )
+                    )
+                )
+    AND ppa.effective_date BETWEEN pet.effective_start_date AND pet.effective_end_date
+    AND ppa.effective_date BETWEEN piv.effective_start_date AND piv.effective_end_date
+    AND pettl.language = 'US'--SYS_CONTEXT ('USERENV', 'LANG')
+    AND pivtl.language = 'US'--SYS_CONTEXT ('USERENV', 'LANG')
+    --+
+    And ppa.effective_date between prg.start_date and prg.end_date
+    --+
+    And Exists(
+        SELECT    1
+        FROM      pay_payroll_rel_actions pprax
+                , pay_entry_usages peu
+                , pay_element_entries_f peef
+                , pay_element_types_tl pett
+                , pay_element_entry_values_f peevf
+                , pay_input_values_tl pivt
+        WHERE     1 = 1
+            And peef.element_entry_id = prr.element_entry_id --+ Link 
+            And pprax.payroll_rel_action_id = ppra.payroll_rel_action_id
+            And pprax.action_status = 'C'
+            And peu.payroll_relationship_id = pprax.payroll_relationship_id
+            And peef.element_entry_id = peu.element_entry_id
+            And pett.element_type_id = peef.element_type_id
+            And peevf.element_entry_id = peef.element_entry_id
+            And pivt.input_value_id = peevf.input_value_id
+            And UPPER(pett.element_name) = 'NP028_2'
+            And UPPER(pivt.name) = 'AÑO EJERCICIO'
+            And pett.language = 'US'
+            And pivt.language = 'US'
+            And ( trim(replace(peevf.screen_entry_value,',')) = ''||extract(year from ppa.effective_date)
+                Or trim(replace(peevf.screen_entry_value,',')) = ''||(extract(year from ppa.effective_date) -1)
+             )
+            And ppa.effective_date BETWEEN peef.effective_start_date AND peef.effective_end_date
+            And ppa.effective_date BETWEEN peevf.effective_start_date AND peevf.effective_end_date
+    )
+    
+), otros_pagos_base AS (
+    SELECT  tipootropago
+        , clave
+        , concepto
+        , SUM(importe) importe
+        , SUM(subsidiocausado) subsidiocausado
+        , SUM(saldoafavor_amount) saldoafavor_amount
+        , SUM(saldoafavor_futuro1_input) saldoafavor_futuro1_input
+        , MAX(saldoafavor_futuro1_entry) saldoafavor_futuro1_entry
+        , MAX(anio) anio
+        , SUM(remanente_saldo_favor1 + remanente_saldo_favor2) remanentesaldoafavor
+        , payroll_rel_action_id
+    FROM    otros_pagos_1
+    Where 1 = 1
+    GROUP BY  tipootropago
+            , clave
+            , concepto
+            , payroll_rel_action_id
+)
+        
+SELECT    tipootropago
+        , clave
+        , concepto
+        , CASE
+			WHEN :p_tipo_nomina = 'FINIQUITO' THEN
+				--
+				CASE
+					WHEN clave = 'FP049 COSTEO' AND importe = 0 THEN
+						0
+					WHEN clave = 'FP049 COSTEO' AND subsidiocausado < 0 THEN
+						0
+					ELSE
+						importe
+				END
+				--
+			WHEN :p_tipo_nomina <> 'FINIQUITO' THEN
+				--
+				CASE
+					WHEN clave = 'NP052 COSTEO' AND importe = 0 THEN
+						0
+					WHEN clave = 'NP052 COSTEO' AND subsidiocausado < 0 THEN
+						0
+					ELSE
+						importe
+				END
+				--
+          END importe
+        , CASE
+            WHEN importe > subsidiocausado AND subsidiocausado > 0  AND tipootropago = '002' THEN
+                importe
+            WHEN tipootropago = '002' THEN
+                subsidiocausado
+            ELSE
+                NULL
+          END subsidiocausado
+        , CASE
+            WHEN tipootropago = '004' AND saldoafavor_futuro1_input <> 0 THEN
+                saldoafavor_futuro1_input
+            WHEN tipootropago = '004' AND saldoafavor_futuro1_entry <> 0 THEN
+                saldoafavor_futuro1_entry
+            WHEN tipootropago = '004' THEN
+                saldoafavor_amount
+            ELSE
+                NULL
+          END saldoafavor
+        , CASE
+            WHEN tipootropago = '004' THEN
+                anio
+            ELSE
+                NULL
+          END anio
+        , CASE
+            WHEN tipootropago = '004' THEN
+                remanentesaldoafavor
+            ELSE
+                NULL
+          END remanentesaldoafavor
+        , CASE
+            WHEN importe > subsidiocausado AND subsidiocausado > 0  THEN
+                importe - subsidiocausado
+            ELSE
+                0
+          END importeajuste
+        , payroll_rel_action_id
+FROM    otros_pagos_base
+WHERE     1 = 1
+ORDER BY  tipootropago
+        , clave
