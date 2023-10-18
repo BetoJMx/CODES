@@ -1,0 +1,949 @@
+--PKGB BKP AC_DIA 250722
+CREATE OR REPLACE PACKAGE BODY PAY.xxtoks_pay_acumulados_dia_pkg AS 
+    PROCEDURE limpiar(p_id_exec NUMBER) as 
+    BEGIN 
+        -- 
+        DELETE 
+        FROM      pay.XXTOKS_PAY_ACUMULADOS_DIA_ORG 
+        WHERE     1 = 1 
+        AND       id_exec = p_id_exec; 
+        -- 
+        -- 
+        DELETE 
+        FROM      pay.XXTOKS_PAY_ACUMULADOS_DIA_REPORT_DATA 
+        WHERE     1 = 1 
+        AND       id_exec = p_id_exec; 
+        -- 
+        -- 
+        DELETE 
+        FROM      pay.XXTOKS_PAY_ACUMULADOS_DIA_ELEMENT_SOURCE 
+        WHERE     1 = 1 
+        AND       id_exec = p_id_exec; 
+        -- 
+    END limpiar; 
+    -- 
+    PROCEDURE visual_log(  p_message    IN VARCHAR2 
+                        ) IS 
+        BEGIN 
+            -- 
+            dbms_output.put_line('Message:'||p_message); 
+            -- 
+        EXCEPTION 
+            WHEN OTHERS THEN 
+                -- 
+                RETURN; 
+                -- 
+        END visual_log; 
+    -- 
+    PROCEDURE visual_output(  p_message IN VARCHAR2 
+                           ) IS 
+        BEGIN 
+            -- 
+            dbms_output.put_line('Message:'||p_message); 
+            -- 
+        EXCEPTION 
+            WHEN OTHERS THEN 
+                -- 
+                RETURN; 
+                -- 
+        END visual_output; 
+    -- 
+    /*FUNCTION from_base64(  p_clob   IN CLOB 
+                        ) RETURN CLOB IS 
+        -- 
+        l_length integer := dbms_lob.getLength(p_clob); 
+        l_offset integer := 1; 
+        l_amt binary_integer := 800; 
+        l_buffer varchar2(9200); 
+        -- 
+        l_result CLOB := empty_clob(); 
+        -- 
+        BEGIN 
+            -- 
+            WHILE l_offset <= l_length LOOP 
+                -- 
+                l_buffer := REPLACE(REPLACE(dbms_lob.substr(p_clob, l_amt, l_offset), CHR(10), NULL), CHR(13), NULL); 
+                l_offset := l_offset + l_amt; 
+                -- 
+                WHILE l_offset <= l_length AND MOD(dbms_lob.getLength(l_buffer), 4) > 0 LOOP 
+                    -- 
+                    l_buffer := l_buffer || REPLACE(REPLACE(dbms_lob.SUBSTR(p_clob, 1, l_offset), CHR(10), NULL), CHR(13), NULL); 
+                    l_offset := l_offset + 1; 
+                    -- 
+                END LOOP; 
+                -- 
+                l_result := l_result || utl_raw.cast_to_varchar2(utl_encode.base64_decode(utl_raw.cast_to_raw(l_buffer))); 
+                -- 
+            END LOOP; 
+            -- 
+            RETURN l_result; 
+            -- 
+        END from_base64;*/ 
+    -- 
+    PROCEDURE get_organizations(  p_fechainicio         IN VARCHAR2 
+                                , p_fechafin            IN VARCHAR2 
+                                , p_juegoconsolidacion  IN VARCHAR2 
+                                , p_nomina              IN VARCHAR2 
+                                , p_id_exec             IN NUMBER 
+                                , p_emp_legal           IN VARCHAR2 
+                                , p_user_token          IN VARCHAR2 DEFAULT NULL 
+                                , p_juego_asignacion    IN VARCHAR2
+								, p_flag				IN CHAR
+                               ) IS 
+        -- 
+        v_user_name                VARCHAR2 (100); 
+        v_password                 VARCHAR2 (100); 
+        -- 
+        v_ws_url                   VARCHAR2 (500); 
+        v_ws_action                VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar 
+        -- 
+        v_ws_envelope              CLOB; 
+        v_ws_response_clob         CLOB; 
+        -- 
+        v_ws_resp_xml              XMLTYPE; 
+        v_ws_resp_xml2             XMLTYPE; 
+        -- 
+        v_cdata                    CLOB; 
+        v_clob                     CLOB; 
+        p_errormsg                 VARCHAR2 (512 CHAR); 
+        -- 
+    	v_valid			   NUMBER := 0;   
+        --
+        BEGIN  
+            -- 
+            v_ws_envelope := 
+                            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+                                    <soap:Body> 
+                                    <pub:runReport> 
+                                        <pub:reportRequest> 
+                                            <pub:parameterNameValues> 
+											<pub:item>  
+                                            <pub:name>flag</pub:name>  
+                                            <pub:values>  
+                                                <pub:item>'||p_flag||'</pub:item>  
+                                            </pub:values>  
+                                            </pub:item> 
+                                            <pub:item> 
+                                            <pub:name>fechainicio</pub:name> 
+                                            <pub:values> 
+                                                <pub:item>'||p_fechainicio||'</pub:item> 
+                                            </pub:values> 
+                                            </pub:item> 
+                                            <pub:item> 
+                                            <pub:name>fechafin</pub:name> 
+                                            <pub:values> 
+                                                <pub:item>'||p_fechafin||'</pub:item> 
+                                            </pub:values> 
+                                            </pub:item> 
+                                            <pub:item> 
+                                            <pub:name>juegoconsolidacion</pub:name> 
+                                            <pub:values> 
+                                                <pub:item>'||p_juegoconsolidacion||'</pub:item> 
+                                            </pub:values> 
+                                            </pub:item> 
+                                            <pub:item> 
+                                            <pub:name>nomina</pub:name> 
+                                            <pub:values> 
+                                                <pub:item>'||p_nomina||'</pub:item> 
+                                            </pub:values> 
+                                            </pub:item> 
+                                            <pub:item> 
+                                            <pub:name>juego_asignacion</pub:name> 
+                                            <pub:values> 
+                                                <pub:item>'||p_juego_asignacion||'</pub:item> 
+                                            </pub:values> 
+                                            </pub:item> 
+                                            <pub:item> 
+                                            <pub:name>empLegal</pub:name> 
+                                            <pub:values> 
+                                                <pub:item>'||p_emp_legal||'</pub:item> 
+                                            </pub:values> 
+                                            </pub:item> 											
+                                            </pub:parameterNameValues> 
+                                            <pub:attributeFormat>xml</pub:attributeFormat> 
+                                            <pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS PAY Reporte de Acumulados por Dia/TOKS PAY Acumulados por Dia Unidades - RT.xdo</pub:reportAbsolutePath> 
+                                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+                                        </pub:reportRequest> 
+                                    </pub:runReport> 
+                                </soap:Body> 
+                            </soap:Envelope>'; 
+ 
+            ---REQUEST TOKEN--- 
+            GRG_COMMON_CONNECTIONS.get_otbi_report( 
+                l_ws_envelope => v_ws_envelope, 
+                l_user_token  => p_user_token, 
+                x_ws_response => v_clob); 
+ 
+            v_ws_resp_xml2 := XMLTYPE.createXML (v_clob); 
+            ---REQUEST TOKEN--- 
+  
+            FOR v_organization IN ( SELECT  UNIQUE
+                                            ORGANIZATION_ID,
+                                            ORGANIZATION_NAME,
+                                            NUMERO_EMPLEADOS,
+                                            INICIO,
+                                            FIN
+                                    FROM    XMLTABLE (  
+														'/DATA_DS/G_1' PASSING xmltype.createxml(v_clob)  
+														COLUMNS  
+														ORGANIZATION_ID 	VARCHAR2(250) PATH 'ORGANIZATION_ID',  
+														ORGANIZATION_NAME 	VARCHAR2(250) PATH 'ORGANIZATION_NAME',  
+														NUMERO_EMPLEADOS 	VARCHAR2(250) PATH 'NUMERO_EMPLEADOS',
+														INICIO 				VARCHAR2(250) PATH 'INICIO',
+														FIN					VARCHAR2(250) PATH 'FIN'
+                                                       ) xml_data 
+                                  ) LOOP 
+                -- 
+                BEGIN 
+                    -- 
+                    SELECT  NVL(COUNT(*),0) cont 
+                    INTO    v_valid
+                    FROM    XXTOKS_PAY_ACUMULADOS_DIA_ORG
+                    WHERE   id_exec = p_id_exec
+                            AND organization_id = v_organization.organization_id
+                            AND organization_name = v_organization.organization_name
+                            AND f_inicio = v_organization.inicio
+                            AND f_fin = v_organization.fin;
+                    
+                    IF v_valid = 0 THEN
+                    
+                        INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ORG(  id_exec  
+                                                              , organization_id  
+                                                              , organization_name  
+                                                              , numero_empleados  
+                                                              , f_inicio  
+                                                              , f_fin  
+                                                              , j_cons  
+                                                              , nomina  
+                                                              , emp_legal  
+                                                              , token  
+                                                              , juego_asignacion
+                                                             )VALUES(  p_id_exec  
+                                                                     , v_organization.organization_id  
+                                                                     , v_organization.organization_name  
+                                                                     , v_organization.numero_empleados  
+                                                                     , v_organization.inicio 
+                                                                     , v_organization.fin 
+                                                                     , p_juegoconsolidacion  
+                                                                     , p_nomina  
+                                                                     , p_emp_legal  
+                                                                     , p_user_token  
+                                                                     , p_juego_asignacion
+                                                                    );  
+                        COMMIT;  
+                        --  
+                    END IF;
+                     --+
+                     v_valid := 0;
+                     --+
+                EXCEPTION WHEN OTHERS THEN  
+                    NULL;
+                END; 
+                -- 
+            END LOOP; 
+            -- 
+        EXCEPTION 
+            WHEN OTHERS THEN 
+                -- 
+                p_errormsg := SQLERRM; 
+                INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(error,id_process) values ('Error al obtener organizaciones: '||p_errormsg, p_id_exec); 
+                COMMIT;  
+                -- 
+        END get_organizations; 
+         
+    -- 
+    PROCEDURE get_result_values(  p_start_id    NUMBER 
+                                , p_end_id      NUMBER 
+                               ) IS 
+        -- 
+        CURSOR c_organizations IS 
+            SELECT  DISTINCT  
+                      organization_id  
+                    , organization_name 
+                    , f_inicio 
+                    , f_fin 
+                    , nomina 
+                    , j_cons 
+                    , id_exec 
+                    , token 
+                    , juego_asignacion 
+            FROM      XXTOKS_PAY_ACUMULADOS_DIA_ORG 
+            WHERE     1 = 1 
+            AND       id BETWEEN p_start_id AND p_end_id 
+            AND       id_exec = ( 
+                                    SELECT    id_exec 
+                                    FROM      XXTOKS_PAY_ACUMULADOS_DIA_ORG 
+                                    WHERE     id = p_start_id 
+                                ); 
+             
+        -- 
+        l_user_name                VARCHAR2 (100); 
+        l_password                 VARCHAR2 (100); 
+        l_ws_url                   VARCHAR2 (500); 
+        l_ws_action                VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; 
+        -- 
+        l_ws_envelope              CLOB; 
+        -- 
+        l_ws_response_clob         CLOB; 
+        -- 
+        v_cdata                    CLOB; 
+        l_clob                     CLOB; 
+        -- 
+        l_ws_resp_xml              XMLTYPE; 
+        l_ws_resp_xml2             XMLTYPE; 
+        -- 
+        -- 
+        v_val                      PLS_INTEGER; 
+        v_lines_arr                apex_t_varchar2; 
+        v_content_arr              apex_t_varchar2; 
+        p_errormsg                 VARCHAR2 (512 CHAR); 
+        v_inicio                   VARCHAR2(200); 
+ 
+        BEGIN 
+            -- 
+            FOR v_organization IN c_organizations LOOP 
+                -- 
+                l_ws_envelope := 
+                                '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"> 
+                                        <soap:Body> 
+                                        <pub:runReport> 
+                                            <pub:reportRequest> 
+                                                <pub:parameterNameValues> 
+                                                <pub:item> 
+                                                <pub:name>fechaInicio</pub:name> 
+                                                <pub:values> 
+                                                    <pub:item>'||v_organization.f_inicio||'</pub:item> 
+                                                </pub:values> 
+                                                </pub:item> 
+                                                <pub:item> 
+                                                <pub:name>fechaFin</pub:name> 
+                                                <pub:values> 
+                                                    <pub:item>'||v_organization.f_fin||'</pub:item> 
+                                                </pub:values> 
+                                                </pub:item> 
+                                                <pub:item> 
+                                                <pub:name>juegoConsolidacion</pub:name> 
+                                                <pub:values> 
+                                                    <pub:item>'||v_organization.j_cons||'</pub:item> 
+                                                </pub:values> 
+                                                </pub:item> 
+                                                <pub:item> 
+                                                <pub:name>nomina</pub:name> 
+                                                <pub:values> 
+                                                    <pub:item>'||v_organization.nomina||'</pub:item> 
+                                                </pub:values> 
+                                                </pub:item> 
+                                                <pub:item> 
+                                                <pub:name>unidad</pub:name> 
+                                                <pub:values> 
+                                                    <pub:item>'||v_organization.organization_id||'</pub:item> 
+                                                </pub:values> 
+                                                </pub:item> 
+                                                <pub:item> 
+                                                <pub:name>juego_asignacion</pub:name> 
+                                                <pub:values> 
+                                                    <pub:item>'||v_organization.juego_asignacion||'</pub:item> 
+                                                </pub:values> 
+                                                </pub:item> 
+                                                </pub:parameterNameValues> 
+                                                <pub:attributeFormat>xml</pub:attributeFormat> 
+                                                <pub:reportAbsolutePath>/Reportes Custom/PAY/TOKS PAY Reporte de Acumulados por Dia/TOKS PAY Acumulados por Dia - RT.xdo</pub:reportAbsolutePath> 
+                                                <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload> 
+                                            </pub:reportRequest> 
+                                        </pub:runReport> 
+                                    </soap:Body> 
+                                </soap:Envelope>'; 
+                -- 
+                BEGIN 
+                    ---REQUEST TOKEN--- 
+                    GRG_COMMON_CONNECTIONS.get_otbi_report( 
+                        l_ws_envelope => l_ws_envelope, 
+                        l_user_token  => v_organization.token, 
+                        x_ws_response => l_clob);
+ 
+                    l_ws_resp_xml2 := XMLTYPE.createXML (l_clob); 
+                    ---REQUEST TOKEN--- 
+                EXCEPTION 
+                    WHEN OTHERS THEN 
+                        -- 
+                        p_errormsg := SQLERRM; 
+                        INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(error,id_process) values ('Error al procesar informacion mediante token - XML2. ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg,v_organization.id_exec); 
+                        COMMIT; 
+                        RETURN; 
+                        -- 
+                END; 
+                -- 
+                -- 
+                BEGIN 
+                -- 
+                    FOR i IN (  SELECT *  
+                                FROM XMLTABLE ( 
+                                    '/DATA_DS/G_1' PASSING xmltype.createxml(l_clob) 
+                                    COLUMNS 
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD', 
+                                    DESCRIPCION VARCHAR2(250) PATH 'DESCRIPCION', 
+                                    ESTAFETA VARCHAR2(250) PATH 'ESTAFETA', 
+                                    NOMBRE VARCHAR2(250) PATH 'NOMBRE', 
+                                    PUESTO VARCHAR2(250) PATH 'PUESTO', 
+                                    CATEGORIA_EMPLEADO VARCHAR2(250) PATH 'CATEGORIA_EMPLEADO', 
+                                    TABLA_FACTOR VARCHAR2(250) PATH 'TABLA_FACTOR', 
+                                    FECHA_INGRESO VARCHAR2(250) PATH 'FECHA_INGRESO', 
+                                    FECHA_BAJA VARCHAR2(250) PATH 'FECHA_BAJA', 
+									SENIORITY_DATE VARCHAR2(250) PATH 'SENIORITY_DATE',
+                                    REG_PATRONAL VARCHAR2(250) PATH 'REG_PATRONAL', 
+                                    CVE_IMSS VARCHAR2(250) PATH 'CVE_IMSS', 
+                                    DIA VARCHAR2(250) PATH 'DIA', 
+                                    SALARIO VARCHAR2(250) PATH 'SALARIO', 
+                                    EMPRESA_ORIGEN VARCHAR2(250) PATH 'EMPRESA_ORIGEN', 
+                                    PAYROLL_REL_ACTION_ID VARCHAR2(250) PATH 'PAYROLL_REL_ACTION_ID', 
+                                    ORGANIZATION_ID VARCHAR2(250) PATH 'ORGANIZATION_ID' 
+                                    ) xml_data 
+                               ) LOOP 
+                        -- 
+                        BEGIN 
+                            -- 
+                            INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_REPORT_DATA( 
+                                                                            unidad, 
+                                                                            descripcion, 
+                                                                            estafeta, 
+                                                                            nombre, 
+                                                                            puesto, 
+                                                                            categoria_empleado, 
+                                                                            tabla_factor, 
+                                                                            fecha_ingreso, 
+                                                                            fecha_baja, 
+																			seniority_date,
+                                                                            reg_patronal, 
+                                                                            cve_imss, 
+                                                                            dia, 
+                                                                            salario, 
+                                                                            empresa_origen, 
+                                                                            payroll_rel_action_id, 
+                                                                            id_exec, 
+                                                                            organization_id) VALUES ( 
+                                                                                                    i.unidad, 
+                                                                                                    i.descripcion, 
+                                                                                                    i.estafeta, 
+                                                                                                    i.nombre, 
+                                                                                                    i.puesto, 
+                                                                                                    i.categoria_empleado, 
+                                                                                                    i.tabla_factor, 
+                                                                                                    i.fecha_ingreso, 
+                                                                                                    i.fecha_baja,
+																									i.seniority_date,																									
+                                                                                                    i.reg_patronal, 
+                                                                                                    i.cve_imss, 
+                                                                                                    i.dia, 
+                                                                                                    i.salario, 
+                                                                                                    i.empresa_origen, 
+                                                                                                    i.payroll_rel_action_id, 
+                                                                                                    v_organization.id_exec, 
+                                                                                                    i.organization_id); 
+                            -- 
+                            COMMIT; 
+                            -- 
+                        EXCEPTION 
+                            WHEN OTHERS THEN 
+                                -- 
+                                p_errormsg := SQLERRM; 
+                                INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(error,id_process) values ('Error al guardar al empleado. payroll_rel_action_id:'||i.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg, v_organization.id_exec); 
+                                COMMIT; 
+                                RETURN; 
+                                -- 
+                        END; 
+                        --   
+                    END LOOP; 
+                    -- 
+                EXCEPTION 
+                    WHEN OTHERS THEN 
+                        -- 
+                        p_errormsg := SQLERRM; 
+                        INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(error) values ('Error al leer el G1. ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg); 
+                        COMMIT; 
+                        RETURN; 
+                        -- 
+                END; 
+                -- 
+                -- 
+                --v_inicio := TO_CHAR(SYSDATE,'DD/MM/YYYY HH24:MI:SS'); 
+                --INSERT INTO xxtoks_pay_acumulados_tracing(contenido, f_inicio, f_fin, ins_type) VALUES(NULL, v_inicio, TO_CHAR(SYSDATE,'DD/MM/YYYY HH24:MI:SS'), 'ORG_ID: '||v_organization.organization_id||' 8. ANTES FOR G2'); 
+                --COMMIT; 
+                -- 
+                BEGIN 
+                -- 
+                    FOR a IN (  SELECT *  
+                                FROM XMLTABLE ( 
+                                    '/DATA_DS/G_1/G_2' PASSING xmltype.createxml(l_clob) 
+                                    COLUMNS 
+                                    ELEMENT_NAME VARCHAR2(250) PATH 'ELEMENT_NAME', 
+                                    INPUT_NAME VARCHAR2(250) PATH 'INPUT_NAME',
+                                    ELEMENT_DESC VARCHAR2(250) PATH 'ELEMENT_DESC', --
+                                    RESULT_VALUE VARCHAR2(250) PATH 'RESULT_VALUE', 
+                                    PAYROLL_REL_ACTION_ID VARCHAR2(250) PATH 'PAYROLL_REL_ACTION_ID' 
+                                    ) xml_data 
+                             ) LOOP 
+                        -- 
+                        BEGIN 
+                            -- 
+                            INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ELEMENT_SOURCE( 
+                                                                                element_name, 
+                                                                                input_name, 
+                                                                                element_desc, --
+                                                                                result_value, 
+                                                                                payroll_rel_action_id, 
+                                                                                id_exec ) VALUES ( 
+                                                                                                    a.element_name, 
+                                                                                                    a.input_name, 
+                                                                                                    a.element_desc, --
+                                                                                                    a.result_value, 
+                                                                                                    a.payroll_rel_action_id, 
+                                                                                                    v_organization.id_exec); 
+                            COMMIT; 
+                            -- 
+                        EXCEPTION 
+                            WHEN OTHERS THEN 
+                                -- 
+                                p_errormsg := SQLERRM; 
+                                INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(error, id_process) values ('Error al guardar el detalle de los elementos del empleado. payroll_rel_action_id:'||a.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg,v_organization.id_exec); 
+                                COMMIT; 
+                                RETURN; 
+                                -- 
+                        END; 
+                        -- 
+                    END LOOP; 
+                    -- 
+                EXCEPTION 
+                    WHEN OTHERS THEN 
+                        -- 
+                        p_errormsg := SQLERRM; 
+                        INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(error) values ('Error al leer el G2. ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg); 
+                        COMMIT; 
+                        RETURN; 
+                        -- 
+                END; 
+                -- 
+            END LOOP; 
+            -- 
+        EXCEPTION WHEN OTHERS THEN 
+            P_ERRORMSG := SQLERRM; 
+            INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(ERROR) values ('Error en get_result_values: '||P_ERRORMSG); 
+            COMMIT; 
+                -- 
+        END get_result_values; 
+    -- 
+    PROCEDURE generar_procesos_paralelo(  p_id_exec   NUMBER 
+                                       ) IS 
+        -- 
+        v_task_name         VARCHAR2(240); 
+        v_plsql_block       VARCHAR2(32767); 
+        -- 
+        v_sql_stmt_filtro   VARCHAR2(32767); 
+        v_sql_stmt          VARCHAR2(32767); 
+        -- 
+        v_intentos          NUMBER := 0; 
+        p_errormsg          VARCHAR2 (512 CHAR); 
+        -- 
+        BEGIN 
+            -- 
+            v_task_name := dbms_parallel_execute.generate_task_name(  prefix   => 'GRGACUMULADOSDIA$_' ); 
+            -- 
+            dbms_parallel_execute.create_task(  task_name   => v_task_name 
+                                             ); 
+            -- 
+            v_sql_stmt_filtro := '  SELECT    MIN(id) start_id 
+                                            , MAX(id) end_id 
+                                    FROM      ( 
+                                                SELECT    id 
+                                                        , NTILE(30) OVER( ORDER BY id asc ) grupo  
+                                                FROM      XXTOKS_PAY_ACUMULADOS_DIA_ORG 
+                                                WHERE     1 = 1 
+                                                AND       id_exec = '||p_id_exec||' 
+                                              ) 
+                                    GROUP BY  grupo 
+                                 '; 
+            /* 
+            dbms_parallel_execute.create_chunks_by_number_col(  task_name    => v_task_name 
+                                                              , table_owner  => 'PAY' 
+                                                              , table_name   => 'XXTOKS_PAY_ACUMULADOS_DIA_ORG' 
+                                                              , table_column => 'ID' 
+                                                              , chunk_size   => 35 
+                                                             ); 
+            */ 
+            dbms_parallel_execute.create_chunks_by_sql(  task_name  => v_task_name 
+                                                       , sql_stmt   => v_sql_stmt_filtro 
+                                                       , by_rowid   => FALSE 
+                                                      ); 
+            -- 
+            v_sql_stmt := q'[ 
+                            BEGIN  
+                               pay.xxtoks_pay_acumulados_dia_pkg.get_result_values(  :start_id , :end_id); 
+                            END; 
+                           ]'; 
+            -- 
+            dbms_parallel_execute.run_task(  task_name      => v_task_name  
+                                           , sql_stmt       => v_sql_stmt  
+                                           , language_flag  => DBMS_SQL.native  
+                                           , parallel_level => 20 --10  
+                                          );  
+            -- 
+            LOOP 
+                -- 
+                EXIT 
+                    WHEN 
+                        -- 
+                        dbms_parallel_execute.task_status(v_task_name) = dbms_parallel_execute.finished OR v_intentos > 120; 
+                        -- 
+                v_intentos := v_intentos + 1; 
+                dbms_lock.sleep(10); 
+                -- 
+            END LOOP; 
+            -- 
+            dbms_parallel_execute.drop_task(v_task_name); 
+
+            EXCEPTION WHEN OTHERS THEN 
+            P_ERRORMSG := SQLERRM; 
+            INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(ERROR,id_process) values ('Ocurrio un problema en procesos en paralelo: '||P_ERRORMSG, p_id_exec); 
+            COMMIT;
+            -- 
+        END generar_procesos_paralelo; 
+    -- 
+    -- 
+    PROCEDURE ac_data (contenido CLOB, id_exec IN NUMBER) 
+    AS 
+        ac_id   NUMBER; 
+        p_errormsg  VARCHAR2 (512 CHAR); 
+    BEGIN 
+        ac_id := id_exec;
+        INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_CLOB_DATA (contenido, id) 
+             VALUES (contenido, ac_id); 
+        COMMIT; 
+
+        EXCEPTION WHEN OTHERS THEN 
+        INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(ERROR,id_process) values ('Ocurrio un problema en AC_DATA: '||P_ERRORMSG, id_exec); 
+        COMMIT;
+    END ac_data; 
+    -- 
+    -- 
+    PROCEDURE ac_clob ( p_id_exec IN NUMBER, 
+                        p_fechainicio IN VARCHAR2, 
+                        p_fechafin IN VARCHAR2 ) 
+    AS 
+        contenido   CLOB; 
+        v_excel     VARCHAR2 (32000); 
+        p_errormsg  VARCHAR2 (512 CHAR); 
+        v_header    CLOB;
+        v_elementos CLOB;
+ 
+        CURSOR matrix IS 
+            --SELECT body FROM xxtoks_pay_acumulados_new_process_v where id_exec = p_id_exec ORDER BY orden; 
+            WITH      xxtoks_elementos_acumulados AS( 
+                                                        SELECT    input_name 
+                                                                --, element_name 
+                                                                , element_desc --
+                                                        FROM      XXTOKS_PAY_ACUMULADOS_DIA_ELEMENT_SOURCE 
+                                                        WHERE     id_exec = p_id_exec 
+                                                        GROUP BY  input_name, element_desc
+                                                    ) 
+                    , xxtoks_resultados AS( 
+                                            SELECT    SUM(NVL(resultados.result_value, 0)) result_value 
+                                                    , resultados.element_name 
+                                                    , resultados.input_name
+                                                    , resultados.element_desc -- 
+                                                    , empleados.unidad|| 
+                                                      empleados.descripcion|| 
+                                                      empleados.estafeta|| 
+                                                      empleados.nombre|| 
+                                                      empleados.puesto|| 
+                                                      empleados.categoria_empleado|| 
+                                                      empleados.tabla_factor|| 
+                                                      empleados.fecha_ingreso|| 
+                                                      empleados.fecha_baja|| 
+													  empleados.seniority_date||
+                                                      empleados.reg_patronal|| 
+                                                      empleados.cve_imss|| 
+                                                      empleados.empresa_origen llave 
+                                            FROM      XXTOKS_PAY_ACUMULADOS_DIA_REPORT_DATA empleados 
+                                                    , XXTOKS_PAY_ACUMULADOS_DIA_ELEMENT_SOURCE resultados 
+                                            WHERE     1 = 1 
+                                            AND       empleados.id_exec = resultados.id_exec 
+                                            AND       empleados.payroll_rel_action_id = resultados.payroll_rel_action_id 
+                                            AND       empleados.id_exec = p_id_exec 
+                                            GROUP BY  resultados.element_name 
+                                                    , resultados.input_name 
+                                                    , resultados.element_desc
+                                                    , empleados.unidad|| 
+                                                      empleados.descripcion|| 
+                                                      empleados.estafeta|| 
+                                                      empleados.nombre|| 
+                                                      empleados.puesto|| 
+                                                      empleados.categoria_empleado|| 
+                                                      empleados.tabla_factor|| 
+                                                      empleados.fecha_ingreso|| 
+                                                      empleados.fecha_baja|| 
+													  empleados.seniority_date||
+                                                      empleados.reg_patronal|| 
+                                                      empleados.cve_imss|| 
+                                                      empleados.empresa_origen 
+                                          ) 
+                    , xxtoks_empleados AS( 
+                                            SELECT    empleados.unidad 
+                                                    , empleados.descripcion 
+                                                    , empleados.estafeta 
+                                                    , empleados.nombre 
+                                                    , empleados.puesto 
+                                                    , empleados.categoria_empleado 
+                                                    , empleados.tabla_factor 
+                                                    , empleados.fecha_ingreso 
+                                                    , TO_CHAR(MAX(TO_DATE(empleados.fecha_baja, 'YYYY-MM-DD')),'YYYY-MM-DD') fecha_baja
+													, empleados.seniority_date
+                                                    , empleados.reg_patronal 
+                                                    , empleados.cve_imss 
+                                                    , SUM(empleados.dia) dia 
+                                                    , MAX(empleados.salario) salario 
+                                                    , empleados.empresa_origen 
+                                                    , empleados.unidad|| 
+                                                      empleados.descripcion|| 
+                                                      empleados.estafeta|| 
+                                                      empleados.nombre|| 
+                                                      empleados.puesto|| 
+                                                      empleados.categoria_empleado|| 
+                                                      empleados.tabla_factor|| 
+                                                      empleados.fecha_ingreso|| 
+                                                      empleados.fecha_baja|| 
+													  empleados.seniority_date||
+                                                      empleados.reg_patronal|| 
+                                                      empleados.cve_imss|| 
+                                                      empleados.empresa_origen llave 
+                                            FROM      XXTOKS_PAY_ACUMULADOS_DIA_REPORT_DATA empleados 
+                                            WHERE     1 = 1 
+                                            AND       empleados.id_exec = p_id_exec 
+                                            AND       EXISTS( 
+                                                                SELECT    NULL 
+                                                                FROM      XXTOKS_PAY_ACUMULADOS_DIA_ELEMENT_SOURCE resultados 
+                                                                WHERE     1 = 1 
+                                                                AND       resultados.id_exec = empleados.id_exec 
+                                                                AND       resultados.payroll_rel_action_id = empleados.payroll_rel_action_id 
+                                                            ) 
+                                            GROUP BY  empleados.unidad 
+                                                    , empleados.descripcion 
+                                                    , empleados.estafeta 
+                                                    , empleados.nombre 
+                                                    , empleados.puesto 
+                                                    , empleados.categoria_empleado 
+                                                    , empleados.tabla_factor 
+                                                    , empleados.fecha_ingreso 
+                                                    --, empleados.fecha_baja 
+													, empleados.seniority_date
+                                                    , empleados.reg_patronal 
+                                                    , empleados.cve_imss 
+                                                    , empleados.empresa_origen 
+                                                    , empleados.unidad|| 
+                                                      empleados.descripcion|| 
+                                                      empleados.estafeta|| 
+                                                      empleados.nombre|| 
+                                                      empleados.puesto|| 
+                                                      empleados.categoria_empleado|| 
+                                                      empleados.tabla_factor|| 
+                                                      empleados.fecha_ingreso|| 
+                                                      empleados.fecha_baja|| 
+													  empleados.seniority_date||
+                                                      empleados.reg_patronal|| 
+                                                      empleados.cve_imss|| 
+                                                      empleados.empresa_origen 
+                                        ) 
+            SELECT    DISTINCT 
+                      2 orden 
+                    , empleados.unidad||'|'|| 
+                      empleados.descripcion||'|'|| 
+                      empleados.estafeta||'|'|| 
+                      empleados.nombre||'|'|| 
+                      empleados.puesto||'|'|| 
+                      empleados.categoria_empleado||'|'|| 
+                      empleados.tabla_factor||'|'|| 
+                      empleados.fecha_ingreso||'|'|| 
+                      empleados.fecha_baja||'|'|| 
+					  empleados.seniority_date||'|'|| 
+                      empleados.reg_patronal||'|'|| 
+                      empleados.cve_imss||'|'|| 
+                      empleados.dia||'|'|| 
+                      --empleados.salario||'|'|| 
+                      empleados.empresa_origen||'|'|| 
+                      --LISTAGG (resultados.result_value, '|') WITHIN GROUP (ORDER BY element_name||'-'||element_desc||'-'||input_name) OVER (PARTITION BY empleados.llave) body
+                      LISTAGG (resultados.result_value, '|') WITHIN GROUP (ORDER BY element_desc||'-'||input_name) OVER (PARTITION BY empleados.llave) body
+                      --LISTAGG (resultados.result_value, '|') WITHIN GROUP (ORDER BY element_name||'-'||input_name) OVER (PARTITION BY empleados.llave) body
+            FROM      xxtoks_empleados empleados 
+                    , ( 
+                        SELECT    emp_res.llave 
+                                --, elementos.element_name 
+                                , elementos.input_name 
+                                , elementos.element_desc
+                                , NVL(emp_res.result_value, 0) result_value 
+                        FROM      xxtoks_resultados emp_res PARTITION BY (llave) 
+                        RIGHT JOIN xxtoks_elementos_acumulados elementos 
+                        ON        emp_res.element_desc = elementos.element_desc 
+                        --ON        emp_res.element_name = elementos.element_name 
+                        AND       emp_res.input_name = elementos.input_name 
+                      ) resultados 
+            WHERE     1 = 1 
+            AND       empleados.llave = resultados.llave 
+            ORDER BY  1; 
+    -- 
+    BEGIN 
+        FOR i IN (
+            SELECT  REPLACE(NVL(element_desc,element_name),'-') || '-' || input_name AS elemento
+                    --element_desc
+            FROM    XXTOKS_PAY_ACUMULADOS_DIA_ELEMENT_SOURCE
+            WHERE   id_exec = p_id_exec
+            GROUP BY    REPLACE(NVL(element_desc,element_name),'-') || '-' || input_name--,
+                        --element_desc
+            ORDER BY    elemento
+                        --element_desc
+        )   
+        LOOP
+            --v_elementos := v_elementos || '|' || i.element_name || '-' || i.element_desc || '-' || i.input_name;
+            --v_elementos := v_elementos || '|' || i.element_name || '-' || i.input_name;
+            v_elementos := v_elementos || '|' || i.elemento;
+        END LOOP;
+
+        --HEADER BUILD
+        v_header := 'Unidad|'|| 
+                    'Descripcion|'|| 
+                    'Estafeta|'|| 
+                    'Nombre|'|| 
+                    'Puesto|'|| 
+                    'Categoria Empleado|'|| 
+                    'Tabla Factor|'|| 
+                    'Fecha Ing|'|| 
+                    'Fecha Baja|'|| 
+                    'seniority_date|'||
+                    'Reg Patronal|'|| 
+                    'Cve IMSS|'|| 
+                    'Dia|'|| 
+                    --'Salario|'|| 
+                    'Empresa Origen'|| 
+                    v_elementos;
+
+        --ENCABEZADO DE ARCHIVO 
+        contenido := 'Archivo de Acumulados por Dia y Totales' || CHR(13); 
+        contenido := contenido || 'Fecha de Ejecución: ' || TO_CHAR((SYSDATE - 5/24), 'DD/MM/YYYY HH24:MI:SS') || CHR(13); 
+        contenido := contenido || 'Del: ' || TO_CHAR(TO_DATE(p_fechainicio, 'YYYY-MM-DD'), 'DD/MM/YYYY') || ' al: ' || TO_CHAR(TO_DATE(p_fechafin, 'YYYY-MM-DD'), 'DD/MM/YYYY') || CHR(13) || CHR(13); 
+        --+Inserción del header
+        contenido := contenido || v_header || CHR(10);
+        --+ Inserción de lineas
+        FOR line IN matrix 
+        LOOP 
+            contenido := contenido || line.body || CHR (10); 
+        END LOOP; 
+ 
+        ac_data (contenido, p_id_exec); 
+
+        EXCEPTION WHEN OTHERS THEN
+        P_ERRORMSG := SQLERRM;
+        INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(ERROR,id_process) values ('Ocurrio un problema en ac_clob: '||P_ERRORMSG, p_id_exec); 
+        COMMIT;
+        -- 
+    END ac_clob; 
+    -- 
+    PROCEDURE init_exe(  p_fechainicio          IN VARCHAR2  
+                       , p_fechafin             IN VARCHAR2  
+                       , p_juegoconsolidacion   IN VARCHAR2  
+                       , p_nomina               IN VARCHAR2  
+                       , p_emp_legal            IN VARCHAR2 
+                       , p_juego_asignacion     IN VARCHAR2 
+                       , p_user_token           IN VARCHAR2 DEFAULT NULL  
+                       , p_id_process           IN NUMBER
+                       , p_status               OUT NUMBER
+                      ) AS 
+        -- 
+        v_id_exec   NUMBER;  
+        v_date      VARCHAR2(512);  
+        v_errormsg  VARCHAR2(512);  
+		--+
+		v_inicio 	DATE := TO_DATE(p_fechainicio,'YYYY-MM-DD');
+		v_fin		DATE := TO_DATE(p_fechafin,'YYYY-MM-DD');
+		v_flag		CHAR;
+        --+
+        BEGIN  
+			--+
+			IF MONTHS_BETWEEN(v_fin,v_inicio) > 2 THEN
+				v_flag := 'Y';
+			ELSE
+				v_flag := 'N';
+			END IF;
+            --+
+            v_date := TO_CHAR(sysdate - 5/24, 'YYYY-MM-DD HH24:MI:SS');  
+	    v_inicio := sysdate; 
+            -- 
+            l_user_token := p_user_token; 
+            -- 
+            BEGIN 
+                -- 
+                INSERT INTO xxtoks_pay_ac_exec(  payroll 
+                                               , cons_set 
+                                               , leg_employer 
+                                               , p_start_date 
+                                               , p_end_date 
+                                               , status 
+                                               , juego_asignacion 
+                                               , id_process
+											   , execution_start
+											   , flag
+                                              ) VALUES(  p_nomina 
+                                                       , p_juegoconsolidacion 
+                                                       , p_emp_legal 
+                                                       , p_fechainicio 
+                                                       , p_fechafin 
+                                                       , 'INIT_PROCESS' 
+                                                       , p_juego_asignacion 
+                                                       , p_id_process
+													   , v_date
+													   , v_flag
+                                                      ) RETURNING id_process INTO v_id_exec; 
+                -- 
+                COMMIT; 
+                -- 
+            EXCEPTION 
+                WHEN OTHERS THEN 
+                    -- 
+                    NULL; 
+            END; 
+            -- 
+            --Obtenemos las organizaciones que serán procesadas 
+            xxtoks_pay_acumulados_dia_pkg.get_organizations(  p_fechainicio 
+                                                            , p_fechafin 
+                                                            , p_juegoconsolidacion 
+                                                            , p_nomina 
+                                                            , p_id_process 
+                                                            , p_emp_legal 
+                                                            , l_user_token 
+                                                            , p_juego_asignacion
+															, v_flag
+                                                           );  
+            -- 
+            --Lanzamos los procesos en paralelo 
+            xxtoks_pay_acumulados_dia_pkg.generar_procesos_paralelo(p_id_process);
+            -- 
+            --totales_ap_de(v_id_exec); 
+            -- 
+            ac_clob (   p_id_process, 
+                        p_fechainicio, 
+                        p_fechafin  ); 
+            -- 
+            xxtoks_pay_acumulados_dia_pkg.limpiar(p_id_process); 
+
+            UPDATE xxtoks_pay_ac_exec  
+            SET EXECUTION_END = TO_CHAR((SYSDATE - 5/24), 'YYYY-MM-DD HH24:MI:SS'), 
+                STATUS = 'PROCESSED' 
+                WHERE ID_PROCESS = p_id_process; 
+            COMMIT; 
+            -- 
+					 
+        EXCEPTION WHEN OTHERS THEN  
+            v_errormsg := SQLERRM;  
+            INSERT INTO XXTOKS_PAY_ACUMULADOS_DIA_ERROR_TRACING(error,id_process) values ('AcD - Error en INIT EXE: '||v_errormsg, p_id_process);  
+            COMMIT; 
+        END init_exe; 
+        --		 
+END xxtoks_pay_acumulados_dia_pkg;
+/
+
