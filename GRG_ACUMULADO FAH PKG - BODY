@@ -1,0 +1,891 @@
+--GRG_ACUMULADO FAH PKG - BODY
+CREATE OR REPLACE PACKAGE BODY PAY.grg_acumulado_fah_pkg AS
+    PROCEDURE limpiar(p_process_id NUMBER) as
+    BEGIN
+        --
+        DELETE
+        FROM      pay.GRG_ACUMULADO_FAH_ORG
+        WHERE     1 = 1
+        AND       process_id = p_process_id;
+        --
+        --
+        DELETE
+        FROM      pay.GRG_ACUMULADO_FAH_REPORT_DATA
+        WHERE     1 = 1
+        AND       process_id = p_process_id;
+        --
+        --
+        DELETE
+        FROM      pay.GRG_ACUMULADO_FAH_ELEMENT_SOURCE
+        WHERE     1 = 1
+        AND       process_id = p_process_id;
+        --
+    END limpiar;
+    --
+    --
+    PROCEDURE get_organizations(  p_fechainicio         IN VARCHAR2
+                                , p_fechafin            IN VARCHAR2
+                                , p_juegoconsolidacion  IN VARCHAR2
+                                , p_nomina              IN VARCHAR2
+                                , p_process_id          IN NUMBER
+                                , p_emp_legal           IN VARCHAR2
+                               ) IS
+        --
+        v_user_name                VARCHAR2 (100);
+        v_password                 VARCHAR2 (100);
+        --
+        v_ws_url                   VARCHAR2 (500);
+        v_ws_action                VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest'; --Este es el action que va a ejecutar
+        --
+        v_ws_envelope              CLOB;
+        v_ws_response_clob         CLOB;
+        --
+        v_ws_resp_xml              XMLTYPE;
+        v_ws_resp_xml2             XMLTYPE;
+        --
+        v_cdata                    CLOB;
+        v_clob                     CLOB;
+        --
+		v_errormsg                 VARCHAR2(512);
+        BEGIN
+            --
+            v_ws_envelope :=
+                            '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                                    <soap:Body>
+                                    <pub:runReport>
+                                        <pub:reportRequest>
+                                            <pub:parameterNameValues>
+                                            <pub:item>
+                                            <pub:name>fechaInicio</pub:name>
+                                            <pub:values>
+                                                <pub:item>'||p_fechainicio||'</pub:item>
+                                            </pub:values>
+                                            </pub:item>
+                                            <pub:item>
+                                            <pub:name>fechaFin</pub:name>
+                                            <pub:values>
+                                                <pub:item>'||p_fechafin||'</pub:item>
+                                            </pub:values>
+                                            </pub:item>
+                                            <pub:item>
+                                            <pub:name>juegoConsolidacion</pub:name>
+                                            <pub:values>
+                                                <pub:item>'||p_juegoconsolidacion||'</pub:item>
+                                            </pub:values>
+                                            </pub:item>
+                                            <pub:item>
+                                            <pub:name>nomina</pub:name>
+                                            <pub:values>
+                                                <pub:item>'||p_nomina||'</pub:item>
+                                            </pub:values>
+                                            </pub:item>
+                                            <pub:item>
+                                            <pub:name>empLegal</pub:name>
+                                            <pub:values>
+                                                <pub:item>'||p_emp_legal||'</pub:item>
+                                            </pub:values>
+                                            </pub:item>
+                                            </pub:parameterNameValues>
+                                            <pub:attributeFormat>xml</pub:attributeFormat>
+                                            <pub:reportAbsolutePath>/Reportes Custom/PAY/GRG Acumulado Fondo de Ahorro/Org/Organizations RT.xdo</pub:reportAbsolutePath>
+                                            <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+                                        </pub:reportRequest>
+                                    </pub:runReport>
+                                </soap:Body>
+                            </soap:Envelope>';
+            --
+            ---REQUEST TOKEN---
+            GRG_COMMON_CONNECTIONS.get_otbi_report(
+                l_ws_envelope => v_ws_envelope,
+                l_user_token  => NULL,
+                x_ws_response => v_clob);
+            v_ws_resp_xml2 := XMLTYPE.createXML (v_clob);
+            ---REQUEST TOKEN---
+            --
+            FOR v_organization IN ( SELECT    * 
+                                    FROM      XMLTABLE (
+                                                         '/DATA_DS/G_1' PASSING xmltype.createxml(v_clob)
+                                                         COLUMNS
+                                                         ORGANIZATION_ID VARCHAR2(250) PATH 'ORGANIZATION_ID',
+                                                         ORGANIZATION_NAME VARCHAR2(250) PATH 'ORGANIZATION_NAME',
+                                                         NUMERO_EMPLEADOS VARCHAR2(250) PATH 'NUMERO_EMPLEADOS'
+                                                       ) xml_data
+                                  ) LOOP
+                --
+                BEGIN
+                    --
+                    INSERT INTO GRG_ACUMULADO_FAH_ORG(  process_id
+                                                        , organization_id
+                                                        , organization_name
+                                                        , numero_empleados
+                                                        , f_inicio
+                                                        , f_fin
+                                                        , j_cons
+                                                        , nomina
+                                                        , emp_legal
+                                                        )VALUES(  p_process_id
+                                                            , v_organization.organization_id
+                                                            , v_organization.organization_name
+                                                            , v_organization.numero_empleados
+                                                            , p_fechainicio
+                                                            , p_fechafin
+                                                            , p_juegoconsolidacion
+                                                            , p_nomina
+                                                            , p_emp_legal
+                                                            );
+                    COMMIT;
+                    --
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        --
+                        NULL;
+                        --
+                END;
+                --
+            END LOOP;
+            --
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_errormsg := SQLERRM;
+                INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Error al extraer organizaciones. ERROR:'||v_errormsg,p_process_id);
+                COMMIT;
+        END get_organizations;
+        
+    --
+    PROCEDURE get_result_values(  p_start_id    NUMBER
+                                , p_end_id      NUMBER
+                               ) IS
+        --
+        CURSOR c_organizations IS
+            SELECT    organization_id
+                    , organization_name
+                    , f_inicio
+                    , f_fin
+                    , nomina
+                    , j_cons
+                    , process_id
+                    , emp_legal
+            FROM    GRG_ACUMULADO_FAH_ORG
+            WHERE   1 = 1
+                    AND id BETWEEN p_start_id AND p_end_id
+                    AND process_id = (
+                                        SELECT    process_id
+                                        FROM      GRG_ACUMULADO_FAH_ORG
+                                        WHERE     id = p_start_id
+                                     );
+            
+        --
+        l_user_name                VARCHAR2 (100);
+        l_password                 VARCHAR2 (100);
+        l_ws_url                   VARCHAR2 (500);
+        l_ws_action                VARCHAR2 (500) := 'http://xmlns.oracle.com/oxp/service/PublicReportService/ExternalReportWSSService/runReportRequest';
+        --
+        l_ws_envelope              CLOB;
+        --
+        l_ws_response_clob         CLOB;
+        --
+        v_cdata                    CLOB;
+        l_clob                     CLOB;
+        --
+        l_ws_resp_xml              XMLTYPE;
+        l_ws_resp_xml2             XMLTYPE;
+        --
+        --
+        v_val                      PLS_INTEGER;
+        v_lines_arr                apex_t_varchar2;
+        v_content_arr              apex_t_varchar2;
+        p_errormsg                 VARCHAR2 (512 CHAR);
+        v_inicio                   VARCHAR2(200);
+        --+
+        v_count                    NUMBER := -1;
+        v_count_total              NUMBER := 0;
+        v_loop                     NUMBER := 0;
+		
+        BEGIN
+            --
+            FOR v_organization IN c_organizations LOOP
+                --
+                l_ws_envelope :=
+                                '<soap:Envelope xmlns:pub="http://xmlns.oracle.com/oxp/service/PublicReportService" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+                                        <soap:Body>
+                                        <pub:runReport>
+                                            <pub:reportRequest>
+                                                <pub:parameterNameValues>
+                                                <pub:item>
+                                                <pub:name>fechaInicio</pub:name>
+                                                <pub:values>
+                                                    <pub:item>'||v_organization.f_inicio||'</pub:item>
+                                                </pub:values>
+                                                </pub:item>
+                                                <pub:item>
+                                                <pub:name>fechaFin</pub:name>
+                                                <pub:values>
+                                                    <pub:item>'||v_organization.f_fin||'</pub:item>
+                                                </pub:values>
+                                                </pub:item>
+                                                <pub:item>
+                                                <pub:name>juegoConsolidacion</pub:name>
+                                                <pub:values>
+                                                    <pub:item>'||v_organization.j_cons||'</pub:item>
+                                                </pub:values>
+                                                </pub:item>
+                                                <pub:item>
+                                                <pub:name>nomina</pub:name>
+                                                <pub:values>
+                                                    <pub:item>'||v_organization.nomina||'</pub:item>
+                                                </pub:values>
+                                                </pub:item>
+                                                <pub:item>
+                                                <pub:name>unidad</pub:name>
+                                                <pub:values>
+                                                    <pub:item>'||v_organization.organization_id||'</pub:item>
+                                                </pub:values>
+                                                </pub:item>
+                                                <pub:item>
+                                                <pub:name>empLegal</pub:name>
+                                                <pub:values>
+                                                    <pub:item>'||v_organization.emp_legal||'</pub:item>
+                                                </pub:values>
+                                                </pub:item>
+                                                </pub:parameterNameValues>
+                                                <pub:attributeFormat>xml</pub:attributeFormat>
+                                                <pub:reportAbsolutePath>/Reportes Custom/PAY/GRG Acumulado Fondo de Ahorro/GRG Acumulado Fondo de Ahorro RT.xdo</pub:reportAbsolutePath>
+                                                <pub:sizeOfDataChunkDownload>-1</pub:sizeOfDataChunkDownload>
+                                            </pub:reportRequest>
+                                        </pub:runReport>
+                                    </soap:Body>
+                                </soap:Envelope>';
+                --
+                v_loop := 0;
+                v_count := -1;
+                v_count_total := 0;
+                --
+                WHILE v_count < v_count_total 
+                --
+                LOOP
+                --
+                    v_loop := v_loop + 1;
+                    BEGIN
+                        --
+                        ---REQUEST TOKEN---
+                        GRG_COMMON_CONNECTIONS.get_otbi_report(
+                            l_ws_envelope => l_ws_envelope,
+                            l_user_token  => NULL,
+                            x_ws_response => l_clob);
+                        l_ws_resp_xml2 := XMLTYPE.createXML (l_clob);
+                        ---REQUEST TOKEN---
+                        SELECT  xml_data.NUM_EMP
+                        INTO    v_count_total
+                        FROM    XMLTABLE (
+                                    '/DATA_DS/G_1' PASSING xmltype.createxml(l_clob)
+                                    COLUMNS
+                                    NUM_EMP VARCHAR2(250) PATH 'NUM_EMP'
+                                ) xml_data
+                        WHERE   ROWNUM = 1;
+                        SELECT  COUNT(*)
+                        INTO    v_count
+                        FROM    XMLTABLE (
+                                    '/DATA_DS/G_1' PASSING xmltype.createxml(l_clob)
+                                    COLUMNS
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD',
+                                    DESCRIPCION VARCHAR2(250) PATH 'DESCRIPCION',
+                                    ESTAFETA VARCHAR2(250) PATH 'ESTAFETA',
+                                    NOMBRE VARCHAR2(250) PATH 'NOMBRE',
+                                    PUESTO VARCHAR2(250) PATH 'PUESTO',
+                                    CATEGORIA_EMPLEADO VARCHAR2(250) PATH 'CATEGORIA_EMPLEADO',
+                                    FECHA_INGRESO VARCHAR2(250) PATH 'FECHA_INGRESO',
+                                    FECHA_BAJA VARCHAR2(250) PATH 'FECHA_BAJA',
+                                    EMPRESA_ORIGEN VARCHAR2(250) PATH 'EMPRESA_ORIGEN',
+                                    PAYROLL_ACTION_ID VARCHAR2(250) PATH 'PAYROLL_ACTION_ID',
+                                    PAYROLL_REL_ACTION_ID VARCHAR2(250) PATH 'PAYROLL_REL_ACTION_ID',
+                                    ORGANIZATION_ID VARCHAR2(250) PATH 'ORGANIZATION_ID',
+                                    NOMINA VARCHAR2(250) PATH 'NOMINA',
+                                    EMP_LEG VARCHAR2(250) PATH 'EMP_LEG',
+                                    ELEMENT_NAME VARCHAR2(250) PATH 'ELEMENT_NAME',
+                                    RESULT_VALUE VARCHAR2(250) PATH 'RESULT_VALUE',
+                                    NUM_EMP VARCHAR2(250) PATH 'NUM_EMP'
+                                ) xml_data;
+                        --
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            --
+                            p_errormsg := SQLERRM;
+                            INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Error al procesar informacion mediante token - XML2. ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg,v_organization.process_id);
+                            COMMIT;
+                            --RETURN;
+                            --						
+                    END;
+                    --
+                    EXIT WHEN v_loop = 3;
+                    --
+                END LOOP;
+                --
+                BEGIN
+                --
+                    FOR i IN (  SELECT * 
+                                FROM XMLTABLE (
+                                    '/DATA_DS/G_1' PASSING xmltype.createxml(l_clob)
+                                    COLUMNS
+                                    UNIDAD VARCHAR2(250) PATH 'UNIDAD',
+                                    DESCRIPCION VARCHAR2(250) PATH 'DESCRIPCION',
+                                    ESTAFETA VARCHAR2(250) PATH 'ESTAFETA',
+                                    NOMBRE VARCHAR2(250) PATH 'NOMBRE',
+                                    PUESTO VARCHAR2(250) PATH 'PUESTO',
+                                    CATEGORIA_EMPLEADO VARCHAR2(250) PATH 'CATEGORIA_EMPLEADO',
+                                    FECHA_INGRESO VARCHAR2(250) PATH 'FECHA_INGRESO',
+                                    FECHA_BAJA VARCHAR2(250) PATH 'FECHA_BAJA',
+                                    EMPRESA_ORIGEN VARCHAR2(250) PATH 'EMPRESA_ORIGEN',
+                                    PAYROLL_ACTION_ID VARCHAR2(250) PATH 'PAYROLL_ACTION_ID',
+                                    PAYROLL_REL_ACTION_ID VARCHAR2(250) PATH 'PAYROLL_REL_ACTION_ID',
+                                    ORGANIZATION_ID VARCHAR2(250) PATH 'ORGANIZATION_ID',
+                                    NOMINA VARCHAR2(250) PATH 'NOMINA',
+                                    EMP_LEG VARCHAR2(250) PATH 'EMP_LEG',
+                                    ELEMENT_NAME VARCHAR2(250) PATH 'ELEMENT_NAME',
+                                    RESULT_VALUE VARCHAR2(250) PATH 'RESULT_VALUE',
+                                    NUM_EMP VARCHAR2(250) PATH 'NUM_EMP'
+                                    ) xml_data
+                               ) LOOP
+                        --
+                        BEGIN
+                            --
+                            INSERT INTO GRG_ACUMULADO_FAH_REPORT_DATA(
+                                                                        unidad,
+                                                                        descripcion,
+                                                                        estafeta,
+                                                                        nombre,
+                                                                        puesto,
+                                                                        categoria_empleado,
+                                                                        fecha_ingreso,
+                                                                        fecha_baja,
+                                                                        empresa_origen,
+                                                                        payroll_rel_action_id,
+                                                                        process_id,
+                                                                        organization_id,
+                                                                        nomina,
+                                                                        empleador_legal) VALUES (
+                                                                                                i.unidad,
+                                                                                                i.descripcion,
+                                                                                                i.estafeta,
+                                                                                                i.nombre,
+                                                                                                i.puesto,
+                                                                                                i.categoria_empleado,
+                                                                                                i.fecha_ingreso,
+                                                                                                i.fecha_baja,
+                                                                                                i.empresa_origen,
+                                                                                                i.payroll_rel_action_id,
+                                                                                                v_organization.process_id,
+                                                                                                i.organization_id,
+                                                                                                i.nomina,
+                                                                                                i.emp_leg);
+                            --
+                        EXCEPTION
+                            WHEN OTHERS THEN
+                                --
+                                p_errormsg := SQLERRM;
+                                INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Error al guardar al empleado. payroll_rel_action_id:'||i.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg,v_organization.process_id);
+                                RETURN;
+                                --
+                        END;
+                        BEGIN
+                            --
+                            INSERT INTO GRG_ACUMULADO_FAH_ELEMENT_SOURCE(
+                                                                            element_name,
+                                                                            estafeta,
+                                                                            result_value,
+                                                                            payroll_rel_action_id,
+                                                                            process_id 
+                                                                        ) VALUES (
+                                                                                    i.element_name,
+                                                                                    i.estafeta,
+                                                                                    i.result_value,
+                                                                                    i.payroll_rel_action_id,
+                                                                                    v_organization.process_id
+                                                                                );
+                            --COMMIT;
+                            --
+                        EXCEPTION
+                            WHEN OTHERS THEN
+                                --
+                                p_errormsg := SQLERRM;
+                              INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Error al guardar el detalle de los elementos del empleado. payroll_rel_action_id:'||i.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg,v_organization.process_id);
+                              COMMIT;
+                                RETURN;
+                                --
+                        END;
+                        --  
+                    END LOOP;
+                    --
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        --
+                        p_errormsg := SQLERRM;
+                        INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Error al leer el G1. ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg,v_organization.process_id);
+                        COMMIT;
+                        RETURN;
+                        --
+                END;
+                commit;
+                --
+                --
+                /*BEGIN
+                --
+                    FOR a IN (  SELECT * 
+                                FROM XMLTABLE (
+                                    '/DATA_DS/G_1/G_2' PASSING xmltype.createxml(l_clob)
+                                    COLUMNS
+                                    ELEMENT_NAME VARCHAR2(250) PATH 'ELEMENT_NAME',
+                                    ESTAFETA VARCHAR2(250) PATH 'ESTAFETA',
+                                    RESULT_VALUE VARCHAR2(250) PATH 'RESULT_VALUE',
+                                    ELEMENT_CLASSIFICATION VARCHAR2(250) PATH 'ELEMENT_CLASSIFICATION',
+                                    PAYROLL_REL_ACTION_ID VARCHAR2(250) PATH 'PAYROLL_REL_ACTION_ID'
+                                    ) xml_data
+                             ) LOOP
+                        --
+                        BEGIN
+                            --
+                            INSERT INTO GRG_ACUMULADO_FAH_ELEMENT_SOURCE(
+                                                                            element_name,
+                                                                            estafeta,
+                                                                            result_value,
+                                                                            payroll_rel_action_id,
+                                                                            element_classification,
+                                                                            process_id ) VALUES (
+                                                                                                a.element_name,
+                                                                                                a.estafeta,
+                                                                                                a.result_value,
+                                                                                                a.payroll_rel_action_id,
+                                                                                                a.element_classification,
+                                                                                                v_organization.process_id);
+                            --COMMIT;
+                            --
+                        EXCEPTION
+                            WHEN OTHERS THEN
+                                --
+                                p_errormsg := SQLERRM;
+                                INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Error al guardar el detalle de los elementos del empleado. payroll_rel_action_id:'||a.payroll_rel_action_id||' ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg,v_organization.process_id);
+                                COMMIT;
+                                RETURN;
+                                --
+                        END;
+                        --
+                    END LOOP;
+                    --
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        --
+                        p_errormsg := SQLERRM;
+                        INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Error al leer el G2. ORG_ID:'||v_organization.organization_id||'. ERROR:'||p_errormsg,v_organization.process_id);
+                        --COMMIT;
+                        RETURN;
+                        --
+                END;*/
+                --
+            END LOOP;
+            COMMIT;
+            --
+        EXCEPTION
+            WHEN OTHERS THEN
+                P_ERRORMSG := SQLERRM;
+                INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Error organizaciones general: '||P_ERRORMSG,v_process_id);
+                COMMIT;
+                --
+        END get_result_values;
+    --
+    PROCEDURE generar_procesos_paralelo(  p_process_id   NUMBER
+                                       ) IS
+        --
+        v_task_name         VARCHAR2(240);
+        v_plsql_block       VARCHAR2(32767);
+        --
+        v_sql_stmt_filtro   VARCHAR2(32767);
+        v_sql_stmt          VARCHAR2(32767);
+        --
+        v_intentos          NUMBER := 0;
+        --
+		v_errormsg          VARCHAR2(512);
+        BEGIN
+            --
+            v_task_name := dbms_parallel_execute.generate_task_name(  prefix   => 'GRGACUMULADOSFAH$_'
+                                                                   );
+            --
+            dbms_parallel_execute.create_task(  task_name   => v_task_name
+                                             );
+            --
+            v_sql_stmt_filtro := '  SELECT    MIN(id) start_id
+                                            , MAX(id) end_id
+                                    FROM      (
+                                                SELECT    id
+                                                        , NTILE(14) OVER( ORDER BY id asc ) grupo 
+                                                FROM      GRG_ACUMULADO_FAH_ORG
+                                                WHERE     1 = 1
+                                                AND       process_id = '||p_process_id||'
+                                              )
+                                    GROUP BY  grupo
+                                 ';
+            --
+            dbms_parallel_execute.create_chunks_by_sql(  task_name  => v_task_name
+                                                       , sql_stmt   => v_sql_stmt_filtro
+                                                       , by_rowid   => FALSE
+                                                      );
+            --
+            v_sql_stmt := q'[
+                            BEGIN 
+                               pay.grg_acumulado_fah_pkg.get_result_values(  :start_id , :end_id);
+                            END;
+                           ]';
+            --
+            dbms_parallel_execute.run_task(  task_name      => v_task_name
+                                           , sql_stmt       => v_sql_stmt
+                                           , language_flag  => DBMS_SQL.native
+                                           , parallel_level => 14
+                                          );
+            --
+            LOOP
+                --
+                EXIT
+                    WHEN
+                        --
+                        dbms_parallel_execute.task_status(v_task_name) = dbms_parallel_execute.finished OR v_intentos > 120;
+                        --
+                v_intentos := v_intentos + 1;
+                dbms_lock.sleep(10);
+                --
+            END LOOP;
+            --
+            dbms_parallel_execute.drop_task(v_task_name);
+            --
+		EXCEPTION
+		WHEN OTHERS THEN
+            v_errormsg := SQLERRM;
+            INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Ocurrió un error en el proceso generar_procesos_paralelo: '||v_errormsg,v_process_id);
+            COMMIT;
+    END generar_procesos_paralelo;
+    --
+    --
+    PROCEDURE ac_data (contenido CLOB, p_process_id IN NUMBER)
+    AS
+        ac_id       NUMBER;
+		v_errormsg  VARCHAR2(512);
+    BEGIN
+        --
+        INSERT INTO GRG_ACUMULADO_FAH_CLOB_DATA (contenido, process_id)
+             VALUES (contenido, p_process_id)
+          RETURNING process_id
+               INTO ac_id;
+        COMMIT;
+    --
+	EXCEPTION
+	WHEN OTHERS THEN
+        v_errormsg := SQLERRM;
+        INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Ocurrió un error en el proceso ac_data: '||v_errormsg,p_process_id);
+        COMMIT;
+    END ac_data;
+    --
+    --
+    PROCEDURE ac_clob ( 
+                        p_process_id    IN NUMBER,
+                        p_fechainicio   IN VARCHAR2,
+                        p_fechafin      IN VARCHAR2
+                      )
+    AS
+        contenido   CLOB;
+        v_excel     VARCHAR2 (32000);
+		v_errormsg  VARCHAR2(512);
+        --variables header elementos
+        v_elementos CLOB;
+        v_header    CLOB;
+		v_count     number := 1;
+        CURSOR matrix IS
+            --SELECT body FROM xxtoks_pay_acumulados_new_process_v where process_id = p_process_id ORDER BY orden;
+            WITH      xxtoks_elementos_acumulados AS(
+                                                        SELECT    element_name
+                                                                , SUBSTR(element_name,1,22) element_name_mostrar
+                                                        FROM      GRG_ACUMULADO_FAH_ELEMENT_SOURCE
+                                                        WHERE     process_id = p_process_id
+                                                        GROUP BY  element_name
+                                                                , SUBSTR(element_name,1,22)
+                                                    )
+                    , xxtoks_resultados AS(
+                                            SELECT    SUM(NVL(resultados.result_value, 0)) result_value
+                                                    , resultados.element_name
+                                                    , empleados.empleador_legal||
+                                                      empleados.unidad||
+                                                      empleados.descripcion||
+                                                      empleados.estafeta||
+                                                      empleados.nombre||
+                                                      empleados.puesto||
+                                                      empleados.categoria_empleado||
+                                                      empleados.fecha_ingreso||
+                                                      empleados.fecha_baja||
+                                                      empleados.empresa_origen||
+                                                      empleados.nomina llave
+                                            FROM      GRG_ACUMULADO_FAH_REPORT_DATA empleados
+                                                    , GRG_ACUMULADO_FAH_ELEMENT_SOURCE resultados
+                                            WHERE     1 = 1
+                                            AND       empleados.process_id = resultados.process_id
+                                            AND       empleados.payroll_rel_action_id = resultados.payroll_rel_action_id
+                                            AND       empleados.process_id = p_process_id
+                                            GROUP BY  resultados.element_name
+                                                    , empleados.empleador_legal||
+                                                      empleados.unidad||
+                                                      empleados.descripcion||
+                                                      empleados.estafeta||
+                                                      empleados.nombre||
+                                                      empleados.puesto||
+                                                      empleados.categoria_empleado||
+                                                      empleados.fecha_ingreso||
+                                                      empleados.fecha_baja||
+                                                      empleados.empresa_origen||
+                                                      empleados.nomina
+                                          )
+                    , xxtoks_empleados AS(
+                                            SELECT    empleados.empleador_legal
+                                                    , empleados.unidad
+                                                    , empleados.descripcion
+                                                    , empleados.estafeta
+                                                    , empleados.nombre
+                                                    , empleados.puesto
+                                                    , empleados.categoria_empleado
+                                                    , empleados.fecha_ingreso
+                                                    , empleados.fecha_baja
+                                                    , empleados.empresa_origen
+                                                    , empleados.nomina
+                                                    , empleados.empleador_legal||
+                                                      empleados.unidad||
+                                                      empleados.descripcion||
+                                                      empleados.estafeta||
+                                                      empleados.nombre||
+                                                      empleados.puesto||
+                                                      empleados.categoria_empleado||
+                                                      empleados.fecha_ingreso||
+                                                      empleados.fecha_baja||
+                                                      empleados.empresa_origen||
+                                                      empleados.nomina llave
+                                            FROM      GRG_ACUMULADO_FAH_REPORT_DATA empleados
+                                            WHERE     1 = 1
+                                            AND       empleados.process_id = p_process_id
+                                            AND       EXISTS(
+                                                                SELECT    NULL
+                                                                FROM      GRG_ACUMULADO_FAH_ELEMENT_SOURCE resultados
+                                                                WHERE     1 = 1
+                                                                AND       resultados.process_id = empleados.process_id
+                                                                AND       resultados.payroll_rel_action_id = empleados.payroll_rel_action_id
+                                                            )
+                                            GROUP BY  empleados.empleador_legal
+                                                    , empleados.unidad
+                                                    , empleados.descripcion
+                                                    , empleados.estafeta
+                                                    , empleados.nombre
+                                                    , empleados.puesto
+                                                    , empleados.categoria_empleado
+                                                    , empleados.fecha_ingreso
+                                                    , empleados.fecha_baja
+                                                    , empleados.empresa_origen
+                                                    , empleados.nomina
+                                                    , empleados.empleador_legal||
+                                                      empleados.unidad||
+                                                      empleados.descripcion||
+                                                      empleados.estafeta||
+                                                      empleados.nombre||
+                                                      empleados.puesto||
+                                                      empleados.categoria_empleado||
+                                                      empleados.fecha_ingreso||
+                                                      empleados.fecha_baja||
+                                                      empleados.empresa_origen||
+                                                      empleados.nomina
+                                        )
+            SELECT    DISTINCT
+                      2 orden
+                    , empleados.empleador_legal||'|'||
+                      empleados.unidad||'|'||
+                      empleados.descripcion||'|'||
+                      empleados.estafeta||'|'||
+                      empleados.nombre||'|'||
+                      empleados.puesto||'|'||
+                      empleados.categoria_empleado||'|'||
+                      empleados.nomina||'|'||
+                      empleados.fecha_ingreso||'|'||
+                      empleados.fecha_baja||'|'||
+                      empleados.empresa_origen||'|'||
+                      LISTAGG (resultados.result_value, '|') WITHIN GROUP (ORDER BY resultados.element_name) OVER (PARTITION BY empleados.llave) body
+            FROM      xxtoks_empleados empleados
+                    , (
+                        SELECT    emp_res.llave
+                                , elementos.element_name
+                                , NVL(emp_res.result_value, 0) result_value
+                        FROM      xxtoks_resultados emp_res PARTITION BY (llave)
+                        RIGHT JOIN xxtoks_elementos_acumulados elementos
+                        ON        emp_res.element_name = elementos.element_name
+                      ) resultados
+            WHERE     1 = 1
+            AND       empleados.llave = resultados.llave
+            UNION
+            SELECT    DISTINCT
+                      3 orden
+                    , 'Total Numero Empleados|'||
+                      COUNT (1)||'|'||
+                      NULL||'|'||
+                      NULL||'|'||
+                      NULL||'|'||
+                      NULL||'|'||
+                      NULL||'|'||
+                      NULL||'|'||
+                      NULL||'|'||
+                      NULL||'|'||
+                      NULL||'|'||
+                      resultados.resultado_cadena body
+            FROM      xxtoks_empleados empleados
+                    , (
+                        SELECT    DISTINCT
+                                  LISTAGG (NVL(resultados_cadena.result_value, 0), '|') WITHIN GROUP (ORDER BY resultados_cadena.element_name) resultado_cadena
+                        FROM      (
+                                    SELECT    element_name
+                                            , SUM(result_value) result_value
+                                    FROM      (
+                                                SELECT    elementos.element_name
+                                                        , NVL(emp_res.result_value, 0) result_value
+                                                FROM      xxtoks_resultados emp_res PARTITION BY (llave)
+                                                RIGHT JOIN xxtoks_elementos_acumulados elementos
+                                                ON        emp_res.element_name = elementos.element_name
+                                              )
+                                    GROUP BY  element_name
+                                  ) resultados_cadena
+                      ) resultados
+            WHERE     1 = 1
+            GROUP BY  resultados.resultado_cadena
+            ORDER BY  1;
+    --
+    BEGIN
+        --construcción header elementos nuevo
+        FOR i IN (
+            SELECT  element_name
+            FROM    GRG_ACUMULADO_FAH_ELEMENT_SOURCE
+            WHERE   process_id = p_process_id
+            GROUP BY element_name
+            ORDER BY element_name
+        )   
+        LOOP
+            v_elementos := v_elementos || '|' || i.element_name;
+        END LOOP;
+        v_header := 'Empleador Legal|'||
+                    'Unidad|'||
+                    'Descripcion|'||
+                    'Estafeta|'||
+                    'Nombre|'||
+                    'Puesto|'||
+                    'Categoria Empleado|'||
+                    'Nomina|'||
+                    'Fecha Ing|'||
+                    'Fecha Baja|'||
+                    'Empresa Origen'||
+                    v_elementos;
+        --
+        --ENCABEZADO DE ARCHIVO
+        contenido := 'Archivo de Acumulado Fondo de Ahorro - ' || p_process_id || CHR(13);
+        contenido := contenido || 'Fecha de Ejecución: ' || TO_CHAR((SYSDATE - 6/24), 'DD/MM/YYYY HH24:MI:SS') || CHR(13);
+        contenido := contenido || 'Del: ' || TO_CHAR(TO_DATE(p_fechainicio, 'YYYY-MM-DD'), 'DD/MM/YYYY') || ' al: ' || TO_CHAR(TO_DATE(p_fechafin, 'YYYY-MM-DD'), 'DD/MM/YYYY') || CHR(13) || CHR(13);
+        --inserción header elementos nuevo
+        contenido := contenido || v_header || CHR(10);
+		--inserción lineas
+        FOR line IN matrix
+        LOOP
+			v_count := v_count + 1;
+			contenido := concat( contenido, line.body || CHR (10) );
+        END LOOP;
+        ac_data (contenido, p_process_id);
+        --
+    EXCEPTION 
+	WHEN OTHERS THEN
+        v_errormsg := SQLERRM;
+        INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Ocurrió un error en el proceso ac_clob: '||v_errormsg,p_process_id);
+        COMMIT;
+    END ac_clob;
+    --
+    PROCEDURE init_exe(  p_fechainicio          IN VARCHAR2 
+                       , p_fechafin             IN VARCHAR2 
+                       , p_juegoconsolidacion   IN VARCHAR2 
+                       , p_nomina               IN VARCHAR2 
+                       , p_emp_legal            IN VARCHAR2
+					   , p_process_id          	IN NUMBER   
+					   , p_user_name            IN VARCHAR2 
+					   , p_status               OUT NUMBER  
+                      ) AS
+        --
+        --v_process_id   NUMBER;
+        v_inicio    DATE;
+        v_errormsg  VARCHAR2(512);
+        --
+        BEGIN
+            --
+            v_inicio := sysdate;
+            --
+			v_process_id := p_process_id;  
+            BEGIN
+			    --
+			    INSERT INTO GRG_ACUMULADO_FAH_PROCESS(   
+                                                        PROCESS_ID,
+                                                        NOMINA,
+                                                        JUEGO_CONSOLIDACION,
+                                                        EMPLEADOR_LEGAL,
+                                                        FECHA_INICIAL,
+                                                        FECHA_FINAL,
+                                                        STATUS,
+                                                        FECHA_INICIO,
+                                                        CLIENT_IDENTIFIER
+                                                    ) VALUES (  
+                                                                p_process_id,
+                                                                p_nomina,
+                                                                p_juegoconsolidacion,
+                                                                p_emp_legal,
+                                                                p_fechainicio,
+                                                                p_fechafin,
+                                                                'INIT_PROCESS',
+                                                                SYSDATE - 6/24,
+                                                                p_user_name
+                                                                );
+               --+
+            EXCEPTION
+                WHEN OTHERS THEN
+                v_errormsg := SQLERRM;
+                INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Ocurrió un error al insertar en GRG_ACUMULADO_FAH_PROCESS: '||v_errormsg,p_process_id);
+                COMMIT;
+            END;
+            --
+            --Obtenemos las organizaciones que serán procesadas
+            grg_acumulado_fah_pkg.get_organizations(  
+                                                        p_fechainicio,
+                                                        p_fechafin,
+                                                        p_juegoconsolidacion,
+                                                        p_nomina,
+                                                        v_process_id,
+                                                        p_emp_legal
+                                                    );
+            --
+            --Lanzamos los procesos en paralelo
+            grg_acumulado_fah_pkg.generar_procesos_paralelo(v_process_id);
+            --
+            ac_clob (   
+                        v_process_id,
+                        p_fechainicio,
+                        p_fechafin
+                    );
+            --
+            grg_acumulado_fah_pkg.limpiar(v_process_id);
+            --
+			--+alegaspi
+			UPDATE GRG_ACUMULADO_FAH_PROCESS
+			SET STATUS = 'PROCESSED'
+			   ,FECHA_FIN = SYSDATE - 6/24
+			WHERE PROCESS_ID = v_process_id;
+			--+
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_errormsg := SQLERRM;
+                INSERT INTO GRG_ACUMULADO_FAH_ERROR_TRACING(error,process_id) values ('Ocurrió un error en el proceso init_exe: '||v_errormsg,p_process_id);
+                COMMIT;				
+        END init_exe;
+        --
+END grg_acumulado_fah_pkg;
+
+/
+
