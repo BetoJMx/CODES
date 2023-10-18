@@ -1,0 +1,93 @@
+--QRY CHNG AUSENTISMOS 270622
+SELECT  ple.name                    Employer,
+        ple.organization_id         EmployerId,
+        per.person_number           PersonNumber,
+        per.person_id               PersonId,
+        abs.name                    AbsenceType,
+        abs.absence_type_id         AbsenceTypeId,
+        --AbsenceReason,
+        apae.absence_status_cd      AbsenceStatus,
+        apae.approval_status_cd     ApprovalStatus,
+        apae.per_absence_entry_id   PerAbsenceEntryId,
+        apae.start_date_duration    StartDateDuration,
+        apae.end_date_duration      EndDateDuration,
+        to_char(apae.planned_end_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')       PlannedEndDate,
+        to_char(apae.submitted_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')         SubmittedDate,
+        to_char(apae.notification_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')      NotificationDate,
+        to_char(apae.condition_start_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')   ConditionStartDate,
+        to_char(apae.confirmed_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')         ConfirmedDate,
+        apae.comments               Comments,
+        to_char(apae.start_date,'YYYY/MM/DD','NLS_DATE_LANGUAGE = SPANISH')             StartDate,
+        to_char(apae.start_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')             StartDateC,
+        apae.start_time             StartTime,
+        to_char(apae.end_date,'DD/MM/YYYY','NLS_DATE_LANGUAGE = SPANISH')               EndDate,
+        apae.end_time               EndTime,
+        duration                    Duration,
+        --+ELEMENT
+        TRIM(pwav.absence_element_component_name) Element,
+        poga.object_group_id Asignacion
+
+FROM    ANC_PER_ABS_ENTRIES     apae,
+        PER_PERIODS_OF_SERVICE  pps,
+        PER_ALL_PEOPLE_F        per,
+        ANC_ABSENCE_TYPES_VL    abs,
+        PER_LEGAL_EMPLOYERS     ple,
+        PAY_WORKER_ABSENCE_VL   pwav,
+        --PAY_ELEMENT_ENTRIES_VL  peev,
+        PAY_ELEMENT_TYPES_F     pet,
+        --+
+        PAY_OBJECT_GROUP_AMENDS poga,
+        PAY_REL_GROUPS_DN       prgd,
+        PER_ALL_ASSIGNMENTS_F   paaf
+
+WHERE   apae.period_of_service_id   = pps.period_of_Service_id
+        AND apae.absence_type_id    = abs.absence_type_id
+	    AND pps.LEGAL_ENTITY_ID     = ple.organization_id
+        AND pps.person_id           = per.person_id
+        AND pps.period_type         = 'E'
+        AND pwav.absence_id         = apae.per_absence_entry_id
+        AND UPPER(abs.name)         IN (
+                                        'ACCIDENTETRABAJO',
+                                        'ACCIDENTETRABAJOHRS',
+                                        'ACCIDENTETRAYECTO',
+                                        'ACCIDENTETRAYECTOHRS',
+                                        'ENFERMEDADGENERAL',
+                                        'ENFERMEDADGENERALHRS',
+                                        'FALTA',
+                                        'FALTAHRS',
+                                        'MATERNIDAD',
+                                        'MATERNIDADHRS',
+                                        'PERMISOSINSUELDO',
+                                        'PERMISOSINSUELDOHRS',
+                                        'SUSPENCIÓN',
+                                        'SUSPENCIÓNHRS'
+                                    )
+        --AND per.person_number       = '166286'
+        --+
+        AND paaf.person_id                  = per.person_id
+        AND paaf.assignment_type            = 'E'
+        AND paaf.effective_latest_change    = 'Y'
+        AND prgd.assignment_id              = paaf.assignment_id
+        AND prgd.relationship_group_id      = poga.object_id
+        AND poga.object_group_id            = :p_assigment_set
+        AND prgd.group_type                 = 'A'
+        --+
+        AND EXISTS  (
+                        SELECT  1
+                        FROM    PAY_ELEMENT_ENTRIES_VL peevl
+                        WHERE   1 = 1
+                                AND peevl.element_type_id   = pet.element_type_id
+                                AND peevl.PROCESSED_FLAG    = 'N'
+                    )
+        --AND peev.processed_flag = 'N'
+        --AND peev.person_id = per.person_id
+        --AND pet.element_type_id = peev.element_type_id
+        --and trunc(sysdate) between abs.effective_start_date and abs.effective_end_date
+        AND UPPER(pet.base_element_name)        = TRIM(pwav.absence_element_component_name) || ' ENTITLEMENT'
+        AND TRUNC(apae.start_date)              BETWEEN TO_DATE (:fechainicio, 'yyyy-mm-dd') - 15
+                                                AND TO_DATE (:fechafin, 'yyyy-mm-dd')
+        AND TO_DATE (:fechafin, 'yyyy-mm-dd')   BETWEEN per.effective_start_date 
+                                                AND per.effective_end_date
+        AND TO_DATE (:fechafin, 'yyyy-mm-dd')   BETWEEN paaf.effective_start_date 
+                                                AND paaf.effective_end_date
+ORDER BY per.person_number, apae.start_date asc
