@@ -1,0 +1,248 @@
+--QRY INT NOM AP PENS ALIM 060123
+WITH xxtoks_pay_pension_vales AS(
+select  pap.person_number                                    NO_COLABORADOR                        
+		,( 
+			SELECT 	SUM(prrv1.result_value)
+			FROM 	pay_run_results prr1
+					,pay_run_result_values prrv1
+					,pay_element_types_f pet2
+					,pay_element_types_tl pettl2
+					,pay_input_values_f piv1
+			WHERE 	prr1.payroll_rel_action_id = ppra.payroll_rel_action_id
+					AND prr1.status IN ('P', 'PA')
+					AND prrv1.run_result_id = prr1.run_result_id
+					AND prrv1.result_value IS NOT NULL
+					AND pet2.element_type_id = prr1.element_type_id
+					AND piv1.input_value_id = prrv1.input_value_id
+					AND pettl2.element_type_id = piv1.element_type_id
+					AND pettl2.element_type_id = pet2.element_type_id
+					AND pettl2.language = 'US'--SYS_CONTEXT ('USERENV', 'LANG')
+					AND piv1.uom = 'M'
+					--+
+					AND EXISTS( 
+								SELECT 1 
+								FROM pay_input_values_tl pivtl2
+								WHERE pivtl2.input_value_id = piv1.input_value_id
+								AND pivtl2.language = 'US' 
+								AND UPPER(TRIM( pivtl2.name )) IN ('PAY VALUE')
+							)
+					AND pettl2.element_type_id = pettl.element_type_id
+		) MONTO_PAGO
+		,pettl.element_type_id
+		,pettl.element_name
+		,pay.payroll_name                                     
+		,pay.payroll_id                                       
+		,ptp.period_name                                      
+		,ptp.time_period_id                                   
+		,pcs.consolidation_set_name                           
+		,pcs.consolidation_set_id
+		,NVL(prrv.result_value,0) id_pensionado --CUENTANOMBRE
+		,ppn.full_name                 AS nombre_empleado
+FROM 	per_all_people_f                 pap,
+		per_all_assignments_m            paa,
+		per_person_names_f               ppn,
+		pay_rel_groups_dn                prg,
+		pay_time_periods                 ptp,
+		pay_payroll_actions              ppa,
+		pay_payroll_rel_actions          ppra,
+		pay_run_results                  prr,
+		pay_run_result_values            prrv,
+		pay_element_types_f              pet,
+		pay_element_types_tl             pettl,
+		pay_input_values_f               piv,
+		pay_input_values_tl              pivtl,
+		pay_all_payrolls_f               pay,
+		pay_consolidation_sets           pcs,
+		per_departments                  pd,
+		hr_organization_information_f    hoif
+WHERE 	1 = 1
+		AND pap.person_id = ppn.person_id
+		AND ppn.name_type = 'MX'
+		AND paa.person_id = ppn.person_id
+		AND paa.primary_flag = 'Y'
+		AND paa.assignment_type = 'E'
+		--+
+		--AND paa.location_id = NVL(:P_UNIDAD_PAGO,paa.location_id)  
+		AND prg.assignment_id = paa.assignment_id
+
+		AND prg.payroll_relationship_id = ppra.payroll_relationship_id
+		AND ppa.payroll_action_id = ppra.payroll_action_id
+		AND ppra.action_status = 'C'
+		AND ppra.retro_component_id IS NULL
+		AND ppa.consolidation_set_id = pcs.consolidation_set_id
+		AND ppa.action_type IN ('R', 'B', 'Q')
+		AND ppa.earn_time_period_id = ptp.time_period_id
+		--+
+		AND ptp.period_name 			= :P_TIME_PERIOD_ID
+		AND ppa.payroll_id           	= NVL(:P_PAYROLL_ID,ppa.payroll_id)
+		AND ppa.consolidation_set_id 	= NVL(:P_CONSOLIDATION_SET_ID,ppa.consolidation_set_id)
+		AND pettl.element_type_id    	IN (:P_ELEMENT_TYPE_ID1,:P_ELEMENT_TYPE_ID2) 
+		--+
+
+		AND prr.status IN ('P', 'PA')
+		AND prr.payroll_rel_action_id = ppra.payroll_rel_action_id
+		AND pet.element_type_id = prr.element_type_id
+		AND pettl.element_type_id = pet.element_type_id
+		AND pettl.language = SYS_CONTEXT ('USERENV', 'LANG')
+
+		AND piv.element_type_id = pettl.element_type_id
+		AND piv.input_value_id = prrv.input_value_id
+		AND pivtl.input_value_id = piv.input_value_id
+		AND pivtl.language = SYS_CONTEXT ('USERENV', 'LANG')
+			
+		AND prrv.run_result_id = prr.run_result_id
+		AND prrv.result_value IS NOT NULL
+		AND pay.payroll_id = ppa.payroll_id
+		AND UPPER(pivtl.name) = 'THIRD-PARTY PAYEE' --++
+
+		AND paa.organization_id = pd.organization_id 
+		AND pd.status  = 'A'
+		AND paa.organization_id = hoif.organization_id 
+		AND hoif.org_information_context = 'PER_GL_COST_CENTER_INFO'
+		--+
+		AND ppa.effective_date BETWEEN prg.start_date AND prg.end_date
+		AND ppa.effective_date BETWEEN pap.effective_start_date AND pap.effective_end_date
+		AND ppa.effective_date BETWEEN ppn.effective_start_date AND ppn.effective_end_date
+		AND ppa.effective_date BETWEEN paa.effective_start_date AND paa.effective_end_date
+		AND ppa.effective_date BETWEEN piv.effective_start_date AND piv.effective_end_date
+		AND ppa.effective_date BETWEEN pet.effective_start_date AND pet.effective_end_date
+		AND ppa.effective_date BETWEEN pay.effective_start_date AND pay.effective_end_date
+		AND ppa.effective_date BETWEEN pd.effective_start_date AND pd.effective_end_date
+		AND ppa.effective_date BETWEEN hoif.effective_start_date AND hoif.effective_end_date
+)
+SELECT xppv.no_colaborador
+	,xppv.nombre_empleado
+	,0
+	,0                                                 AS INVOICE_ID
+	,SUBSTR(xppv.period_name, 1, 7) || '_' ||0         AS INVOICE_NUM
+	,SYSDATE                                           AS INVOICE_DATE
+	,TO_CHAR(SYSDATE, 'YYYY-MM-DD')                    AS GL_DATE -- and received_date(ap_invoices_interface)
+	,'STANDARD'                                        AS INVOICE_TYPE_LOOKUP_CODE
+	,NVL((SELECT pos.vendor_id
+			FROM poz_suppliers_v pos    		 
+			WHERE pos.attribute1 = xppv.no_colaborador                  
+				AND pos.attribute2 = (SELECT hz.party_number
+										FROM hz_parties hz
+									WHERE hz.party_id = xppv.id_pensionado)
+			),0)           AS VENDOR_ID --***
+	,NVL((SELECT pvs.vendor_site_id
+			FROM poz_suppliers_v pos,
+					poz_supplier_sites_all_m pvs	 
+			WHERE pos.attribute1 = xppv.no_colaborador                  
+				AND pos.attribute2 = (SELECT hz.party_number
+										FROM hz_parties hz
+									WHERE hz.party_id = xppv.id_pensionado)
+				AND pos.vendor_id = pvs.vendor_id
+				AND TRUNC(SYSDATE) BETWEEN pvs.effective_start_date 
+									AND pvs.effective_end_date
+			),0)          AS VENDOR_SITE_ID --***
+	,NVL((SELECT pos.vendor_name
+			FROM poz_suppliers_v pos    		 
+			WHERE pos.attribute1 = xppv.no_colaborador                  
+				AND pos.attribute2 = (SELECT hz.party_number
+										FROM hz_parties hz
+									WHERE hz.party_id = xppv.id_pensionado)
+			),0)           AS VENDOR_NAME --***
+	,NVL((SELECT hz.party_name
+			FROM hz_parties hz
+			WHERE hz.party_id = xppv.id_pensionado),0)  AS PENSIONADO	
+	,xppv.monto_pago                                   AS INVOICE_AMOUNT
+	,'MXN'                                             AS INVOICE_CURRENCY_CODE
+	,'INMEDIATO'                                       AS TERMS_NAME
+	,'INVOICE GATEWAY'                                 AS SOURCE
+	,NVL((SELECT ieppm.payment_method_code
+			FROM iby_ext_party_pmt_mthds ieppm,
+					iby_external_payees_all iep,
+					poz_supplier_sites_all_m apss,
+					hz_party_sites hps
+			WHERE hps.party_site_id = apss.party_site_id
+				AND iep.ext_payee_id = ieppm.ext_pmt_party_id
+				AND ieppm.primary_flag = 'Y'
+				AND apss.vendor_site_id = iep.supplier_site_id
+				AND TRUNC(SYSDATE) BETWEEN apss.effective_start_date AND apss.effective_end_date
+				AND TRUNC(SYSDATE) BETWEEN iep.start_date AND iep.end_date
+				AND TRUNC(SYSDATE) BETWEEN ieppm.start_date AND ieppm.end_date
+				AND apss.vendor_id = NVL((SELECT pos.vendor_id
+											FROM poz_suppliers_v pos    		 
+										WHERE pos.attribute1 = xppv.no_colaborador                  
+											AND pos.attribute2 = (SELECT hz.party_number
+																	FROM hz_parties hz
+																	WHERE hz.party_id = xppv.id_pensionado)
+										),0)
+			),0)         AS PAYMENT_METHOD_LOOKUP_CODE
+	,(SELECT pvs.pay_group_lookup_code
+		FROM poz_supplier_sites_all_m pvs,
+				hz_party_sites hps 
+		WHERE pvs.vendor_id = NVL((SELECT pos.vendor_id
+									FROM poz_suppliers_v pos    		 
+									WHERE pos.attribute1 = xppv.no_colaborador                  
+										AND pos.attribute2 = (SELECT hz.party_number
+																FROM hz_parties hz
+															WHERE hz.party_id = xppv.id_pensionado)
+									),0)
+			AND TRUNC(SYSDATE) BETWEEN pvs.effective_start_date  AND pvs.effective_end_date
+			AND hps.party_site_id = pvs.party_site_id
+			AND pvs.vendor_site_code= 'Office'
+									)    AS PAY_GROUP_LOOKUP_CODE
+	,'Y'                               AS EXCLUSIVE_PAYMENT_FLAG
+	,:P_ORG_ID                         AS ORG_ID
+	,'PAGO NOMINA'                     AS DESCRIPTION
+	,:P_SOURCE                         AS GROUP_ID
+	,(SELECT fspa.accts_pay_code_combination_id
+		FROM financials_system_params_all fspa
+		WHERE 1 = 1
+			AND fspa.org_id = :P_ORG_ID
+		)   AS ACCTS_PAY_CODE_COMB_ID
+	,ROWNUM                                            AS LINE_NUMBER
+	,0                                                 AS INVOICE_LINE_ID
+	,'ITEM'                                            AS LINE_TYPE_LOOKUP_CODE
+	,'N'                                               AS PA_ADITTION_FLAG
+	,(SELECT name
+		FROM hr_organization_v
+		WHERE organization_id = :P_ORG_ID
+		GROUP BY name)                                   AS LDESCRIPTION
+	,(SELECT code_combination_id   -- dist_code_combination_id(lines)
+		FROM gl_code_combinations 
+		WHERE 1=1
+			AND segment1 = (SELECT glsv.segment_value AS SEGMENT_1
+							FROM hr_organization_v       hov,
+								hr_org_details_by_class_v   hod,
+								gl_ledger_le_v              gllv,
+								gl_ledger_segment_values    glsv
+							WHERE hov.organization_id = :P_ORG_ID
+							AND hov.organization_id = hod.organization_id
+							AND (hov.classification_code = hod.classification_code)
+							AND hod.org_information_context = hov.classification_code
+							AND (hod.org_information3 = gllv.ledger_id)
+							AND gllv.ledger_id = glsv.ledger_id
+							AND hov.classification_code = 'FUN_BUSINESS_UNIT'
+							AND hov.name LIKE '%_BU')
+			AND segment2 = :P_TIPONEGOCIO --'0000'
+			AND segment3 = :P_UNIDAD 
+			AND segment4 = :P_CUENTA
+			AND segment5 = :P_INTERCOMPANIA--'0000'
+			AND segment6 = :P_PROYECTO)                      AS DIST_CODE_COMBINATION_ID  
+	,0800                AS COMPAÑIA
+	,:P_TIPONEGOCIO      AS TIPONEGOCIO 
+	,:P_UNIDAD           AS UNIDAD 
+	,:P_CUENTA           AS CUENTA
+	,:P_INTERCOMPANIA    AS INTERCOMPAÑIA 
+	,:P_PROYECTO         AS PROYECTO
+	,:P_USER_NAME       AS CREATED_BY
+	,NULL                                    AS METODO_PAGO
+	,(SELECT pvs.payment_priority
+		FROM poz_supplier_sites_all_m pvs,
+				hz_party_sites hps 
+		WHERE pvs.vendor_id = NVL((SELECT pos.vendor_id
+									FROM poz_suppliers_v pos    		 
+									WHERE pos.attribute1 = xppv.no_colaborador                  
+										AND pos.attribute2 = (SELECT hz.party_number
+																FROM hz_parties hz
+															WHERE hz.party_id = xppv.id_pensionado)
+									),0)
+			AND hps.party_site_id = pvs.party_site_id
+			AND TRUNC(SYSDATE) BETWEEN pvs.effective_start_date AND pvs.effective_end_date
+								) AS PAYMENT_PRIORITY
+	,'VALES DE DESPENSA' as base_org_pay_method_name
+from xxtoks_pay_pension_vales xppv
+where 1=1
