@@ -1,0 +1,49 @@
+--QRY MARCASXLEGALEMPLOYERS
+SELECT  fnb.LEGAL_ENTITY_NAME AS EMPRESA,
+        hap.name AS POSICION,
+        job.name AS PUESTO,
+        --+ TABULADOR
+        TRUNC(prvf.minimum, 2) AS MAXIMO,
+        TRUNC(prvf.maximum, 2) AS MINIMO,
+        TRUNC(prvf.mid_value, 2) AS PROMEDIO,
+        pg.name AS GRADO
+
+FROM    hr_all_positions hap,
+        per_valid_grades_f pvgf,
+        per_grades pg,
+        per_rate_values_f prvf,
+        per_jobs job,
+        hr_all_organization_units haou
+		, fun_names_business_units_v      fnb
+WHERE   1 = 1
+        AND pvgf.position_id = hap.position_id
+        AND hap.job_id = job.job_id
+        AND pg.grade_id = pvgf.grade_id 
+        AND pg.active_status = 'A'
+        AND prvf.rate_object_id = pg.grade_id
+        AND haou.organization_id = hap.business_unit_id
+        --+ FECHAS EFECTIVAS
+		And hap.BUSINESS_UNIT_ID = fnb.BU_ID
+		--+
+        AND TRUNC(SYSDATE)  BETWEEN hap.effective_start_date
+                            AND hap.effective_end_date
+        AND TRUNC(SYSDATE)  BETWEEN pvgf.effective_start_date
+                            AND pvgf.effective_end_date
+        AND TRUNC(SYSDATE)  BETWEEN pg.effective_start_date
+                            AND pg.effective_end_date
+        AND TRUNC(SYSDATE)  BETWEEN prvf.effective_start_date
+                            AND prvf.effective_end_date
+        AND TRUNC(SYSDATE)  BETWEEN haou.effective_start_date
+                            AND haou.effective_end_date
+        AND TRUNC(SYSDATE)  BETWEEN job.effective_start_date
+                            AND job.effective_end_date
+
+GROUP BY    fnb.LEGAL_ENTITY_NAME, --haou.name,
+            hap.name,
+            job.name,
+            prvf.minimum,
+            prvf.maximum,
+            prvf.mid_value,
+            pg.name
+
+ORDER BY fnb.LEGAL_ENTITY_NAME --hap.name
